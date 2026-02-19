@@ -40,12 +40,6 @@ cp .env.example .env
 # Edit .env with your QDRANT_URL (and optionally OPENAI_API_KEY)
 ```
 
-> **GitHub Packages alternative:** also published to GitHub Packages as `@pawells/mcp-memory`. This registry requires a [personal access token](https://github.com/settings/tokens) with `read:packages` scope:
-> ```bash
-> echo "@pawells:registry=https://npm.pkg.github.com" >> ~/.npmrc
-> echo "//npm.pkg.github.com/:_authToken=YOUR_GITHUB_PAT" >> ~/.npmrc
-> ```
-
 ### Running Qdrant Locally
 
 ```bash
