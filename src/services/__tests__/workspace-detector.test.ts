@@ -191,8 +191,8 @@ describe('WorkspaceDetectorService.detect — package.json', () => {
   });
 
   it('detects workspace from the repository package.json', () => {
-    // @phillipawells/mcp-memory:
-    //   1. strips @phillipawells/ scope → 'mcp-memory'
+    // @pawells/mcp-memory:
+    //   1. strips @pawells/ scope → 'mcp-memory'
     //   2. cleanWorkspaceName strips mcp- prefix → 'memory'
     const result = detector.detect(undefined, process.cwd());
     expect(result.workspace).toBe('memory');
@@ -227,7 +227,7 @@ describe('WorkspaceDetectorService.detect — scoped package names', () => {
   });
 
   it('strips @scope/ prefix from scoped package name and mcp- prefix', () => {
-    // @phillipawells/mcp-memory → strip scope → mcp-memory → strip mcp- → memory
+    // @pawells/mcp-memory → strip scope → mcp-memory → strip mcp- → memory
     const result = detector.detect(undefined, process.cwd());
     expect(result.workspace).toBe('memory');
     expect(result.workspace).toMatch(/^[a-zA-Z0-9_-]+$/);
