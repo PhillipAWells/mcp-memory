@@ -1,0 +1,25 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/typescript-node
+{
+	"name": "mcp-memory",
+	"image": "node:lts",
+
+	"features": {
+		"ghcr.io/devcontainers/features/github-cli:1": {}
+	},
+
+	"postCreateCommand": "yarn install",
+
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"vscode.typescript-language-features",
+				"ms-vscode.js-debug",
+				"vscode.npm",
+				"eamodio.gitlens"
+			]
+		}
+	},
+
+	"remoteUser": "node"
+}
