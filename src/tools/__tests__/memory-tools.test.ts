@@ -63,7 +63,7 @@ vi.mock('../../services/qdrant-client.js', () => ({ qdrantService: mockQdrant })
 vi.mock('../../services/embedding-service.js', () => ({ embeddingService: mockEmbedding }));
 vi.mock('../../services/workspace-detector.js', () => ({ workspaceDetector: mockWorkspace }));
 vi.mock('../../services/local-embedding-provider.js', () => ({
-  generateLocalEmbedding: vi.fn(async () => new Array(384).fill(0.1)),
+  generateLocalEmbedding: vi.fn(() => new Array(384).fill(0.1)),
   preloadLocalPipeline: vi.fn(),
 }));
 
