@@ -10,8 +10,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // ── Mock local embedding provider ────────────────────────────────────────────
 // Must be hoisted before the service import so the module resolution picks it up.
 vi.mock('../local-embedding-provider.js', () => ({
-  generateLocalEmbedding: vi.fn(async (_text: string) => new Array(384).fill(0.1)),
-  preloadLocalPipeline: vi.fn(async () => undefined),
+  generateLocalEmbedding: vi.fn((_text: string) => new Array(384).fill(0.1)),
+  preloadLocalPipeline: vi.fn(() => undefined),
   resetLocalPipeline: vi.fn(),
 }));
 

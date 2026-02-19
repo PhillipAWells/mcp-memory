@@ -20,6 +20,12 @@ const DEFAULT_CHUNK_OVERLAP = 200;
 const DEFAULT_WORKSPACE_CACHE_TTL_MS = 60000;
 /** OpenAI text-embedding-3-small output dimensions. */
 const OPENAI_SMALL_EMBEDDING_DIMENSIONS = 1536;
+/** Default output dimensions for the local HuggingFace embedding model. */
+const DEFAULT_LOCAL_EMBEDDING_DIMENSIONS = 384;
+/** Default output dimensions for OpenAI text-embedding-3-large. */
+const DEFAULT_OPENAI_LARGE_EMBEDDING_DIMENSIONS = 3072;
+/** Minimum length for QDRANT_API_KEY to guard against accidental single-char values. */
+const MIN_QDRANT_API_KEY_LENGTH = 8;
 
 /**
  * Parse an integer from an environment variable string.
@@ -70,7 +76,7 @@ const ConfigSchema = z.object({
   qdrant: z.object({
     url: z.string().url().default('http://localhost:6333'),
     // When set, must be at least 8 characters to guard against accidental single-char values
-    apiKey: z.string().min(8, 'QDRANT_API_KEY must be at least 8 characters when set').optional(),
+    apiKey: z.string().min(MIN_QDRANT_API_KEY_LENGTH, 'QDRANT_API_KEY must be at least 8 characters when set').optional(),
     collection: z.string().default('mcp-memory'),
     timeout: z.number().default(DEFAULT_QDRANT_TIMEOUT_MS),
   }),
@@ -136,8 +142,8 @@ function loadConfig(): Config {
   }
 
   const localModel = process.env.LOCAL_EMBEDDING_MODEL ?? 'Xenova/all-MiniLM-L6-v2';
-  const localDimensions = parseIntEnv(process.env.LOCAL_EMBEDDING_DIMENSIONS, 384, 'LOCAL_EMBEDDING_DIMENSIONS');
-  const openaiLargeDimensions = parseIntEnv(process.env.LARGE_EMBEDDING_DIMENSIONS, 3072, 'LARGE_EMBEDDING_DIMENSIONS');
+  const localDimensions = parseIntEnv(process.env.LOCAL_EMBEDDING_DIMENSIONS, DEFAULT_LOCAL_EMBEDDING_DIMENSIONS, 'LOCAL_EMBEDDING_DIMENSIONS');
+  const openaiLargeDimensions = parseIntEnv(process.env.LARGE_EMBEDDING_DIMENSIONS, DEFAULT_OPENAI_LARGE_EMBEDDING_DIMENSIONS, 'LARGE_EMBEDDING_DIMENSIONS');
 
   // Derive vector dimensions from the chosen provider
   const smallDimensions = provider === 'openai' ? OPENAI_SMALL_EMBEDDING_DIMENSIONS : localDimensions;
