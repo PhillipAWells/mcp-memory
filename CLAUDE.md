@@ -65,7 +65,13 @@ MCP Client → MCP Server (src/index.ts)
 
 ## TypeScript Configuration
 
-Outputs to `./build/`, targets ES2022, module resolution `bundler`. Tests use Vitest (config in `vitest.config.ts`); coverage threshold is 70% across lines, functions, branches, and statements.
+Requires Node.js >= 24. Outputs to `./build/`, targets ES2022, module resolution `bundler`. Tests use Vitest (config in `vitest.config.ts`); coverage threshold is 70% across lines, functions, branches, and statements.
+
+## CI/CD
+
+Single workflow (`.github/workflows/ci.yml`) triggered on push to `main`, PRs to `main`, and `v*` tags:
+- **Push to `main` / PR**: typecheck → lint → test → build
+- **Push `v*` tag**: typecheck → lint → test → build + publish to GitHub Packages + create GitHub Release
 
 ## Rules
 
