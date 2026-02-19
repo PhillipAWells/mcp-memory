@@ -2,7 +2,7 @@
 
 [![GitHub Release](https://img.shields.io/github/v/release/PhillipAWells/mcp-memory)](https://github.com/PhillipAWells/mcp-memory/releases)
 [![CI](https://github.com/PhillipAWells/mcp-memory/actions/workflows/ci.yml/badge.svg)](https://github.com/PhillipAWells/mcp-memory/actions/workflows/ci.yml)
-[![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
+[![Node](https://img.shields.io/badge/node-%3E%3D24-brightgreen)](https://nodejs.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/PhillipAWells?style=social)](https://github.com/sponsors/PhillipAWells)
 
@@ -23,7 +23,7 @@ Model Context Protocol (MCP) server for persistent memory and knowledge manageme
 
 ### Prerequisites
 
-- Node.js >= 18.0.0
+- Node.js >= 24.0.0
 - Qdrant vector database (local or cloud)
 - OpenAI API key *(optional — only needed for OpenAI embeddings; local embeddings work without one)*
 
