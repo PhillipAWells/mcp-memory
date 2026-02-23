@@ -83,7 +83,7 @@ const ConfigSchema = z.object({
 
 	// Server configuration
 	server: z.object({
-		logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+		logLevel: z.enum(['debug', 'info', 'warn', 'error', 'silent']).default('info'),
 	}),
 
 	// Memory configuration
@@ -168,7 +168,7 @@ function loadConfig(): Config {
 			timeout: parseIntEnv(process.env.QDRANT_TIMEOUT, DEFAULT_QDRANT_TIMEOUT_MS, 'QDRANT_TIMEOUT'),
 		},
 		server: {
-			logLevel: (process.env.LOG_LEVEL ?? 'info') as 'debug' | 'info' | 'warn' | 'error',
+			logLevel: (process.env.LOG_LEVEL ?? 'info') as 'debug' | 'info' | 'warn' | 'error' | 'silent',
 		},
 		memory: {
 			chunkSize: parseIntEnv(process.env.MEMORY_CHUNK_SIZE, DEFAULT_CHUNK_SIZE, 'MEMORY_CHUNK_SIZE'),

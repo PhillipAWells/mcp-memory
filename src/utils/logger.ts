@@ -9,17 +9,19 @@
 import { config } from '../config.js';
 
 /** Recognised log severity levels. */
-type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'silent';
 
 /**
  * Numeric weights used to compare log levels.
  * A message is emitted only when its level weight ≥ the configured minimum.
+ * `'silent'` suppresses all output (useful in test environments).
  */
 const LOG_LEVELS: Record<LogLevel, number> = {
 	debug: 0,
 	info: 1,
 	warn: 2,
 	error: 3,
+	silent: 4,
 };
 
 /**
