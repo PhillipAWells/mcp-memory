@@ -55,7 +55,7 @@ vi.mock('../../config.js', () => ({
 		memory: { chunkSize: 1000, chunkOverlap: 200 },
 		workspace: { autoDetect: false, default: 'test-workspace', cacheTTL: 60000 },
 		qdrant: { url: 'http://localhost:6333', collection: 'test', timeout: 5000 },
-		server: { logLevel: 'error' },
+		server: { logLevel: 'silent' },
 	},
 }));
 
@@ -81,7 +81,7 @@ function getTool(name: string) {
 
 describe('memory-store', () => {
 	beforeEach(() => {
-		vi.clearAllMocks(); 
+		vi.clearAllMocks();
 	});
 
 	it('stores content and returns success', async () => {
@@ -166,7 +166,7 @@ describe('memory-store', () => {
 
 describe('memory-query', () => {
 	beforeEach(() => {
-		vi.clearAllMocks(); 
+		vi.clearAllMocks();
 	});
 
 	it('returns results on successful query', async () => {
@@ -194,7 +194,7 @@ describe('memory-query', () => {
 
 describe('memory-list', () => {
 	beforeEach(() => {
-		vi.clearAllMocks(); 
+		vi.clearAllMocks();
 	});
 
 	it('returns a list of memories', async () => {
@@ -224,7 +224,7 @@ describe('memory-get', () => {
 	const VALID_UUID = '550e8400-e29b-41d4-a716-446655440000';
 
 	beforeEach(() => {
-		vi.clearAllMocks(); 
+		vi.clearAllMocks();
 	});
 
 	it('returns the memory when found', async () => {
@@ -267,7 +267,7 @@ describe('memory-update', () => {
 	};
 
 	beforeEach(() => {
-		vi.clearAllMocks(); 
+		vi.clearAllMocks();
 	});
 
 	it('updates metadata and returns success', async () => {
@@ -340,7 +340,7 @@ describe('memory-delete', () => {
 	const VALID_UUID = '550e8400-e29b-41d4-a716-446655440002';
 
 	beforeEach(() => {
-		vi.clearAllMocks(); 
+		vi.clearAllMocks();
 	});
 
 	it('deletes existing memory and returns success', async () => {
@@ -364,7 +364,7 @@ describe('memory-delete', () => {
 
 describe('memory-batch-delete', () => {
 	beforeEach(() => {
-		vi.clearAllMocks(); 
+		vi.clearAllMocks();
 	});
 
 	it('batch-deletes memories and returns success', async () => {
@@ -395,7 +395,7 @@ describe('memory-batch-delete', () => {
 
 describe('memory-status', () => {
 	beforeEach(() => {
-		vi.clearAllMocks(); 
+		vi.clearAllMocks();
 	});
 
 	it('returns server health information', async () => {
@@ -420,7 +420,7 @@ describe('memory-status', () => {
 
 describe('memory-count', () => {
 	beforeEach(() => {
-		vi.clearAllMocks(); 
+		vi.clearAllMocks();
 	});
 
 	it('returns count of all memories', async () => {

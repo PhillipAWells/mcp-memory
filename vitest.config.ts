@@ -4,6 +4,9 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    env: {
+      LOG_LEVEL: 'silent',
+    },
     include: ['src/**/*.{test,spec}.ts'],
     exclude: ['node_modules', 'build', 'tmp'],
     typecheck: {
