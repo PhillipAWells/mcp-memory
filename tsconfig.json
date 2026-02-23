@@ -18,7 +18,8 @@
 		"strictFunctionTypes": true,
 		"lib": [
 			"ES2022"
-		]
+		],
+		"types": ["vitest/globals"]
 	},
 	"include": [
 		"src/**/*"
