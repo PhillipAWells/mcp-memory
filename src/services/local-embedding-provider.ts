@@ -17,8 +17,8 @@ import { logger } from '../utils/logger.js';
  * type-check time.  The actual runtime object satisfies this interface.
  */
 type FeatureExtractionPipeline = (
-  text: string | string[],
-  options?: Record<string, unknown>
+	text: string | string[],
+	options?: Record<string, unknown>,
 ) => Promise<{ data: Float32Array }>;
 
 /**
@@ -40,38 +40,38 @@ let pipelineInstance: FeatureExtractionPipeline | null = null;
  *   the model download fails.
  */
 async function getOrCreatePipeline(): Promise<FeatureExtractionPipeline> {
-  if (pipelineInstance) {
-    return pipelineInstance;
-  }
+	if (pipelineInstance) {
+		return pipelineInstance;
+	}
 
-  let transformers: typeof import('@huggingface/transformers');
-  try {
-    transformers = await import('@huggingface/transformers');
-  } catch {
-    throw new Error(
-      'The @huggingface/transformers package is required for local embeddings. ' +
+	let transformers: typeof import('@huggingface/transformers');
+	try {
+		transformers = await import('@huggingface/transformers');
+	} catch {
+		throw new Error(
+			'The @huggingface/transformers package is required for local embeddings. ' +
       'Install it with: npm install @huggingface/transformers',
-    );
-  }
+		);
+	}
 
-  const { pipeline, env } = transformers;
+	const { pipeline, env } = transformers;
 
-  // Store models in a predictable user-level cache rather than node_modules
-  env.cacheDir = process.env.LOCAL_EMBEDDING_CACHE_DIR
+	// Store models in a predictable user-level cache rather than node_modules
+	env.cacheDir = process.env.LOCAL_EMBEDDING_CACHE_DIR
     ?? `${process.env.HOME ?? process.env.USERPROFILE ?? '/tmp'}/.cache/mcp-memory/models`;
 
-  const modelName = config.embedding.localModel;
-  logger.info(`Loading local embedding model: ${modelName} (first run downloads ~20-140 MB)`);
+	const modelName = config.embedding.localModel;
+	logger.info(`Loading local embedding model: ${modelName} (first run downloads ~20-140 MB)`);
 
-  const pipe = await pipeline('feature-extraction', modelName, {
-    dtype: 'q8',  // int8 quantized — small & fast, minimal quality loss
-  });
+	const pipe = await pipeline('feature-extraction', modelName, {
+		dtype: 'q8',  // int8 quantized — small & fast, minimal quality loss
+	});
 
-  // Cast: the runtime pipeline is compatible with our loose signature
-  pipelineInstance = pipe as unknown as FeatureExtractionPipeline;
+	// Cast: the runtime pipeline is compatible with our loose signature
+	pipelineInstance = pipe as unknown as FeatureExtractionPipeline;
 
-  logger.info(`Local embedding model ready: ${modelName}`);
-  return pipelineInstance;
+	logger.info(`Local embedding model ready: ${modelName}`);
+	return pipelineInstance;
 }
 
 /**
@@ -85,9 +85,9 @@ async function getOrCreatePipeline(): Promise<FeatureExtractionPipeline> {
  *   dimension (configured via `LOCAL_EMBEDDING_DIMENSIONS`, default 384).
  */
 export async function generateLocalEmbedding(text: string): Promise<number[]> {
-  const pipe = await getOrCreatePipeline();
-  const output = await pipe(text, { pooling: 'mean', normalize: true });
-  return Array.from(output.data);
+	const pipe = await getOrCreatePipeline();
+	const output = await pipe(text, { pooling: 'mean', normalize: true });
+	return Array.from(output.data);
 }
 
 /**
@@ -101,7 +101,7 @@ export async function generateLocalEmbedding(text: string): Promise<number[]> {
  * Safe to call multiple times — returns immediately if already initialised.
  */
 export async function preloadLocalPipeline(): Promise<void> {
-  await getOrCreatePipeline();
+	await getOrCreatePipeline();
 }
 
 /**
@@ -112,5 +112,5 @@ export async function preloadLocalPipeline(): Promise<void> {
  * that requires a different model to be loaded.
  */
 export function resetLocalPipeline(): void {
-  pipelineInstance = null;
+	pipelineInstance = null;
 }
