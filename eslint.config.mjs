@@ -25,15 +25,15 @@ import globals from 'globals';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/** TypeScript import resolver — points at this project's tsconfig.json */
+/** TypeScript import resolver — points at this project's tsconfig.eslint.json */
 const IMPORT_RESOLVER = {
-  typescript: {
-    alwaysTryTypes: true,
-    project: './tsconfig.json',
-  },
-  node: {
-    extensions: ['.js', '.ts'],
-  },
+	typescript: {
+		alwaysTryTypes: true,
+		project: './tsconfig.eslint.json',
+	},
+	node: {
+		extensions: ['.js', '.ts'],
+	},
 };
 
 export default [
@@ -269,7 +269,7 @@ export default [
       // ---- Stylistic: indentation and whitespace ----
       '@stylistic/indent': [
         'error',
-        2,
+        'tab',
         {
           SwitchCase: 1,
           flatTernaryExpressions: false,
@@ -277,6 +277,7 @@ export default [
           ignoreComments: false,
         },
       ],
+      '@stylistic/no-tabs': 'off',
       '@stylistic/no-multiple-empty-lines': ['error', { max: 1, maxEOF: 0 }],
       '@stylistic/padded-blocks': ['error', 'never'],
       '@stylistic/eol-last': 'error',

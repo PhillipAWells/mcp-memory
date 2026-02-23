@@ -9,18 +9,18 @@ import { logger } from './logger.js';
  * All fields are optional; unset fields fall back to {@link DEFAULT_OPTIONS}.
  */
 export interface RetryOptions {
-  /** Maximum number of attempts before giving up (default: 3). */
-  maxRetries?: number;
-  /** Delay in milliseconds before the first retry (default: 1000). */
-  initialDelay?: number;
-  /** Upper bound on the computed delay to prevent extremely long waits (default: 30 000). */
-  maxDelay?: number;
-  /** Multiplier applied to the delay after each failed attempt (default: 2). */
-  backoffFactor?: number;
-  /** Node.js error codes (`error.code`) that should trigger a retry. */
-  retryableErrors?: string[];
-  /** HTTP status codes (`error.status`) that should trigger a retry. */
-  retryableStatusCodes?: number[];
+	/** Maximum number of attempts before giving up (default: 3). */
+	maxRetries?: number;
+	/** Delay in milliseconds before the first retry (default: 1000). */
+	initialDelay?: number;
+	/** Upper bound on the computed delay to prevent extremely long waits (default: 30 000). */
+	maxDelay?: number;
+	/** Multiplier applied to the delay after each failed attempt (default: 2). */
+	backoffFactor?: number;
+	/** Node.js error codes (`error.code`) that should trigger a retry. */
+	retryableErrors?: string[];
+	/** HTTP status codes (`error.status`) that should trigger a retry. */
+	retryableStatusCodes?: number[];
 }
 
 /** HTTP 500 Internal Server Error — transient server failure, safe to retry. */
@@ -38,17 +38,17 @@ const HTTP_STATUS_GATEWAY_TIMEOUT = 504;
  * with exponential back-off capped at 30 seconds.
  */
 const DEFAULT_OPTIONS: Required<RetryOptions> = {
-  maxRetries: 3,
-  initialDelay: 1000,
-  maxDelay: 30000,
-  backoffFactor: 2,
-  retryableErrors: ['ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'ECONNREFUSED'],
-  retryableStatusCodes: [
-    HTTP_STATUS_INTERNAL_SERVER_ERROR,
-    HTTP_STATUS_BAD_GATEWAY,
-    HTTP_STATUS_SERVICE_UNAVAILABLE,
-    HTTP_STATUS_GATEWAY_TIMEOUT,
-  ],
+	maxRetries: 3,
+	initialDelay: 1000,
+	maxDelay: 30000,
+	backoffFactor: 2,
+	retryableErrors: ['ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'ECONNREFUSED'],
+	retryableStatusCodes: [
+		HTTP_STATUS_INTERNAL_SERVER_ERROR,
+		HTTP_STATUS_BAD_GATEWAY,
+		HTTP_STATUS_SERVICE_UNAVAILABLE,
+		HTTP_STATUS_GATEWAY_TIMEOUT,
+	],
 };
 
 /**
@@ -67,49 +67,49 @@ const DEFAULT_OPTIONS: Required<RetryOptions> = {
  * const data = await withRetry(() => fetch('https://api.example.com/data'));
  */
 export async function withRetry<T>(
-  operation: () => Promise<T>,
-  options: RetryOptions = {},
+	operation: () => Promise<T>,
+	options: RetryOptions = {},
 ): Promise<T> {
-  const opts = { ...DEFAULT_OPTIONS, ...options };
-  let lastError: Error | undefined;
+	const opts = { ...DEFAULT_OPTIONS, ...options };
+	let lastError: Error | undefined;
 
-  for (let attempt = 1; attempt <= opts.maxRetries; attempt++) {
-    try {
-      return await operation();
-    } catch (error) {
-      // Properly handle different error types
-      if (error instanceof Error) {
-        lastError = error;
-      } else if (typeof error === 'object' && error !== null && 'message' in error) {
-        lastError = new Error(String(error.message));
-      } else {
-        lastError = new Error(String(error));
-      }
+	for (let attempt = 1; attempt <= opts.maxRetries; attempt++) {
+		try {
+			return await operation();
+		} catch (error) {
+			// Properly handle different error types
+			if (error instanceof Error) {
+				lastError = error;
+			} else if (typeof error === 'object' && error !== null && 'message' in error) {
+				lastError = new Error(String(error.message));
+			} else {
+				lastError = new Error(String(error));
+			}
 
-      // Check if error is retryable
-      const isRetryable = isRetryableError(error, opts);
+			// Check if error is retryable
+			const isRetryable = isRetryableError(error, opts);
 
-      if (!isRetryable || attempt === opts.maxRetries) {
-        logger.error(`Operation failed after ${attempt} attempt(s):`, lastError);
-        throw lastError;
-      }
+			if (!isRetryable || attempt === opts.maxRetries) {
+				logger.error(`Operation failed after ${attempt} attempt(s):`, lastError);
+				throw lastError;
+			}
 
-      // Calculate delay with exponential backoff
-      const delay = Math.min(
-        opts.initialDelay * Math.pow(opts.backoffFactor, attempt - 1),
-        opts.maxDelay,
-      );
+			// Calculate delay with exponential backoff
+			const delay = Math.min(
+				opts.initialDelay * Math.pow(opts.backoffFactor, attempt - 1),
+				opts.maxDelay,
+			);
 
-      logger.warn(
-        `Attempt ${attempt}/${opts.maxRetries} failed, retrying in ${delay}ms:`,
-        lastError.message,
-      );
+			logger.warn(
+				`Attempt ${attempt}/${opts.maxRetries} failed, retrying in ${delay}ms:`,
+				lastError.message,
+			);
 
-      await sleep(delay);
-    }
-  }
+			await sleep(delay);
+		}
+	}
 
-  throw lastError ?? new Error('Operation failed with unknown error');
+	throw lastError ?? new Error('Operation failed with unknown error');
 }
 
 /**
@@ -123,27 +123,27 @@ export async function withRetry<T>(
  * @returns `true` if the operation should be retried.
  */
 function isRetryableError(error: any, options: Required<RetryOptions>): boolean {
-  // Check HTTP status codes
-  if (error.status && options.retryableStatusCodes.includes(error.status)) {
-    return true;
-  }
+	// Check HTTP status codes
+	if (error.status && options.retryableStatusCodes.includes(error.status)) {
+		return true;
+	}
 
-  // Check error codes
-  if (error.code && options.retryableErrors.includes(error.code)) {
-    return true;
-  }
+	// Check error codes
+	if (error.code && options.retryableErrors.includes(error.code)) {
+		return true;
+	}
 
-  // Check error name
-  if (error.name && options.retryableErrors.includes(error.name)) {
-    return true;
-  }
+	// Check error name
+	if (error.name && options.retryableErrors.includes(error.name)) {
+		return true;
+	}
 
-  return false;
+	return false;
 }
 
 /**
  * Sleep for specified milliseconds
  */
 async function sleep(ms: number): Promise<void> {
-  await new Promise(resolve => setTimeout(resolve, ms));
+	await new Promise(resolve => setTimeout(resolve, ms));
 }

@@ -1,52 +1,74 @@
-# Source files (only publish build/)
+# Source
 src/
-tsconfig.json
 
-# Development files
+# TypeScript configs
+tsconfig.json
+tsconfig.build.json
+tsconfig.test.json
+tsconfig.eslint.json
+
+# Environment
 .env
 .env.*
+
+# Claude Code
 .claude/
+
+# IDE
 .vscode/
 .idea/
 
-# Documentation (keep README.md, LICENSE)
+# Documentation (dev-only)
+docs/
+AGENTS.md
 CLAUDE.md
 PUBLISHING.md
 
-# Git files
-.gitignore
+# Git
 .git/
-.gitlab-ci.yml
 .github/
+.gitlab-ci.yml
 
-# NPM config examples
+# npm config
+.npmrc
 .npmrc.example
+
+# ESLint / Vitest
+eslint.config.mjs
+.eslintignore
+vitest.config.ts
 
 # Dev container
 .devcontainer/
 
-# Dev tooling configs
-eslint.config.mjs
-vitest.config.ts
-
-# Lockfiles
+# Lockfiles & package manager
 yarn.lock
 package-lock.json
 pnpm-lock.yaml
+.yarnrc.yml
+.husky/
+.yarn/
 
 # TypeScript build info
 *.tsbuildinfo
 
-# Testing
+# Coverage
 coverage/
+
+# Test files
+*.spec.ts
 *.test.ts
+*.spec.js
 *.test.js
 
-# OS files
+# Temp
+tmp/
+
+# OS
 .DS_Store
 Thumbs.db
 
-# Misc
+# Editor temp files
 *.swp
 *.swo
 *~

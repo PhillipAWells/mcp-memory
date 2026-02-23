@@ -13,5 +13,5 @@ import { memoryTools } from './memory-tools.js';
  * Add new tools to this array as they are implemented
  */
 export const tools: MCPTool[] = [
-  ...memoryTools,
+	...memoryTools,
 ];
