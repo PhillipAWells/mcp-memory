@@ -1,7 +1,7 @@
 {
 	"name": "@pawells/mcp-memory",
 	"displayName": "MCP Memory",
-	"version": "1.0.5",
+	"version": "1.0.6",
 	"description": "Model Context Protocol server for semantic memory and knowledge management with Claude Code",
 	"type": "module",
 	"main": "./build/index.js",
