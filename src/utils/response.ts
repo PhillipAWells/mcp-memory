@@ -17,16 +17,16 @@ import { StandardResponse, ErrorType } from '../types/index.js';
  * @returns A `StandardResponse` with `success: true`.
  */
 export function successResponse<T>(
-  message: string,
-  data?: T,
-  metadata?: Record<string, any>,
+	message: string,
+	data?: T,
+	metadata?: Record<string, any>,
 ): StandardResponse<T> {
-  return {
-    success: true,
-    message,
-    data,
-    metadata,
-  };
+	return {
+		success: true,
+		message,
+		data,
+		metadata,
+	};
 }
 
 /**
@@ -39,18 +39,18 @@ export function successResponse<T>(
  * @returns A `StandardResponse` with `success: false`.
  */
 export function errorResponse(
-  message: string,
-  errorType: ErrorType = 'UNKNOWN_ERROR',
-  error?: string,
-  metadata?: Record<string, any>,
+	message: string,
+	errorType: ErrorType = 'UNKNOWN_ERROR',
+	error?: string,
+	metadata?: Record<string, any>,
 ): StandardResponse {
-  return {
-    success: false,
-    message,
-    error: error ?? message,
-    error_type: errorType,
-    metadata,
-  };
+	return {
+		success: false,
+		message,
+		error: error ?? message,
+		error_type: errorType,
+		metadata,
+	};
 }
 
 /**
@@ -61,12 +61,12 @@ export function errorResponse(
  * @returns A `StandardResponse` with `error_type: 'VALIDATION_ERROR'`.
  */
 export function validationError(message: string, details?: any): StandardResponse {
-  return errorResponse(
-    message,
-    'VALIDATION_ERROR',
-    message,
-    details ? { validation_details: details } : undefined,
-  );
+	return errorResponse(
+		message,
+		'VALIDATION_ERROR',
+		message,
+		details ? { validation_details: details } : undefined,
+	);
 }
 
 /**
@@ -77,8 +77,8 @@ export function validationError(message: string, details?: any): StandardRespons
  * @returns A `StandardResponse` with `error_type: 'NOT_FOUND_ERROR'`.
  */
 export function notFoundError(resource: string): StandardResponse {
-  return errorResponse(
-    `${resource} not found`,
-    'NOT_FOUND_ERROR',
-  );
+	return errorResponse(
+		`${resource} not found`,
+		'NOT_FOUND_ERROR',
+	);
 }

@@ -17,11 +17,11 @@
  * @returns The best available string description of the error.
  */
 export function extractErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  if (typeof error === 'object' && error !== null && 'message' in error) {
-    return String((error as Record<string, unknown>).message);
-  }
-  return String(error);
+	if (error instanceof Error) {
+		return error.message;
+	}
+	if (typeof error === 'object' && error !== null && 'message' in error) {
+		return String((error as Record<string, unknown>).message);
+	}
+	return String(error);
 }
