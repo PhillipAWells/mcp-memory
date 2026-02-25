@@ -50,6 +50,8 @@ const TEXT_INDEX_MAX_TOKEN_LEN = 20;
 const DEFAULT_LIST_LIMIT = 100;
 /** Percentage multiplier for success rate calculation. */
 const PERCENT = 100;
+/** Minimum time interval (ms) between access tracking warning logs. */
+const ACCESS_TRACKING_WARNING_INTERVAL_MS = 10_000;
 
 /**
  * Point structure for Qdrant upsert
@@ -115,6 +117,8 @@ export class QdrantService {
 	private initialized: boolean = false;
 	/** Running count of access-tracking update failures for diagnostics. */
 	private accessTrackingFailureCount: number = 0;
+	/** Timestamp of the last access tracking warning log (for rate-limiting). */
+	private lastTrackingWarningTime: number = 0;
 
 	constructor() {
 		this.collectionName = config.qdrant.collection;
@@ -495,10 +499,15 @@ export class QdrantService {
 		if (resultIds.length > 0) {
 			this.updateAccessTracking(resultIds).catch((err) => {
 				this.accessTrackingFailureCount++;
-				logger.warn(
-					`Failed to update access tracking (${this.accessTrackingFailureCount} total failures):`,
-					err,
-				);
+				// Rate-limit warning logs: only log if at least 10 seconds have passed
+				const now = Date.now();
+				if (now - this.lastTrackingWarningTime >= ACCESS_TRACKING_WARNING_INTERVAL_MS) {
+					this.lastTrackingWarningTime = now;
+					logger.warn(
+						`Failed to update access tracking (${this.accessTrackingFailureCount} total failures):`,
+						err,
+					);
+				}
 			});
 		}
 
@@ -604,10 +613,15 @@ export class QdrantService {
 		if (resultIds.length > 0) {
 			this.updateAccessTracking(resultIds).catch((err) => {
 				this.accessTrackingFailureCount++;
-				logger.warn(
-					`Failed to update access tracking (${this.accessTrackingFailureCount} total failures):`,
-					err,
-				);
+				// Rate-limit warning logs: only log if at least 10 seconds have passed
+				const now = Date.now();
+				if (now - this.lastTrackingWarningTime >= ACCESS_TRACKING_WARNING_INTERVAL_MS) {
+					this.lastTrackingWarningTime = now;
+					logger.warn(
+						`Failed to update access tracking (${this.accessTrackingFailureCount} total failures):`,
+						err,
+					);
+				}
 			});
 		}
 
