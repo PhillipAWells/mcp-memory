@@ -687,6 +687,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@pawells/logger@file:../logger::locator=%40pawells%2Fmcp-memory%40workspace%3A.":
+  version: 1.0.3
+  resolution: "@pawells/logger@file:../logger#../logger::hash=56078a&locator=%40pawells%2Fmcp-memory%40workspace%3A."
+  checksum: 10c0/c6ce441bc5893f7325c92429b49db9e2c9bb41e7754a63e0450d33dbdd932ae249aa1a37eb51b4e07e50c4989c871990af9ce854291530a18c3664575f34e066
+  languageName: node
+  linkType: hard
+
 "@pawells/mcp-memory@workspace:.":
   version: 0.0.0-use.local
   resolution: "@pawells/mcp-memory@workspace:."
@@ -694,6 +701,7 @@ __metadata:
     "@eslint/js": "npm:^10.0.1"
     "@huggingface/transformers": "npm:^3.8.1"
     "@modelcontextprotocol/sdk": "npm:^0.5.0"
+    "@pawells/logger": "file:../logger"
     "@qdrant/js-client-rest": "npm:^1.9.0"
     "@stylistic/eslint-plugin": "npm:^5.9.0"
     "@types/node": "npm:^25.3.0"

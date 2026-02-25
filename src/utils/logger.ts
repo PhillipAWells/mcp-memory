@@ -1,100 +1,97 @@
 /**
- * Simple structured logger
+ * Structured logger for MCP Memory server
  *
- * Writes ISO-timestamped log lines to the appropriate console stream.
- * The active log level is read from `config.server.logLevel` at startup.
- * Level hierarchy (lowest → highest): debug → info → warn → error.
+ * Uses @pawells/logger with a custom StderrTransport to ensure
+ * logs write to stderr instead of stdout, preventing corruption
+ * of the MCP protocol which communicates over stdio.
  */
 
+import { Logger, LogLevel, type ITransport, type ILogEntry } from '@pawells/logger';
 import { config } from '../config.js';
 
-/** Recognised log severity levels. */
-type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'silent';
-
 /**
- * Numeric weights used to compare log levels.
- * A message is emitted only when its level weight ≥ the configured minimum.
- * `'silent'` suppresses all output (useful in test environments).
+ * Custom transport that writes log entries to stderr.
+ * Essential for MCP servers that communicate over stdio.
  */
-const LOG_LEVELS: Record<LogLevel, number> = {
-	debug: 0,
-	info: 1,
-	warn: 2,
-	error: 3,
-	silent: 4,
-};
+class StderrTransport implements ITransport {
+	private readonly config: { format?: 'json' | 'text' };
 
-/**
- * Minimal structured logger that writes to the Node.js console.
- *
- * Each line has the form:
- * ```
- * [ISO-TIMESTAMP] [LEVEL] message ...args
- * ```
- * Object arguments are serialised via `JSON.stringify`.
- */
-class Logger {
-	private readonly level: LogLevel;
-
-	/**
-   * @param level - Minimum level to emit. Messages below this level are suppressed.
-   */
-	constructor(level: LogLevel = 'info') {
-		this.level = level;
+	constructor(config: { format?: 'json' | 'text' } = {}) {
+		this.config = config;
 	}
 
-	/** Returns `true` when `level` is at or above the configured minimum. */
-	private shouldLog(level: LogLevel): boolean {
-		return LOG_LEVELS[level] >= LOG_LEVELS[this.level];
+	public write(entry: ILogEntry): void {
+		const format = this.config.format ?? 'text';
+		const output = format === 'json'
+			? JSON.stringify(entry)
+			: this.formatText(entry);
+
+		process.stderr.write(`${output}\n`);
 	}
 
-	/**
-   * Build the formatted log string.
-   *
-   * @param level - Severity label.
-   * @param message - Primary log message.
-   * @param args - Additional values appended after the message.
-   * @returns Formatted log line ready for console output.
-   */
-	private formatMessage(level: LogLevel, message: string, ...args: any[]): string {
-		const timestamp = new Date().toISOString();
-		const formattedArgs = args.length > 0 ? ' ' + args.map(arg =>
-			(typeof arg === 'object' ? JSON.stringify(arg) : String(arg)),
-		).join(' ') : '';
-		return `[${timestamp}] [${level.toUpperCase()}] ${message}${formattedArgs}`;
-	}
+	private formatText(entry: ILogEntry): string {
+		const nanosecondToMillisecond = 1_000_000_000;
+		const timestampMs = Number(entry.timestamp) / nanosecondToMillisecond;
+		const timestamp = new Date(timestampMs).toISOString();
+		const level = entry.level.toUpperCase();
+		const metadata = entry.metadata && Object.keys(entry.metadata).length > 0
+			? ` ${JSON.stringify(entry.metadata)}`
+			: '';
 
-	/**
-   * Emit a debug-level message.
-   * Suppressed unless the configured level is `'debug'`.
-   */
-	public debug(message: string, ...args: any[]): void {
-		if (this.shouldLog('debug')) {
-			console.debug(this.formatMessage('debug', message, ...args));
-		}
-	}
-
-	/** Emit an informational message. */
-	public info(message: string, ...args: any[]): void {
-		if (this.shouldLog('info')) {
-			console.info(this.formatMessage('info', message, ...args));
-		}
-	}
-
-	/** Emit a warning. */
-	public warn(message: string, ...args: any[]): void {
-		if (this.shouldLog('warn')) {
-			console.warn(this.formatMessage('warn', message, ...args));
-		}
-	}
-
-	/** Emit an error message. */
-	public error(message: string, ...args: any[]): void {
-		if (this.shouldLog('error')) {
-			console.error(this.formatMessage('error', message, ...args));
-		}
+		return `${timestamp} ${level} [${entry.service}] ${entry.message}${metadata}`;
 	}
 }
 
-/** Singleton logger instance, configured from `config.server.logLevel`. */
-export const logger = new Logger(config.server.logLevel);
+/**
+ * Wrapper logger that extends the base Logger to accept error objects
+ * and convert them to metadata for proper serialization.
+ */
+class FlexibleLogger extends Logger {
+	// eslint-disable-next-line require-await
+	public async debug(message: string, metadata?: unknown): Promise<void> {
+		const normalizedMetadata = this.normalizeMetadata(metadata);
+		return super.debug(message, normalizedMetadata);
+	}
+
+	// eslint-disable-next-line require-await
+	public async info(message: string, metadata?: unknown): Promise<void> {
+		const normalizedMetadata = this.normalizeMetadata(metadata);
+		return super.info(message, normalizedMetadata);
+	}
+
+	// eslint-disable-next-line require-await
+	public async warn(message: string, metadata?: unknown): Promise<void> {
+		const normalizedMetadata = this.normalizeMetadata(metadata);
+		return super.warn(message, normalizedMetadata);
+	}
+
+	// eslint-disable-next-line require-await
+	public async error(message: string, metadata?: unknown): Promise<void> {
+		const normalizedMetadata = this.normalizeMetadata(metadata);
+		return super.error(message, normalizedMetadata);
+	}
+
+	private normalizeMetadata(metadata: unknown): Record<string, unknown> | undefined {
+		if (!metadata) return undefined;
+		if (typeof metadata === 'object' && !Array.isArray(metadata)) {
+			if (metadata instanceof Error) {
+				return {
+					error: metadata.message,
+					stack: metadata.stack,
+					name: metadata.name,
+				};
+			}
+			return metadata as Record<string, unknown>;
+		}
+		return { value: metadata };
+	}
+}
+
+/**
+ * Singleton logger instance, configured from environment variables
+ */
+export const logger = new FlexibleLogger({
+	service: 'mcp-memory',
+	level: (config.server.logLevel as unknown as LogLevel) || LogLevel.INFO,
+	transport: new StderrTransport({ format: 'text' }),
+});
