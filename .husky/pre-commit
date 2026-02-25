@@ -1,1 +1,9 @@
+# Reject file: and workspace: dependency references — all deps must be real npm packages
+if grep -E '"(file:|workspace:)' package.json > /dev/null 2>&1; then
+  echo "Error: package.json contains non-npm dependency references (file: or workspace:)." >&2
+  echo "All dependencies must be real packages available on npm." >&2
+  grep -E '"(file:|workspace:)' package.json >&2
+  exit 1
+fi
+
 yarn typecheck && yarn lint && yarn test && yarn build
