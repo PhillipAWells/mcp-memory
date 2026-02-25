@@ -804,14 +804,14 @@ __metadata:
   linkType: hard
 
 "@qdrant/js-client-rest@npm:^1.9.0":
-  version: 1.16.2
-  resolution: "@qdrant/js-client-rest@npm:1.16.2"
+  version: 1.17.0
+  resolution: "@qdrant/js-client-rest@npm:1.17.0"
   dependencies:
     "@qdrant/openapi-typescript-fetch": "npm:1.2.6"
-    undici: "npm:^6.0.0"
+    undici: "npm:^6.23.0"
   peerDependencies:
     typescript: ">=4.7"
-  checksum: 10c0/428a0274f864388ed2fecc914a8cfd930dfbb6a54d65462c3c47edfe2c891fd9f3f94b120e87411a0b0d53e0b3668fd5727151ec2c87c4648164a34954faff69
+  checksum: 10c0/2c9f8622f7eae6097b96401629ff7d0dc135f57dd00246cddfa95f80bdb02cbbf994cd2d8f27378985f1dfe9712f56f1edef4c084161f497ff0a0e508c783a42
   languageName: node
   linkType: hard
 
@@ -4991,7 +4991,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"undici@npm:^6.0.0":
+"undici@npm:^6.23.0":
   version: 6.23.0
   resolution: "undici@npm:6.23.0"
   checksum: 10c0/d846b3fdfd05aa6081ba1eab5db6bbc21b283042c7a43722b86d1ee2bf749d7c990ceac0c809f9a07ffd88b1b0f4c0f548a8362c035088cb1997d63abdda499c
