@@ -104,6 +104,11 @@ async function memoryStoreHandler(args: any): Promise<StandardResponse> {
 			logger.debug(`Detected workspace: ${metadata.workspace ?? 'none'}`);
 		}
 
+		// Normalize workspace to lowercase for consistent storage
+		if (metadata.workspace !== null && metadata.workspace !== undefined) {
+			metadata.workspace = workspaceDetector.normalize(metadata.workspace);
+		}
+
 		// Handle chunking for long content
 		if (input.auto_chunk && input.content.length > CHUNK_THRESHOLD_LENGTH) {
 			const chunked = await embeddingService.generateChunkedEmbeddings(input.content);

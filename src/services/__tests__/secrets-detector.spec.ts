@@ -355,12 +355,21 @@ describe('isSafeToStore — medium-confidence threshold', () => {
 		expect(result.reason).toMatch(/medium-confidence/i);
 	});
 
-	it('returns safe:true with warning for exactly 4 medium-confidence secrets', () => {
+	it('returns safe:false for 3+ medium-confidence secrets', () => {
 		const content = [
 			'"api_key": "abcdefghijklmnopqrst"',
 			'"access_token": "abcdefghijklmnopqrstu"',
 			'MY_SERVICE_SECRET=supersecretvalue12345',
-			'OTHER_SERVICE_TOKEN=anothersecretvalue9876',
+		].join(' ');
+		const result = isSafeToStore(content);
+		expect(result.safe).toBe(false);
+		expect(result.reason).toMatch(/medium-confidence/i);
+	});
+
+	it('returns safe:true with warning for exactly 2 medium-confidence secrets', () => {
+		const content = [
+			'"api_key": "abcdefghijklmnopqrst"',
+			'"access_token": "abcdefghijklmnopqrstu"',
 		].join(' ');
 		const result = isSafeToStore(content);
 		expect(result.safe).toBe(true);

@@ -70,7 +70,7 @@ const SECRET_CONTEXT_CHARS = 10;
  * that contains multiple low-risk signals such as email addresses, phone
  * numbers, or generic config key names without actual secret values.
  */
-const MEDIUM_CONFIDENCE_BLOCK_THRESHOLD = 5;
+const MEDIUM_CONFIDENCE_BLOCK_THRESHOLD = 3;
 /** Confidence ordering for deduplication. */
 const CONFIDENCE_ORDER = { high: 3, medium: 2, low: 1 } as const;
 
