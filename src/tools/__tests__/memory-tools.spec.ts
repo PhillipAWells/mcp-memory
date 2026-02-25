@@ -42,6 +42,7 @@ const { mockQdrant, mockEmbedding, mockWorkspace } = vi.hoisted(() => {
 
 	const mockWorkspace = {
 		detect: vi.fn(() => ({ workspace: 'test-workspace', source: 'default' })),
+		normalize: vi.fn((ws: string | null) => (ws ? ws.toLowerCase() : null)),
 	};
 
 	return { mockQdrant, mockEmbedding, mockWorkspace };
@@ -133,6 +134,27 @@ describe('memory-store', () => {
 			expect.objectContaining({ workspace: 'explicit-ws' }),
 			expect.any(Array),
 		);
+	});
+
+	it('normalizes workspace name to lowercase', async () => {
+		await getTool('memory-store').handler({
+			content: 'workspace normalization test',
+			metadata: { workspace: 'MyWorkspace' },
+		});
+		expect(mockQdrant.upsert).toHaveBeenCalledWith(
+			expect.any(String),
+			expect.any(Object),
+			expect.objectContaining({ workspace: 'myworkspace' }),
+			expect.any(Array),
+		);
+	});
+
+	it('stores memory without metadata object', async () => {
+		const result = await getTool('memory-store').handler({
+			content: 'content without metadata',
+		});
+		expect(result.success).toBe(true);
+		expect(mockQdrant.upsert).toHaveBeenCalledTimes(1);
 	});
 
 	it('auto-chunks long content when auto_chunk is true', async () => {
@@ -384,6 +406,14 @@ describe('memory-batch-delete', () => {
 		expect(result.error_type).toBe('VALIDATION_ERROR');
 	});
 
+	it('returns EXECUTION_ERROR on batch delete failure', async () => {
+		const ids = ['550e8400-e29b-41d4-a716-446655440010'];
+		mockQdrant.batchDelete.mockRejectedValueOnce(new Error('Delete failed'));
+		const result = await getTool('memory-batch-delete').handler({ ids });
+		expect(result.success).toBe(false);
+		expect(result.error_type).toBe('EXECUTION_ERROR');
+	});
+
 	it('returns VALIDATION_ERROR for non-UUID ids', async () => {
 		const result = await getTool('memory-batch-delete').handler({ ids: ['not-a-uuid'] });
 		expect(result.success).toBe(false);
@@ -433,5 +463,27 @@ describe('memory-count', () => {
 	it('passes filter to count service', async () => {
 		await getTool('memory-count').handler({ filter: { workspace: 'my-ws' } });
 		expect(mockQdrant.count).toHaveBeenCalledWith(expect.objectContaining({ workspace: 'my-ws' }));
+	});
+
+	it('returns EXECUTION_ERROR on count failure', async () => {
+		mockQdrant.count.mockRejectedValueOnce(new Error('Database error'));
+		const result = await getTool('memory-count').handler({});
+		expect(result.success).toBe(false);
+		expect(result.error_type).toBe('EXECUTION_ERROR');
+	});
+});
+
+// ── memory-status error handling ───────────────────────────────────────────────
+
+describe('memory-status error handling', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('returns EXECUTION_ERROR on stats failure', async () => {
+		mockQdrant.getStats.mockRejectedValueOnce(new Error('Stats unavailable'));
+		const result = await getTool('memory-status').handler({});
+		expect(result.success).toBe(false);
+		expect(result.error_type).toBe('EXECUTION_ERROR');
 	});
 });
