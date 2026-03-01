@@ -17,13 +17,14 @@
 		"test": "vitest run",
 		"test:ui": "vitest --ui",
 		"test:coverage": "vitest --coverage",
+		"pipeline": "yarn typecheck && yarn lint && yarn test && yarn build",
 		"prepublishOnly": "npm run build",
 		"prepare": "husky"
 	},
 	"dependencies": {
 		"@huggingface/transformers": "^3.8.1",
 		"@modelcontextprotocol/sdk": "^0.5.0",
-		"@pawells/logger": "file:../logger",
+		"@pawells/logger": "^1.0.3",
 		"@qdrant/js-client-rest": "^1.9.0",
 		"chokidar": "^3.5.3",
 		"dotenv": "^16.3.1",
