@@ -687,10 +687,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@pawells/logger@file:../logger::locator=%40pawells%2Fmcp-memory%40workspace%3A.":
+"@pawells/logger@npm:^1.0.3":
   version: 1.0.3
-  resolution: "@pawells/logger@file:../logger#../logger::hash=56078a&locator=%40pawells%2Fmcp-memory%40workspace%3A."
-  checksum: 10c0/c6ce441bc5893f7325c92429b49db9e2c9bb41e7754a63e0450d33dbdd932ae249aa1a37eb51b4e07e50c4989c871990af9ce854291530a18c3664575f34e066
+  resolution: "@pawells/logger@npm:1.0.3"
+  checksum: 10c0/dcac89f90ebd694d9fb293b86d614e8b46f4d1fc5cee1fb257fa0f0c4a066421a75d33f4c55bcc5e9f2278e9e210c833b1757839f90e0840bcbf08c03483a206
   languageName: node
   linkType: hard
 
@@ -701,7 +701,7 @@ __metadata:
     "@eslint/js": "npm:^10.0.1"
     "@huggingface/transformers": "npm:^3.8.1"
     "@modelcontextprotocol/sdk": "npm:^0.5.0"
-    "@pawells/logger": "file:../logger"
+    "@pawells/logger": "npm:^1.0.3"
     "@qdrant/js-client-rest": "npm:^1.9.0"
     "@stylistic/eslint-plugin": "npm:^5.9.0"
     "@types/node": "npm:^25.3.0"
