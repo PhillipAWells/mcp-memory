@@ -258,15 +258,19 @@ export type MemoryCountInput = z.infer<typeof MemoryCountInputSchema>;
  * Generated from the Zod schemas via `zod-to-json-schema` and passed directly
  * to the MCP server during tool registration so the protocol layer can validate
  * incoming requests before handlers are invoked.
+ *
+ * Note: Type casting is needed due to type narrowing in zod-to-json-schema's
+ * generic constraints between zod v3 and v4. The library is functionally compatible
+ * but the types require explicit casting.
  */
 export const memorySchemas = {
-	'memory-store': zodToJsonSchema(MemoryStoreInputSchema),
-	'memory-query': zodToJsonSchema(MemoryQueryInputSchema),
-	'memory-list': zodToJsonSchema(MemoryListInputSchema),
-	'memory-get': zodToJsonSchema(MemoryGetInputSchema),
-	'memory-update': zodToJsonSchema(MemoryUpdateInputSchema),
-	'memory-delete': zodToJsonSchema(MemoryDeleteInputSchema),
-	'memory-batch-delete': zodToJsonSchema(MemoryBatchDeleteInputSchema),
-	'memory-status': zodToJsonSchema(MemoryStatusInputSchema),
-	'memory-count': zodToJsonSchema(MemoryCountInputSchema),
+	'memory-store': zodToJsonSchema(MemoryStoreInputSchema as any),
+	'memory-query': zodToJsonSchema(MemoryQueryInputSchema as any),
+	'memory-list': zodToJsonSchema(MemoryListInputSchema as any),
+	'memory-get': zodToJsonSchema(MemoryGetInputSchema as any),
+	'memory-update': zodToJsonSchema(MemoryUpdateInputSchema as any),
+	'memory-delete': zodToJsonSchema(MemoryDeleteInputSchema as any),
+	'memory-batch-delete': zodToJsonSchema(MemoryBatchDeleteInputSchema as any),
+	'memory-status': zodToJsonSchema(MemoryStatusInputSchema as any),
+	'memory-count': zodToJsonSchema(MemoryCountInputSchema as any),
 };

@@ -189,8 +189,8 @@ function loadConfig(): Config {
 	} catch (error) {
 		if (error instanceof z.ZodError) {
 			console.error('Configuration validation failed:');
-			error.errors.forEach(err => {
-				console.error(`  - ${err.path.join('.')}: ${err.message}`);
+			error.issues.forEach((issue) => {
+				console.error(`  - ${issue.path.join('.')}: ${issue.message}`);
 			});
 		}
 		throw new Error('Invalid configuration', { cause: error });
