@@ -8,7 +8,7 @@ import dotenv from 'dotenv';
 import { z } from 'zod';
 
 // Load environment variables
-dotenv.config();
+dotenv.config({ quiet: true });
 
 /** Default Qdrant request timeout in milliseconds. */
 const DEFAULT_QDRANT_TIMEOUT_MS = 30000;
