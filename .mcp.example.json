@@ -1,0 +1,25 @@
+{
+	"mcpServers": {
+		"mcp-memory": {
+			"command": "node",
+			"args": [
+				"/workspaces/mcp-memory/build/index.js"
+			],
+			"env": {
+				"OPENAI_API_KEY": "",
+				"QDRANT_URL": "",
+				"QDRANT_API_KEY": "",
+				"QDRANT_COLLECTION": "",
+				"QDRANT_TIMEOUT": "30000",
+				"LOG_LEVEL": "info",
+				"MEMORY_CHUNK_SIZE": "1000",
+				"MEMORY_CHUNK_OVERLAP": "200",
+				"LARGE_EMBEDDING_DIMENSIONS": "3072",
+				"WORKSPACE_AUTO_DETECT": "true",
+				"WORKSPACE_DEFAULT": "",
+				"WORKSPACE_CACHE_TTL": "60000",
+				"COPY_CLAUDE_RULES": "true"
+			}
+		}
+	}
+}
