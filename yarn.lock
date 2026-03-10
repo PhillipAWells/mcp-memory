@@ -696,10 +696,18 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@pawells/logger@npm:^1.0.3":
-  version: 1.0.3
-  resolution: "@pawells/logger@npm:1.0.3"
-  checksum: 10c0/dcac89f90ebd694d9fb293b86d614e8b46f4d1fc5cee1fb257fa0f0c4a066421a75d33f4c55bcc5e9f2278e9e210c833b1757839f90e0840bcbf08c03483a206
+"@pawells/logger@npm:1.1.1":
+  version: 1.1.1
+  resolution: "@pawells/logger@npm:1.1.1"
+  peerDependencies:
+    "@jest/globals": ">=27.0.0"
+    vitest: ">=1.0.0"
+  peerDependenciesMeta:
+    "@jest/globals":
+      optional: true
+    vitest:
+      optional: true
+  checksum: 10c0/5e4d5f6e6717a9a6ad1166471f180fb573431f744e0ff22382bd46046dc88630090d2f99bad017659af531f6ba4359a87abd13c0f6f4cc419166b4a8a981a014
   languageName: node
   linkType: hard
 
@@ -710,7 +718,7 @@ __metadata:
     "@eslint/js": "npm:^10.0.1"
     "@huggingface/transformers": "npm:^3.8.1"
     "@modelcontextprotocol/sdk": "npm:^0.5.0"
-    "@pawells/logger": "npm:^1.0.3"
+    "@pawells/logger": "npm:1.1.1"
     "@qdrant/js-client-rest": "npm:^1.9.0"
     "@stylistic/eslint-plugin": "npm:^5.9.0"
     "@types/node": "npm:^25.3.3"
