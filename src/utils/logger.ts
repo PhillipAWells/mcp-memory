@@ -10,6 +10,15 @@ import { Logger, LogLevel, type ITransport, type ILogEntry } from '@pawells/logg
 import { config } from '../config.js';
 
 /**
+ * No-op transport used when log level is 'silent' (e.g. during tests).
+ */
+class NoOpTransport implements ITransport {
+	public write(_entry: ILogEntry): void {
+		// intentionally empty
+	}
+}
+
+/**
  * Custom transport that writes log entries to stderr.
  * Essential for MCP servers that communicate over stdio.
  */
@@ -90,8 +99,10 @@ class FlexibleLogger extends Logger {
 /**
  * Singleton logger instance, configured from environment variables
  */
+const isSilent = config.server.logLevel === 'silent';
+
 export const logger = new FlexibleLogger({
 	service: 'mcp-memory',
-	level: (config.server.logLevel as unknown as LogLevel) || LogLevel.INFO,
-	transport: new StderrTransport({ format: 'text' }),
+	level: isSilent ? LogLevel.FATAL : (config.server.logLevel as unknown as LogLevel) || LogLevel.INFO,
+	transport: isSilent ? new NoOpTransport() : new StderrTransport({ format: 'text' }),
 });
