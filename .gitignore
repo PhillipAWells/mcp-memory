@@ -50,3 +50,4 @@ lerna-debug.log*
 Thumbs.db
 # Compiled test artifacts
 **/*.spec.js
+.mcp.json
