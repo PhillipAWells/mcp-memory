@@ -88,7 +88,10 @@ class FlexibleLogger extends Logger {
 }
 
 /**
- * Singleton logger instance, configured from environment variables
+ * Singleton logger instance, configured from environment variables.
+ *
+ * Log level is controlled by `LOG_LEVEL` (debug | info | warn | error | silent).
+ * `silent` suppresses all output — useful in tests. When unset, defaults to `info`.
  */
 export const logger = new FlexibleLogger({
 	service: 'mcp-memory',

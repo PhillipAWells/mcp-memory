@@ -7,7 +7,9 @@
 import dotenv from 'dotenv';
 import { z } from 'zod';
 
-// Load environment variables
+// Load environment variables from .env if present.
+// quiet: true suppresses the "missing file" warning in environments where
+// variables are injected directly (CI, Docker, production).
 dotenv.config({ quiet: true });
 
 /** Default Qdrant request timeout in milliseconds. */
@@ -115,7 +117,7 @@ export type Config = z.infer<typeof ConfigSchema>;
  * Load configuration from environment variables and validate against {@link ConfigSchema}.
  *
  * Call order at startup:
- * 1. `dotenv.config()` populates `process.env` from `.env` if present.
+ * 1. `dotenv.config({ quiet: true })` populates `process.env` from `.env` if present.
  * 2. Each variable is read, defaulted, and coerced.
  * 3. The assembled object is parsed by Zod — any schema violation throws.
  *
