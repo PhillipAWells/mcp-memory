@@ -11,7 +11,6 @@
  */
 
 import { z } from 'zod';
-import { zodToJsonSchema } from 'zod-to-json-schema';
 
 const TAG_MAX_LENGTH = 50;
 const TAGS_MAX_COUNT = 20;
@@ -255,22 +254,18 @@ export type MemoryCountInput = z.infer<typeof MemoryCountInputSchema>;
 /**
  * JSON Schema representations of all memory tool input schemas, keyed by tool name.
  *
- * Generated from the Zod schemas via `zod-to-json-schema` and passed directly
- * to the MCP server during tool registration so the protocol layer can validate
- * incoming requests before handlers are invoked.
- *
- * Note: Type casting is needed due to type narrowing in zod-to-json-schema's
- * generic constraints between zod v3 and v4. The library is functionally compatible
- * but the types require explicit casting.
+ * Generated from the Zod schemas via Zod v4's built-in `z.toJSONSchema()` and
+ * passed directly to the MCP server during tool registration so the protocol
+ * layer can validate incoming requests before handlers are invoked.
  */
 export const memorySchemas = {
-	'memory-store': zodToJsonSchema(MemoryStoreInputSchema as any),
-	'memory-query': zodToJsonSchema(MemoryQueryInputSchema as any),
-	'memory-list': zodToJsonSchema(MemoryListInputSchema as any),
-	'memory-get': zodToJsonSchema(MemoryGetInputSchema as any),
-	'memory-update': zodToJsonSchema(MemoryUpdateInputSchema as any),
-	'memory-delete': zodToJsonSchema(MemoryDeleteInputSchema as any),
-	'memory-batch-delete': zodToJsonSchema(MemoryBatchDeleteInputSchema as any),
-	'memory-status': zodToJsonSchema(MemoryStatusInputSchema as any),
-	'memory-count': zodToJsonSchema(MemoryCountInputSchema as any),
+	'memory-store': z.toJSONSchema(MemoryStoreInputSchema),
+	'memory-query': z.toJSONSchema(MemoryQueryInputSchema),
+	'memory-list': z.toJSONSchema(MemoryListInputSchema),
+	'memory-get': z.toJSONSchema(MemoryGetInputSchema),
+	'memory-update': z.toJSONSchema(MemoryUpdateInputSchema),
+	'memory-delete': z.toJSONSchema(MemoryDeleteInputSchema),
+	'memory-batch-delete': z.toJSONSchema(MemoryBatchDeleteInputSchema),
+	'memory-status': z.toJSONSchema(MemoryStatusInputSchema),
+	'memory-count': z.toJSONSchema(MemoryCountInputSchema),
 };
