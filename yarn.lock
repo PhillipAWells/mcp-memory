@@ -711,7 +711,7 @@ __metadata:
     globals: "npm:^17.3.0"
     gray-matter: "npm:^4.0.3"
     husky: "npm:^9.1.7"
-    ignore: "npm:^5.3.0"
+    ignore: "npm:^7.0.5"
     openai: "npm:^4.20.0"
     typescript: "npm:^5.3.3"
     uuid: "npm:^10.0.0"
@@ -3045,7 +3045,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"ignore@npm:^5.2.0, ignore@npm:^5.3.0":
+"ignore@npm:^5.2.0":
   version: 5.3.2
   resolution: "ignore@npm:5.3.2"
   checksum: 10c0/f9f652c957983634ded1e7f02da3b559a0d4cc210fca3792cb67f1b153623c9c42efdc1c4121af171e295444459fc4a9201101fb041b1104a3c000bccb188337
