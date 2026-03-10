@@ -104,13 +104,14 @@ Project uses a 4-config split:
 
 Build command: `tsc` (uses `tsconfig.build.json` by default via `tsconfig.json` extends).
 
-General configuration: Requires Node.js >= 24. Outputs to `./build/`, targets ES2022, module resolution `bundler`. Declaration files (`.d.ts`) and source maps are emitted alongside JS. Strict mode is fully enabled.
+General configuration: Requires Node.js >= 22. Outputs to `./build/`, targets ES2022, module resolution `bundler`. Declaration files (`.d.ts`) and source maps are emitted alongside JS. Strict mode is fully enabled.
 
 ## CI/CD
 
 Single workflow (`.github/workflows/ci.yml`) triggered on push to `main`, PRs to `main`, and `v*` tags:
 
-- **All jobs**: Node pinned to 24, corepack enabled, `yarn install --immutable` for reproducible builds
+- **Typecheck, lint, build**: Node pinned to 24, corepack enabled, `yarn install --immutable` for reproducible builds
+- **Test**: Matrix over Node 22 and 24 to verify compatibility with both supported versions
 - **Push to `main` / PR**: typecheck → lint → test → build
 - **Push `v*` tag**: typecheck → lint → test → build → publish to GitHub Packages and npm (with provenance) → create GitHub Release
 
