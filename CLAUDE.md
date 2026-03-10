@@ -65,7 +65,7 @@ MCP Client → MCP Server (src/index.ts)
 
 ## TypeScript Configuration
 
-Requires Node.js >= 24. Outputs to `./build/`, targets ES2022, module resolution `bundler`. Tests use Vitest (config in `vitest.config.ts`); coverage threshold is 70% across lines, functions, branches, and statements.
+Requires Node.js >= 22. Outputs to `./build/`, targets ES2022, module resolution `bundler`. Tests use Vitest (config in `vitest.config.ts`); coverage threshold is 70% across lines, functions, branches, and statements.
 
 ## CI/CD
 
