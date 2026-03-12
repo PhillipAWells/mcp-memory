@@ -2,7 +2,10 @@
  * Tests for WorkspaceDetectorService
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { mkdtempSync, writeFileSync, rmSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { WorkspaceDetectorService } from '../workspace-detector.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -231,5 +234,34 @@ describe('WorkspaceDetectorService.detect — scoped package names', () => {
 		const result = detector.detect(undefined, process.cwd());
 		expect(result.workspace).toBe('memory');
 		expect(result.workspace).toMatch(/^[a-zA-Z0-9_-]+$/);
+	});
+});
+
+// ── detect — malformed package.json recovery ──────────────────────────────────
+
+describe('WorkspaceDetectorService.detect — malformed package.json recovery', () => {
+	let detector: WorkspaceDetectorService;
+	let tmpDir: string;
+
+	beforeEach(() => {
+		detector = makeDetector();
+		tmpDir = mkdtempSync(join(tmpdir(), 'mcp-test-ws-'));
+		writeFileSync(join(tmpDir, 'package.json'), 'not valid json {{{');
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it('skips a malformed package.json and falls back to directory name', () => {
+		const result = detector.detect(undefined, tmpDir);
+		// The malformed package.json is skipped; detection falls through to
+		// the directory basename (mcp-test-ws-XXXX → 'test-ws-XXXX' after prefix strip)
+		expect(result.source).toBe('directory');
+		expect(result.workspace).not.toBeNull();
+	});
+
+	it('does not throw when package.json is unparseable', () => {
+		expect(() => detector.detect(undefined, tmpDir)).not.toThrow();
 	});
 });
