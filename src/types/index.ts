@@ -132,8 +132,8 @@ export interface MCPTool {
 	description: string;
 	/**
    * JSON Schema descriptor used by the MCP layer to validate incoming arguments.
-   * Typed permissively to accept the output of `zod-to-json-schema` without casts.
-   * `type` is `string | string[]` because JSON Schema allows both forms
+   * Generated via Zod v4's built-in `z.toJSONSchema()`.  Typed permissively
+   * because JSON Schema allows `type` as either a string or an array
    * (e.g. `"object"` or `["string", "number"]`).
    */
 	inputSchema: {

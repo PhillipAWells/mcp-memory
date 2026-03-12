@@ -7,8 +7,10 @@
 import dotenv from 'dotenv';
 import { z } from 'zod';
 
-// Load environment variables
-dotenv.config();
+// Load environment variables from .env if present.
+// quiet: true suppresses the "missing file" warning in environments where
+// variables are injected directly (CI, Docker, production).
+dotenv.config({ quiet: true });
 
 /** Default Qdrant request timeout in milliseconds. */
 const DEFAULT_QDRANT_TIMEOUT_MS = 30000;
@@ -26,6 +28,20 @@ const DEFAULT_LOCAL_EMBEDDING_DIMENSIONS = 384;
 const DEFAULT_OPENAI_LARGE_EMBEDDING_DIMENSIONS = 3072;
 /** Minimum length for QDRANT_API_KEY to guard against accidental single-char values. */
 const MIN_QDRANT_API_KEY_LENGTH = 8;
+
+/**
+ * Parse a boolean from an environment variable string.
+ * Treats 'false', '0', 'no', and 'off' (case-insensitive) as `false`;
+ * any other non-empty string as `true`; and `undefined` as `fallback`.
+ *
+ * @param raw      - Raw string from the environment (or undefined).
+ * @param fallback - Default value used when `raw` is undefined.
+ */
+function parseBoolEnv(raw: string | undefined, fallback: boolean): boolean {
+	if (raw === undefined) return fallback;
+	const lower = raw.toLowerCase();
+	return lower !== 'false' && lower !== '0' && lower !== 'no' && lower !== 'off';
+}
 
 /**
  * Parse an integer from an environment variable string.
@@ -90,7 +106,10 @@ const ConfigSchema = z.object({
 	memory: z.object({
 		chunkSize: z.number().default(DEFAULT_CHUNK_SIZE),
 		chunkOverlap: z.number().default(DEFAULT_CHUNK_OVERLAP),
-	}),
+	}).refine(
+		({ chunkSize, chunkOverlap }) => chunkOverlap < chunkSize,
+		{ message: 'MEMORY_CHUNK_OVERLAP must be strictly less than MEMORY_CHUNK_SIZE to avoid an infinite chunking loop' },
+	),
 
 	// Workspace configuration
 	workspace: z.object({
@@ -115,7 +134,7 @@ export type Config = z.infer<typeof ConfigSchema>;
  * Load configuration from environment variables and validate against {@link ConfigSchema}.
  *
  * Call order at startup:
- * 1. `dotenv.config()` populates `process.env` from `.env` if present.
+ * 1. `dotenv.config({ quiet: true })` populates `process.env` from `.env` if present.
  * 2. Each variable is read, defaulted, and coerced.
  * 3. The assembled object is parsed by Zod — any schema violation throws.
  *
@@ -175,12 +194,12 @@ function loadConfig(): Config {
 			chunkOverlap: parseIntEnv(process.env.MEMORY_CHUNK_OVERLAP, DEFAULT_CHUNK_OVERLAP, 'MEMORY_CHUNK_OVERLAP'),
 		},
 		workspace: {
-			autoDetect: process.env.WORKSPACE_AUTO_DETECT !== 'false',
+			autoDetect: parseBoolEnv(process.env.WORKSPACE_AUTO_DETECT, true),
 			default: process.env.WORKSPACE_DEFAULT ?? null,
 			cacheTTL: parseIntEnv(process.env.WORKSPACE_CACHE_TTL, DEFAULT_WORKSPACE_CACHE_TTL_MS, 'WORKSPACE_CACHE_TTL'),
 		},
 		rules: {
-			copyClaudeRules: process.env.COPY_CLAUDE_RULES !== 'false',
+			copyClaudeRules: parseBoolEnv(process.env.COPY_CLAUDE_RULES, true),
 		},
 	};
 
@@ -189,8 +208,8 @@ function loadConfig(): Config {
 	} catch (error) {
 		if (error instanceof z.ZodError) {
 			console.error('Configuration validation failed:');
-			error.errors.forEach(err => {
-				console.error(`  - ${err.path.join('.')}: ${err.message}`);
+			error.issues.forEach((issue) => {
+				console.error(`  - ${issue.path.join('.')}: ${issue.message}`);
 			});
 		}
 		throw new Error('Invalid configuration', { cause: error });

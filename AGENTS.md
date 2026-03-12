@@ -1,7 +1,3 @@
-# AGENTS.md
-
-This file provides guidance to AI coding agents when working with code in this repository.
-
 ## Project Overview
 
 `@pawells/mcp-memory` is a Model Context Protocol (MCP) server providing semantic memory and knowledge management for Claude Code and other MCP clients. It uses OpenAI embeddings (or local HuggingFace/ONNX models) combined with Qdrant vector database to store, search, and manage memories. Features include automatic memory classification (long-term/episodic/short-term), secrets detection, workspace isolation, hybrid search (semantic + BM25 text), and LRU caching for cost optimization. Published to npm and GitHub Packages.
@@ -64,7 +60,7 @@ MCP Client (Claude Code) → MCP Server (src/index.ts)
 - `QdrantService` — Vector database operations; stores two named vectors per point (`dense` for small embeddings, `dense_large` for large). Supports dense HNSW + sparse BM25 hybrid search with Reciprocal Rank Fusion (RRF).
 - `EmbeddingService` — OpenAI embeddings (text-embedding-3-small/large) or local HuggingFace model with 10,000-entry LRU cache and cost tracking.
 - `LocalEmbeddingProvider` — HuggingFace/ONNX CPU inference (default: `Xenova/all-MiniLM-L6-v2`, 384d). Model cached at `~/.cache/mcp-memory/models`; first call downloads ~20–140 MB depending on model.
-- `SecretsDetector` — Blocks storage of 18+ secret patterns (API keys, tokens, passwords, etc.). High-confidence matches block immediately; 5+ distinct medium-confidence matches also block.
+- `SecretsDetector` — Blocks storage of 18+ secret patterns (API keys, tokens, passwords, etc.). High-confidence matches block immediately; 3+ distinct medium-confidence matches also block.
 - `WorkspaceDetector` — Derives workspace name from env var → package.json → directory name. Reserved names (`system`, `admin`, `root`, etc.) are rejected.
 - `RulesManager` — Copies `rules/*.md` into `.claude/rules/` at startup.
 
@@ -104,13 +100,14 @@ Project uses a 4-config split:
 
 Build command: `tsc` (uses `tsconfig.build.json` by default via `tsconfig.json` extends).
 
-General configuration: Requires Node.js >= 24. Outputs to `./build/`, targets ES2022, module resolution `bundler`. Declaration files (`.d.ts`) and source maps are emitted alongside JS. Strict mode is fully enabled.
+General configuration: Requires Node.js >= 22. Outputs to `./build/`, targets ES2022, module resolution `bundler`. Declaration files (`.d.ts`) and source maps are emitted alongside JS. Strict mode is fully enabled.
 
 ## CI/CD
 
 Single workflow (`.github/workflows/ci.yml`) triggered on push to `main`, PRs to `main`, and `v*` tags:
 
-- **All jobs**: Node pinned to 24, corepack enabled, `yarn install --immutable` for reproducible builds
+- **Typecheck, lint, build**: Node pinned to 24, corepack enabled, `yarn install --immutable` for reproducible builds
+- **Test**: Matrix over Node 22 and 24 to verify compatibility with both supported versions
 - **Push to `main` / PR**: typecheck → lint → test → build
 - **Push `v*` tag**: typecheck → lint → test → build → publish to GitHub Packages and npm (with provenance) → create GitHub Release
 

@@ -2,7 +2,7 @@
 
 [![GitHub Release](https://img.shields.io/github/v/release/PhillipAWells/mcp-memory)](https://github.com/PhillipAWells/mcp-memory/releases)
 [![CI](https://github.com/PhillipAWells/mcp-memory/actions/workflows/ci.yml/badge.svg)](https://github.com/PhillipAWells/mcp-memory/actions/workflows/ci.yml)
-[![Node](https://img.shields.io/badge/node-%3E%3D24-brightgreen)](https://nodejs.org)
+[![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen)](https://nodejs.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/PhillipAWells?style=social)](https://github.com/sponsors/PhillipAWells)
 
@@ -23,7 +23,7 @@ Model Context Protocol (MCP) server for persistent memory and knowledge manageme
 
 ### Prerequisites
 
-- Node.js >= 24.0.0
+- Node.js >= 22.0.0
 - Qdrant vector database (local or cloud)
 - OpenAI API key *(optional — only needed for OpenAI embeddings; local embeddings work without one)*
 
@@ -98,7 +98,7 @@ yarn test           # Run tests
 
 | Variable | Default | Description |
 |---|---|---|
-| `LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+| `LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error`, `silent` |
 | `COPY_CLAUDE_RULES` | `true` | Copy `rules/` → `.claude/rules/` on startup |
 
 ## Local Embeddings (No API Key)
@@ -180,7 +180,7 @@ When `use_hybrid_search: true`, results from dense vector search and sparse BM25
 
 By default (`COPY_CLAUDE_RULES=true`), the server copies `rules/memory.md` into `.claude/rules/` on startup, which Claude Code automatically loads as system prompt context. No manual setup is needed.
 
-If you set `COPY_CLAUDE_RULES=false`, add the following to your project's `CLAUDE.md` manually:
+If you set `COPY_CLAUDE_RULES=false`, add the following to your project's `AGENTS.md` (or `CLAUDE.md`) manually:
 
 ### Minimal
 

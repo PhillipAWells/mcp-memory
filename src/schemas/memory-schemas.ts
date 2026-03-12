@@ -11,7 +11,9 @@
  */
 
 import { z } from 'zod';
-import { zodToJsonSchema } from 'zod-to-json-schema';
+
+/** Reusable workspace field: nullable optional string matching `[a-zA-Z0-9_-]+`. */
+const workspaceFieldSchema = z.string().regex(/^[a-zA-Z0-9_-]+$/).nullable().optional();
 
 const TAG_MAX_LENGTH = 50;
 const TAGS_MAX_COUNT = 20;
@@ -47,7 +49,7 @@ const MetadataInputSchema = z
 		/** Classification controlling retention policy and search behaviour. */
 		memory_type: MemoryTypeSchema.optional(),
 		/** Workspace slug for multi-project isolation (`[a-zA-Z0-9_-]+`). */
-		workspace: z.string().regex(/^[a-zA-Z0-9_-]+$/).nullable().optional(),
+		workspace: workspaceFieldSchema,
 		/** Confidence score in [0, 1] indicating memory reliability. */
 		confidence: z.number().min(0.0).max(1.0).optional(),
 		/** ISO 8601 datetime after which the memory is considered expired. */
@@ -91,7 +93,7 @@ export const MemoryQueryInputSchema = z.object({
 	/** Optional filter to narrow results by workspace, type, confidence, or tags. */
 	filter: z
 		.object({
-			workspace: z.string().regex(/^[a-zA-Z0-9_-]+$/).nullable().optional(),
+			workspace: workspaceFieldSchema,
 			memory_type: MemoryTypeSchema.optional(),
 			min_confidence: z.number().min(0.0).max(1.0).optional(),
 			tags: z.array(z.string().min(1).max(TAG_MAX_LENGTH)).max(TAGS_MAX_COUNT).optional(),
@@ -135,7 +137,7 @@ export const MemoryListInputSchema = z.object({
 	/** Optional filter to narrow the listed memories. */
 	filter: z
 		.object({
-			workspace: z.string().regex(/^[a-zA-Z0-9_-]+$/).nullable().optional(),
+			workspace: workspaceFieldSchema,
 			memory_type: MemoryTypeSchema.optional(),
 			min_confidence: z.number().min(0.0).max(1.0).optional(),
 			tags: z.array(z.string().min(1).max(TAG_MAX_LENGTH)).max(TAGS_MAX_COUNT).optional(),
@@ -226,7 +228,7 @@ export const MemoryStatusInputSchema = z.object({
    * When provided, include a per-workspace point count in the response.
    * Use `null` to query memories with no workspace.
    */
-	workspace: z.string().regex(/^[a-zA-Z0-9_-]+$/).nullable().optional(),
+	workspace: workspaceFieldSchema,
 	/** When `true` (default), include embedding cache and cost statistics. */
 	include_embedding_stats: z.boolean().optional().default(true),
 });
@@ -241,7 +243,7 @@ export const MemoryCountInputSchema = z.object({
 	/** Optional filter to count only matching memories. */
 	filter: z
 		.object({
-			workspace: z.string().regex(/^[a-zA-Z0-9_-]+$/).nullable().optional(),
+			workspace: workspaceFieldSchema,
 			memory_type: MemoryTypeSchema.optional(),
 			min_confidence: z.number().min(0.0).max(1.0).optional(),
 			tags: z.array(z.string().min(1).max(TAG_MAX_LENGTH)).max(TAGS_MAX_COUNT).optional(),
@@ -255,18 +257,18 @@ export type MemoryCountInput = z.infer<typeof MemoryCountInputSchema>;
 /**
  * JSON Schema representations of all memory tool input schemas, keyed by tool name.
  *
- * Generated from the Zod schemas via `zod-to-json-schema` and passed directly
- * to the MCP server during tool registration so the protocol layer can validate
- * incoming requests before handlers are invoked.
+ * Generated from the Zod schemas via Zod v4's built-in `z.toJSONSchema()` and
+ * passed directly to the MCP server during tool registration so the protocol
+ * layer can validate incoming requests before handlers are invoked.
  */
 export const memorySchemas = {
-	'memory-store': zodToJsonSchema(MemoryStoreInputSchema),
-	'memory-query': zodToJsonSchema(MemoryQueryInputSchema),
-	'memory-list': zodToJsonSchema(MemoryListInputSchema),
-	'memory-get': zodToJsonSchema(MemoryGetInputSchema),
-	'memory-update': zodToJsonSchema(MemoryUpdateInputSchema),
-	'memory-delete': zodToJsonSchema(MemoryDeleteInputSchema),
-	'memory-batch-delete': zodToJsonSchema(MemoryBatchDeleteInputSchema),
-	'memory-status': zodToJsonSchema(MemoryStatusInputSchema),
-	'memory-count': zodToJsonSchema(MemoryCountInputSchema),
+	'memory-store': z.toJSONSchema(MemoryStoreInputSchema),
+	'memory-query': z.toJSONSchema(MemoryQueryInputSchema),
+	'memory-list': z.toJSONSchema(MemoryListInputSchema),
+	'memory-get': z.toJSONSchema(MemoryGetInputSchema),
+	'memory-update': z.toJSONSchema(MemoryUpdateInputSchema),
+	'memory-delete': z.toJSONSchema(MemoryDeleteInputSchema),
+	'memory-batch-delete': z.toJSONSchema(MemoryBatchDeleteInputSchema),
+	'memory-status': z.toJSONSchema(MemoryStatusInputSchema),
+	'memory-count': z.toJSONSchema(MemoryCountInputSchema),
 };

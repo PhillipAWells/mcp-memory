@@ -3,8 +3,10 @@
 /**
  * MCP Memory Server
  *
- * Model Context Protocol server for Obsidian Local REST API integration
- * with semantic memory capabilities via Qdrant vector database.
+ * Model Context Protocol server for persistent semantic memory and knowledge
+ * management. Uses OpenAI embeddings (or a local HuggingFace/ONNX model) with
+ * Qdrant vector database to store, search, and manage memories with automatic
+ * classification, secrets detection, and workspace isolation.
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';

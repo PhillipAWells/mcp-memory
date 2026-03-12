@@ -52,6 +52,8 @@ const DEFAULT_LIST_LIMIT = 100;
 const PERCENT = 100;
 /** Minimum time interval (ms) between access tracking warning logs. */
 const ACCESS_TRACKING_WARNING_INTERVAL_MS = 10_000;
+/** Default HTTPS port. */
+const HTTPS_DEFAULT_PORT = 443;
 
 /**
  * Point structure for Qdrant upsert
@@ -123,9 +125,18 @@ export class QdrantService {
 	constructor() {
 		this.collectionName = config.qdrant.collection;
 
+		// @qdrant/js-client-rest defaults to port 6333 regardless of the URL scheme.
+		// For HTTPS URLs without an explicit port we must pass port: 443 so the
+		// client connects on the standard TLS port instead.
+		const parsedUrl = new URL(config.qdrant.url);
+		const explicitPort = parsedUrl.port ? parseInt(parsedUrl.port, 10) : undefined;
+		const httpsDefaultPort = parsedUrl.protocol === 'https:' ? HTTPS_DEFAULT_PORT : undefined;
+		const port = explicitPort ?? httpsDefaultPort;
+
 		// Initialize Qdrant client
 		this.client = new QdrantClient({
 			url: config.qdrant.url,
+			...(port !== undefined && { port }),
 			apiKey: config.qdrant.apiKey,
 			timeout: config.qdrant.timeout,
 		});
@@ -818,7 +829,7 @@ export class QdrantService {
 		const now = new Date().toISOString();
 		conditions.push({
 			should: [
-				{ key: 'expires_at', match: { value: null } },
+				{ is_null: { key: 'expires_at' } },
 				{ key: 'expires_at', range: { gt: now } },
 			],
 		});

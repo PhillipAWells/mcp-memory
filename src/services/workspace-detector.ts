@@ -286,10 +286,10 @@ export class WorkspaceDetectorService {
    * Normalise a workspace name to lowercase for case-insensitive comparison.
    *
    * @param workspace - Workspace name, or `null`.
-   * @returns Lowercase trimmed name, or `null` if the input was `null`/`undefined`.
+   * @returns Lowercase trimmed name, or `null` if the input was `null`.
    */
 	public normalize(workspace: string | null): string | null {
-		if (workspace === null || workspace === undefined) {
+		if (workspace === null) {
 			return null;
 		}
 
