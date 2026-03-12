@@ -101,7 +101,7 @@ async function memoryStoreHandler(args: any): Promise<StandardResponse> {
 		}
 
 		// Detect workspace if not provided
-		let workspace = inputMeta.workspace;
+		let { workspace } = inputMeta;
 		if (workspace === undefined) {
 			const detected = workspaceDetector.detect();
 			workspace = detected.workspace;
