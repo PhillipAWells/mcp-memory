@@ -280,16 +280,21 @@ export class EmbeddingService {
 	}
 
 	/**
-   * Validate embedding dimensions
+   * Validate embedding dimensions.
+   *
+   * @param embedding - The vector to validate.
+   * @param variant   - Which named vector to check against: `'small'` (default)
+   *                    or `'large'`. Determines the expected dimension count.
    */
-	public validateEmbedding(embedding: number[]): boolean {
+	public validateEmbedding(embedding: number[], variant: 'small' | 'large' = 'small'): boolean {
 		if (!Array.isArray(embedding)) {
 			return false;
 		}
 
-		if (embedding.length !== this.SMALL_DIMENSIONS) {
+		const expectedDims = variant === 'large' ? this.LARGE_DIMENSIONS : this.SMALL_DIMENSIONS;
+		if (embedding.length !== expectedDims) {
 			logger.warn(
-				`Invalid embedding dimensions: expected ${this.SMALL_DIMENSIONS}, got ${embedding.length}`,
+				`Invalid embedding dimensions: expected ${expectedDims} (${variant}), got ${embedding.length}`,
 			);
 			return false;
 		}
