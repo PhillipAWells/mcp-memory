@@ -30,6 +30,20 @@ const DEFAULT_OPENAI_LARGE_EMBEDDING_DIMENSIONS = 3072;
 const MIN_QDRANT_API_KEY_LENGTH = 8;
 
 /**
+ * Parse a boolean from an environment variable string.
+ * Treats 'false', '0', 'no', and 'off' (case-insensitive) as `false`;
+ * any other non-empty string as `true`; and `undefined` as `fallback`.
+ *
+ * @param raw      - Raw string from the environment (or undefined).
+ * @param fallback - Default value used when `raw` is undefined.
+ */
+function parseBoolEnv(raw: string | undefined, fallback: boolean): boolean {
+	if (raw === undefined) return fallback;
+	const lower = raw.toLowerCase();
+	return lower !== 'false' && lower !== '0' && lower !== 'no' && lower !== 'off';
+}
+
+/**
  * Parse an integer from an environment variable string.
  * Throws a descriptive error if the value is not a valid integer.
  *
@@ -92,7 +106,10 @@ const ConfigSchema = z.object({
 	memory: z.object({
 		chunkSize: z.number().default(DEFAULT_CHUNK_SIZE),
 		chunkOverlap: z.number().default(DEFAULT_CHUNK_OVERLAP),
-	}),
+	}).refine(
+		({ chunkSize, chunkOverlap }) => chunkOverlap < chunkSize,
+		{ message: 'MEMORY_CHUNK_OVERLAP must be strictly less than MEMORY_CHUNK_SIZE to avoid an infinite chunking loop' },
+	),
 
 	// Workspace configuration
 	workspace: z.object({
@@ -177,12 +194,12 @@ function loadConfig(): Config {
 			chunkOverlap: parseIntEnv(process.env.MEMORY_CHUNK_OVERLAP, DEFAULT_CHUNK_OVERLAP, 'MEMORY_CHUNK_OVERLAP'),
 		},
 		workspace: {
-			autoDetect: process.env.WORKSPACE_AUTO_DETECT !== 'false',
+			autoDetect: parseBoolEnv(process.env.WORKSPACE_AUTO_DETECT, true),
 			default: process.env.WORKSPACE_DEFAULT ?? null,
 			cacheTTL: parseIntEnv(process.env.WORKSPACE_CACHE_TTL, DEFAULT_WORKSPACE_CACHE_TTL_MS, 'WORKSPACE_CACHE_TTL'),
 		},
 		rules: {
-			copyClaudeRules: process.env.COPY_CLAUDE_RULES !== 'false',
+			copyClaudeRules: parseBoolEnv(process.env.COPY_CLAUDE_RULES, true),
 		},
 	};
 
