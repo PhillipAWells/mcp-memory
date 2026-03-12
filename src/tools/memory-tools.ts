@@ -18,6 +18,7 @@ const CHUNK_THRESHOLD_LENGTH = 1000;
 const QUERY_LOG_LENGTH = 50;
 /** Max records to sort in memory (beyond this, warn and cap). */
 const MAX_IN_MEMORY_SORT_COUNT = 10000;
+import { z } from 'zod';
 import { MCPTool, StandardResponse, SearchResult } from '../types/index.js';
 import { successResponse, errorResponse, validationError, notFoundError } from '../utils/response.js';
 import { extractErrorMessage } from '../utils/errors.js';
@@ -81,33 +82,38 @@ async function memoryStoreHandler(args: any): Promise<StandardResponse> {
 			logger.warn(`Storing with warning: ${safetyCheck.reason}`);
 		}
 
-		const metadata = input.metadata ?? {};
+		// Build a new metadata object (do not mutate input.metadata)
+		const inputMeta = input.metadata ?? {};
+		let expiresAt = inputMeta.expires_at;
 
 		// Auto-set expires_at based on memory type (if not already provided)
-		if (metadata.expires_at === undefined) {
-			const memoryType = metadata.memory_type;
+		if (expiresAt === undefined) {
+			const memoryType = inputMeta.memory_type;
 			if (memoryType === 'episodic') {
 				const expiry = new Date();
 				expiry.setDate(expiry.getDate() + EPISODIC_EXPIRY_DAYS);
-				metadata.expires_at = expiry.toISOString();
+				expiresAt = expiry.toISOString();
 			} else if (memoryType === 'short-term') {
 				const expiry = new Date();
 				expiry.setDate(expiry.getDate() + SHORT_TERM_EXPIRY_DAYS);
-				metadata.expires_at = expiry.toISOString();
+				expiresAt = expiry.toISOString();
 			}
 		}
 
 		// Detect workspace if not provided
-		if (metadata.workspace === undefined) {
+		let workspace = inputMeta.workspace;
+		if (workspace === undefined) {
 			const detected = workspaceDetector.detect();
-			metadata.workspace = detected.workspace;
-			logger.debug(`Detected workspace: ${metadata.workspace ?? 'none'}`);
+			workspace = detected.workspace;
+			logger.debug(`Detected workspace: ${workspace ?? 'none'}`);
 		}
 
 		// Normalize workspace to lowercase for consistent storage
-		if (metadata.workspace !== null && metadata.workspace !== undefined) {
-			metadata.workspace = workspaceDetector.normalize(metadata.workspace);
+		if (workspace !== null && workspace !== undefined) {
+			workspace = workspaceDetector.normalize(workspace);
 		}
+
+		const metadata = { ...inputMeta, ...(expiresAt !== undefined ? { expires_at: expiresAt } : {}), workspace };
 
 		// Handle chunking for long content
 		if (input.auto_chunk && input.content.length > CHUNK_THRESHOLD_LENGTH) {
@@ -149,8 +155,8 @@ async function memoryStoreHandler(args: any): Promise<StandardResponse> {
 		}
 	} catch (error: unknown) {
 		logger.error('Failed to store memory:', error);
-		if (error instanceof Error && error.name === 'ZodError') {
-			return validationError('Invalid input parameters', (error as any).errors);
+		if (error instanceof z.ZodError) {
+			return validationError('Invalid input parameters', error.issues);
 		}
 		return errorResponse('Failed to store memory', 'EXECUTION_ERROR', extractErrorMessage(error));
 	}
@@ -202,8 +208,8 @@ async function memoryQueryHandler(args: any): Promise<StandardResponse> {
 		);
 	} catch (error: unknown) {
 		logger.error('Failed to query memory:', error);
-		if (error instanceof Error && error.name === 'ZodError') {
-			return validationError('Invalid input parameters', (error as any).errors);
+		if (error instanceof z.ZodError) {
+			return validationError('Invalid input parameters', error.issues);
 		}
 		return errorResponse('Failed to query memory', 'EXECUTION_ERROR', extractErrorMessage(error));
 	}
@@ -327,8 +333,8 @@ async function memoryListHandler(args: any): Promise<StandardResponse> {
 		);
 	} catch (error: unknown) {
 		logger.error('Failed to list memories:', error);
-		if (error instanceof Error && error.name === 'ZodError') {
-			return validationError('Invalid input parameters', (error as any).errors);
+		if (error instanceof z.ZodError) {
+			return validationError('Invalid input parameters', error.issues);
 		}
 		return errorResponse('Failed to list memories', 'EXECUTION_ERROR', extractErrorMessage(error));
 	}
@@ -365,8 +371,8 @@ async function memoryGetHandler(args: any): Promise<StandardResponse> {
 		);
 	} catch (error: unknown) {
 		logger.error('Failed to get memory:', error);
-		if (error instanceof Error && error.name === 'ZodError') {
-			return validationError('Invalid input parameters', (error as any).errors);
+		if (error instanceof z.ZodError) {
+			return validationError('Invalid input parameters', error.issues);
 		}
 		return errorResponse('Failed to get memory', 'EXECUTION_ERROR', extractErrorMessage(error));
 	}
@@ -482,8 +488,8 @@ async function memoryUpdateHandler(args: any): Promise<StandardResponse> {
 		);
 	} catch (error: unknown) {
 		logger.error('Failed to update memory:', error);
-		if (error instanceof Error && error.name === 'ZodError') {
-			return validationError('Invalid input parameters', (error as any).errors);
+		if (error instanceof z.ZodError) {
+			return validationError('Invalid input parameters', error.issues);
 		}
 		return errorResponse('Failed to update memory', 'EXECUTION_ERROR', extractErrorMessage(error));
 	}
@@ -520,8 +526,8 @@ async function memoryDeleteHandler(args: any): Promise<StandardResponse> {
 		);
 	} catch (error: unknown) {
 		logger.error('Failed to delete memory:', error);
-		if (error instanceof Error && error.name === 'ZodError') {
-			return validationError('Invalid input parameters', (error as any).errors);
+		if (error instanceof z.ZodError) {
+			return validationError('Invalid input parameters', error.issues);
 		}
 		return errorResponse('Failed to delete memory', 'EXECUTION_ERROR', extractErrorMessage(error));
 	}
@@ -553,8 +559,8 @@ async function memoryBatchDeleteHandler(args: any): Promise<StandardResponse> {
 		);
 	} catch (error: unknown) {
 		logger.error('Failed to batch delete memories:', error);
-		if (error instanceof Error && error.name === 'ZodError') {
-			return validationError('Invalid input parameters', (error as any).errors);
+		if (error instanceof z.ZodError) {
+			return validationError('Invalid input parameters', error.issues);
 		}
 		return errorResponse('Failed to batch delete memories', 'EXECUTION_ERROR', extractErrorMessage(error));
 	}
@@ -623,8 +629,8 @@ async function memoryStatusHandler(args: any): Promise<StandardResponse> {
 		);
 	} catch (error: unknown) {
 		logger.error('Failed to get memory status:', error);
-		if (error instanceof Error && error.name === 'ZodError') {
-			return validationError('Invalid input parameters', (error as any).errors);
+		if (error instanceof z.ZodError) {
+			return validationError('Invalid input parameters', error.issues);
 		}
 		return errorResponse('Failed to get memory status', 'EXECUTION_ERROR', extractErrorMessage(error));
 	}
@@ -656,8 +662,8 @@ async function memoryCountHandler(args: any): Promise<StandardResponse> {
 		);
 	} catch (error: unknown) {
 		logger.error('Failed to count memories:', error);
-		if (error instanceof Error && error.name === 'ZodError') {
-			return validationError('Invalid input parameters', (error as any).errors);
+		if (error instanceof z.ZodError) {
+			return validationError('Invalid input parameters', error.issues);
 		}
 		return errorResponse('Failed to count memories', 'EXECUTION_ERROR', extractErrorMessage(error));
 	}
