@@ -12,6 +12,9 @@
 
 import { z } from 'zod';
 
+/** Reusable workspace field: nullable optional string matching `[a-zA-Z0-9_-]+`. */
+const workspaceFieldSchema = z.string().regex(/^[a-zA-Z0-9_-]+$/).nullable().optional();
+
 const TAG_MAX_LENGTH = 50;
 const TAGS_MAX_COUNT = 20;
 const CONTENT_MAX_LENGTH = 100_000;
@@ -46,7 +49,7 @@ const MetadataInputSchema = z
 		/** Classification controlling retention policy and search behaviour. */
 		memory_type: MemoryTypeSchema.optional(),
 		/** Workspace slug for multi-project isolation (`[a-zA-Z0-9_-]+`). */
-		workspace: z.string().regex(/^[a-zA-Z0-9_-]+$/).nullable().optional(),
+		workspace: workspaceFieldSchema,
 		/** Confidence score in [0, 1] indicating memory reliability. */
 		confidence: z.number().min(0.0).max(1.0).optional(),
 		/** ISO 8601 datetime after which the memory is considered expired. */
@@ -90,7 +93,7 @@ export const MemoryQueryInputSchema = z.object({
 	/** Optional filter to narrow results by workspace, type, confidence, or tags. */
 	filter: z
 		.object({
-			workspace: z.string().regex(/^[a-zA-Z0-9_-]+$/).nullable().optional(),
+			workspace: workspaceFieldSchema,
 			memory_type: MemoryTypeSchema.optional(),
 			min_confidence: z.number().min(0.0).max(1.0).optional(),
 			tags: z.array(z.string().min(1).max(TAG_MAX_LENGTH)).max(TAGS_MAX_COUNT).optional(),
@@ -134,7 +137,7 @@ export const MemoryListInputSchema = z.object({
 	/** Optional filter to narrow the listed memories. */
 	filter: z
 		.object({
-			workspace: z.string().regex(/^[a-zA-Z0-9_-]+$/).nullable().optional(),
+			workspace: workspaceFieldSchema,
 			memory_type: MemoryTypeSchema.optional(),
 			min_confidence: z.number().min(0.0).max(1.0).optional(),
 			tags: z.array(z.string().min(1).max(TAG_MAX_LENGTH)).max(TAGS_MAX_COUNT).optional(),
@@ -225,7 +228,7 @@ export const MemoryStatusInputSchema = z.object({
    * When provided, include a per-workspace point count in the response.
    * Use `null` to query memories with no workspace.
    */
-	workspace: z.string().regex(/^[a-zA-Z0-9_-]+$/).nullable().optional(),
+	workspace: workspaceFieldSchema,
 	/** When `true` (default), include embedding cache and cost statistics. */
 	include_embedding_stats: z.boolean().optional().default(true),
 });
@@ -240,7 +243,7 @@ export const MemoryCountInputSchema = z.object({
 	/** Optional filter to count only matching memories. */
 	filter: z
 		.object({
-			workspace: z.string().regex(/^[a-zA-Z0-9_-]+$/).nullable().optional(),
+			workspace: workspaceFieldSchema,
 			memory_type: MemoryTypeSchema.optional(),
 			min_confidence: z.number().min(0.0).max(1.0).optional(),
 			tags: z.array(z.string().min(1).max(TAG_MAX_LENGTH)).max(TAGS_MAX_COUNT).optional(),
