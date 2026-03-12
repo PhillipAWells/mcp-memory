@@ -9,7 +9,7 @@
 import { Logger, LogLevel, StderrTransport } from '@pawells/logger';
 import { config } from '../config.js';
 
-const level = (config.server.logLevel as unknown as LogLevel) || LogLevel.INFO;
+const level = (config.server.logLevel as LogLevel) || LogLevel.INFO;
 
 /**
  * Singleton logger instance, configured from environment variables.
