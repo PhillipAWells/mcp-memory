@@ -206,6 +206,14 @@ describe('EmbeddingService.chunkText', () => {
 		// chunk[0] = text[0..9], chunk[1] = text[5..14], overlap = text[5..9]
 		expect(chunks[0].slice(5)).toBe(chunks[1].slice(0, 5));
 	});
+
+	it('throws when overlap equals chunk size', () => {
+		expect(() => service.chunkText('a'.repeat(200), 100, 100)).toThrow(/chunkOverlap/);
+	});
+
+	it('throws when overlap exceeds chunk size', () => {
+		expect(() => service.chunkText('a'.repeat(200), 50, 100)).toThrow(/chunkOverlap/);
+	});
 });
 
 // ── validateEmbedding ─────────────────────────────────────────────────────────
@@ -233,6 +241,19 @@ describe('EmbeddingService.validateEmbedding', () => {
 		const vec = new Array(384).fill(0.5);
 		vec[10] = NaN;
 		expect(service.validateEmbedding(vec)).toBe(false);
+	});
+
+	it('returns true for a valid large embedding (384d matches LARGE_DIMENSIONS in test config)', () => {
+		expect(service.validateEmbedding(new Array(384).fill(0.5), 'large')).toBe(true);
+	});
+
+	it('returns false for wrong dimension when checking large variant', () => {
+		expect(service.validateEmbedding(new Array(128).fill(0.5), 'large')).toBe(false);
+	});
+
+	it('defaults to small variant when none specified', () => {
+		// 384d is correct for small in test config
+		expect(service.validateEmbedding(new Array(384).fill(0.5))).toBe(true);
 	});
 });
 
