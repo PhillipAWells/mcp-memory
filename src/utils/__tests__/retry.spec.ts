@@ -3,6 +3,11 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+
+vi.mock('../logger.js', () => ({
+	logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
+
 import { withRetry } from '../retry.js';
 
 describe('withRetry', () => {
@@ -188,5 +193,17 @@ describe('withRetry', () => {
 		await expect(
 			withRetry(operation, { maxRetries: 1, initialDelay: 10 }),
 		).rejects.toThrow('null');
+	});
+
+	it('throws synchronously when backoffFactor is zero', async () => {
+		await expect(
+			withRetry(() => Promise.resolve('ok'), { backoffFactor: 0 }),
+		).rejects.toThrow('backoffFactor must be a positive number');
+	});
+
+	it('throws synchronously when backoffFactor is negative', async () => {
+		await expect(
+			withRetry(() => Promise.resolve('ok'), { backoffFactor: -2 }),
+		).rejects.toThrow('backoffFactor must be a positive number');
 	});
 });

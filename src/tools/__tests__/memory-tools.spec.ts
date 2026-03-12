@@ -238,6 +238,54 @@ describe('memory-list', () => {
 		await getTool('memory-list').handler({ limit: 5, offset: 10 });
 		expect(mockQdrant.list).toHaveBeenCalledWith(undefined, 5, 10);
 	});
+
+	it('applies pagination correctly after in-memory sort by access_count desc', async () => {
+		const now = new Date().toISOString();
+		const memories = [
+			{ id: '1', content: 'a', score: 1, path: '', metadata: { access_count: 10, created_at: now } },
+			{ id: '2', content: 'b', score: 1, path: '', metadata: { access_count: 30, created_at: now } },
+			{ id: '3', content: 'c', score: 1, path: '', metadata: { access_count: 20, created_at: now } },
+		];
+		mockQdrant.count.mockResolvedValueOnce(3);
+		mockQdrant.list.mockResolvedValueOnce(memories);
+
+		const result = await getTool('memory-list').handler({
+			sort_by: 'access_count',
+			sort_order: 'desc',
+			limit: 1,
+			offset: 1,
+		});
+
+		expect(result.success).toBe(true);
+		// Sorted desc: [30(id=2), 20(id=3), 10(id=1)] → offset=1 limit=1 → id=3
+		expect(result.data?.memories).toHaveLength(1);
+		expect(result.data?.memories[0].id).toBe('3');
+	});
+
+	it('fetches from offset 0 when sorting in memory (not the user offset)', async () => {
+		// count() is called twice: once for warn-check, once for fetchLimit
+		mockQdrant.count.mockResolvedValueOnce(5).mockResolvedValueOnce(5);
+		mockQdrant.list.mockResolvedValueOnce([]);
+
+		await getTool('memory-list').handler({
+			sort_by: 'access_count',
+			limit: 10,
+			offset: 2,
+		});
+
+		// Must fetch from 0, not from user offset=2, to sort globally before slicing
+		expect(mockQdrant.list).toHaveBeenCalledWith(undefined, 5, 0);
+	});
+
+	it('caps fetch at MAX_IN_MEMORY_SORT_COUNT when count exceeds limit', async () => {
+		// count() is called twice: once for warn-check, once for fetchLimit
+		mockQdrant.count.mockResolvedValueOnce(20000).mockResolvedValueOnce(20000);
+		mockQdrant.list.mockResolvedValueOnce([]);
+
+		await getTool('memory-list').handler({ sort_by: 'access_count' });
+
+		expect(mockQdrant.list).toHaveBeenCalledWith(undefined, 10000, 0);
+	});
 });
 
 // ── memory-get ────────────────────────────────────────────────────────────────

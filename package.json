@@ -1,7 +1,7 @@
 {
 	"name": "@pawells/mcp-memory",
 	"displayName": "MCP Memory",
-	"version": "1.0.7",
+	"version": "1.1.0",
 	"description": "Model Context Protocol server for semantic memory and knowledge management with Claude Code",
 	"type": "module",
 	"main": "./build/index.js",
@@ -17,36 +17,38 @@
 		"test": "vitest run",
 		"test:ui": "vitest --ui",
 		"test:coverage": "vitest --coverage",
+		"pipeline": "yarn typecheck && yarn lint && yarn test && yarn build",
 		"prepublishOnly": "npm run build",
 		"prepare": "husky"
 	},
 	"dependencies": {
 		"@huggingface/transformers": "^3.8.1",
 		"@modelcontextprotocol/sdk": "^0.5.0",
+		"@pawells/logger": "1.2.2",
 		"@qdrant/js-client-rest": "^1.9.0",
-		"chokidar": "^3.5.3",
-		"dotenv": "^16.3.1",
+		"chokidar": "^5.0.0",
+		"dotenv": "^17.3.1",
 		"gray-matter": "^4.0.3",
-		"ignore": "^5.3.0",
-		"openai": "^4.20.0",
+		"ignore": "^7.0.5",
+		"openai": "^6.27.0",
 		"uuid": "^10.0.0",
-		"zod": "^3.25.76",
+		"zod": "^4.3.6",
 		"zod-to-json-schema": "^3.25.1"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
-		"@stylistic/eslint-plugin": "^5.9.0",
-		"@types/node": "^25.3.0",
+		"@stylistic/eslint-plugin": "^5.10.0",
+		"@types/node": "^25.4.0",
 		"@types/uuid": "^10.0.0",
-		"@typescript-eslint/eslint-plugin": "^8.0.0",
-		"@typescript-eslint/parser": "^8.0.0",
+		"@typescript-eslint/eslint-plugin": "^8.57.0",
+		"@typescript-eslint/parser": "^8.57.0",
 		"@vitest/coverage-v8": "^4.0.18",
 		"@vitest/ui": "^4.0.18",
-		"eslint": "^10.0.1",
+		"eslint": "^10.0.3",
 		"eslint-import-resolver-typescript": "^4.4.4",
 		"eslint-plugin-import": "^2.31.0",
 		"eslint-plugin-unused-imports": "^4.0.0",
-		"globals": "^17.3.0",
+		"globals": "^17.4.0",
 		"husky": "^9.1.7",
 		"typescript": "^5.3.3",
 		"vitest": "^4.0.18"
@@ -76,7 +78,7 @@
 	},
 	"homepage": "https://github.com/PhillipAWells/mcp-memory#readme",
 	"engines": {
-		"node": ">=24.0.0"
+		"node": ">=22.0.0"
 	},
 	"packageManager": "yarn@4.12.0",
 	"files": [

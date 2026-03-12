@@ -71,6 +71,11 @@ export async function withRetry<T>(
 	options: RetryOptions = {},
 ): Promise<T> {
 	const opts = { ...DEFAULT_OPTIONS, ...options };
+
+	if (opts.backoffFactor <= 0) {
+		throw new Error(`backoffFactor must be a positive number, got ${opts.backoffFactor}`);
+	}
+
 	let lastError: Error | undefined;
 
 	for (let attempt = 1; attempt <= opts.maxRetries; attempt++) {
