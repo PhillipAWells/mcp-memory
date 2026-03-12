@@ -60,7 +60,7 @@ MCP Client (Claude Code) → MCP Server (src/index.ts)
 - `QdrantService` — Vector database operations; stores two named vectors per point (`dense` for small embeddings, `dense_large` for large). Supports dense HNSW + sparse BM25 hybrid search with Reciprocal Rank Fusion (RRF).
 - `EmbeddingService` — OpenAI embeddings (text-embedding-3-small/large) or local HuggingFace model with 10,000-entry LRU cache and cost tracking.
 - `LocalEmbeddingProvider` — HuggingFace/ONNX CPU inference (default: `Xenova/all-MiniLM-L6-v2`, 384d). Model cached at `~/.cache/mcp-memory/models`; first call downloads ~20–140 MB depending on model.
-- `SecretsDetector` — Blocks storage of 18+ secret patterns (API keys, tokens, passwords, etc.). High-confidence matches block immediately; 5+ distinct medium-confidence matches also block.
+- `SecretsDetector` — Blocks storage of 18+ secret patterns (API keys, tokens, passwords, etc.). High-confidence matches block immediately; 3+ distinct medium-confidence matches also block.
 - `WorkspaceDetector` — Derives workspace name from env var → package.json → directory name. Reserved names (`system`, `admin`, `root`, etc.) are rejected.
 - `RulesManager` — Copies `rules/*.md` into `.claude/rules/` at startup.
 
