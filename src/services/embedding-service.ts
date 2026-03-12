@@ -327,6 +327,12 @@ export class EmbeddingService {
 		chunkSize: number = config.memory.chunkSize,
 		overlap: number = config.memory.chunkOverlap,
 	): string[] {
+		if (overlap >= chunkSize) {
+			throw new Error(
+				`chunkOverlap (${overlap}) must be less than chunkSize (${chunkSize}) to avoid an infinite loop`,
+			);
+		}
+
 		if (text.length <= chunkSize) {
 			return [text];
 		}
