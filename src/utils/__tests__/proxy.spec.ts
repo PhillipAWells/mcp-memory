@@ -1,0 +1,275 @@
+/**
+ * Tests for HTTP(S) proxy configuration (src/utils/proxy.ts)
+ *
+ * IMPORTANT: These tests use vi.resetModules() + dynamic import() to
+ * re-evaluate the module side effect with different env var values per test.
+ * Static top-level imports will NOT work for tests that need to vary env vars.
+ */
+
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { Agent, EnvHttpProxyAgent, getGlobalDispatcher, setGlobalDispatcher } from 'undici';
+import type { Dispatcher } from 'undici';
+
+let originalDispatcher: Dispatcher;
+
+beforeEach(() => {
+	// Save the current dispatcher and install a fresh default Agent
+	originalDispatcher = getGlobalDispatcher();
+	setGlobalDispatcher(new Agent());
+
+	// Clear all proxy env vars
+	delete process.env.HTTPS_PROXY;
+	delete process.env.https_proxy;
+	delete process.env.HTTP_PROXY;
+	delete process.env.http_proxy;
+	delete process.env.NO_PROXY;
+	delete process.env.no_proxy;
+
+	// Reset module registry so the side effect re-runs on next import
+	vi.resetModules();
+});
+
+afterEach(() => {
+	// Restore the original dispatcher
+	setGlobalDispatcher(originalDispatcher);
+
+	// Clean up env vars
+	delete process.env.HTTPS_PROXY;
+	delete process.env.https_proxy;
+	delete process.env.HTTP_PROXY;
+	delete process.env.http_proxy;
+	delete process.env.NO_PROXY;
+	delete process.env.no_proxy;
+});
+
+// ---------------------------------------------------------------------------
+// getActiveProxyUrl
+// ---------------------------------------------------------------------------
+
+describe('getActiveProxyUrl', () => {
+	it('returns null when no proxy env vars are set', async () => {
+		const { getActiveProxyUrl } = await import('../proxy.js');
+		expect(getActiveProxyUrl()).toBeNull();
+	});
+
+	it('returns HTTPS_PROXY when set', async () => {
+		process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+		const { getActiveProxyUrl } = await import('../proxy.js');
+		expect(getActiveProxyUrl()).toBe('http://proxy.example.com:8080');
+	});
+
+	it('returns lowercase https_proxy when set', async () => {
+		process.env.https_proxy = 'http://proxy.example.com:8080';
+		const { getActiveProxyUrl } = await import('../proxy.js');
+		expect(getActiveProxyUrl()).toBe('http://proxy.example.com:8080');
+	});
+
+	it('prefers uppercase HTTPS_PROXY over lowercase https_proxy', async () => {
+		process.env.HTTPS_PROXY = 'http://upper.example.com:8080';
+		process.env.https_proxy = 'http://lower.example.com:8080';
+		const { getActiveProxyUrl } = await import('../proxy.js');
+		expect(getActiveProxyUrl()).toBe('http://upper.example.com:8080');
+	});
+
+	it('falls back to HTTP_PROXY when HTTPS_PROXY is absent', async () => {
+		process.env.HTTP_PROXY = 'http://http-proxy.example.com:8080';
+		const { getActiveProxyUrl } = await import('../proxy.js');
+		expect(getActiveProxyUrl()).toBe('http://http-proxy.example.com:8080');
+	});
+
+	it('falls back to lowercase http_proxy', async () => {
+		process.env.http_proxy = 'http://lower-http-proxy.example.com:8080';
+		const { getActiveProxyUrl } = await import('../proxy.js');
+		expect(getActiveProxyUrl()).toBe('http://lower-http-proxy.example.com:8080');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Module-level side effect (dispatcher installation)
+// ---------------------------------------------------------------------------
+
+describe('module side effect', () => {
+	it('does NOT change the global dispatcher when no proxy vars are set', async () => {
+		const dispatcherBefore = getGlobalDispatcher();
+		await import('../proxy.js');
+		expect(getGlobalDispatcher()).toBe(dispatcherBefore);
+	});
+
+	it('installs an EnvHttpProxyAgent when HTTPS_PROXY is set', async () => {
+		process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+		await import('../proxy.js');
+		expect(getGlobalDispatcher()).toBeInstanceOf(EnvHttpProxyAgent);
+	});
+
+	it('installs an EnvHttpProxyAgent when HTTP_PROXY is set', async () => {
+		process.env.HTTP_PROXY = 'http://proxy.example.com:8080';
+		await import('../proxy.js');
+		expect(getGlobalDispatcher()).toBeInstanceOf(EnvHttpProxyAgent);
+	});
+
+	it('sets activeProxyAgent when HTTPS_PROXY is set', async () => {
+		process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+		const mod = await import('../proxy.js');
+		expect(mod.activeProxyAgent).toBeInstanceOf(EnvHttpProxyAgent);
+	});
+
+	it('leaves activeProxyAgent as null when no proxy is configured', async () => {
+		const mod = await import('../proxy.js');
+		expect(mod.activeProxyAgent).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Default NO_PROXY behaviour
+// ---------------------------------------------------------------------------
+
+describe('default NO_PROXY', () => {
+	it('sets NO_PROXY to DEFAULT_NO_PROXY when proxy is configured and NO_PROXY is absent', async () => {
+		process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+		const { DEFAULT_NO_PROXY } = await import('../proxy.js');
+		expect(process.env.NO_PROXY).toBe(DEFAULT_NO_PROXY);
+	});
+
+	it('sets noProxyDefaulted=true when NO_PROXY was absent', async () => {
+		process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+		const mod = await import('../proxy.js');
+		expect(mod.noProxyDefaulted).toBe(true);
+	});
+
+	it('does NOT override an explicitly set NO_PROXY', async () => {
+		process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+		process.env.NO_PROXY = 'custom.internal,10.0.0.0/8';
+		await import('../proxy.js');
+		expect(process.env.NO_PROXY).toBe('custom.internal,10.0.0.0/8');
+	});
+
+	it('does NOT override a lowercase no_proxy', async () => {
+		process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+		process.env.no_proxy = 'custom.internal';
+		const mod = await import('../proxy.js');
+		expect(process.env.NO_PROXY).toBeUndefined();
+		expect(process.env.no_proxy).toBe('custom.internal');
+		expect(mod.noProxyDefaulted).toBe(false);
+	});
+
+	it('leaves noProxyDefaulted=false when user provided NO_PROXY', async () => {
+		process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+		process.env.NO_PROXY = 'custom.internal';
+		const mod = await import('../proxy.js');
+		expect(mod.noProxyDefaulted).toBe(false);
+	});
+
+	it('does not set NO_PROXY when no proxy is configured', async () => {
+		await import('../proxy.js');
+		expect(process.env.NO_PROXY).toBeUndefined();
+	});
+
+	it('DEFAULT_NO_PROXY includes localhost, 127.0.0.1, and ::1', async () => {
+		const { DEFAULT_NO_PROXY } = await import('../proxy.js');
+		expect(DEFAULT_NO_PROXY).toContain('localhost');
+		expect(DEFAULT_NO_PROXY).toContain('127.0.0.1');
+		expect(DEFAULT_NO_PROXY).toContain('::1');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// initProxy logging
+// ---------------------------------------------------------------------------
+
+describe('initProxy', () => {
+	it('logs "not configured" when no proxy vars are set', async () => {
+		const { initProxy } = await import('../proxy.js');
+		const log = { info: vi.fn(), warn: vi.fn() };
+		initProxy(log);
+		expect(log.info).toHaveBeenCalledWith(expect.stringContaining('not configured'));
+		expect(log.warn).not.toHaveBeenCalled();
+	});
+
+	it('logs the proxy URL when HTTPS_PROXY is set', async () => {
+		process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+		const { initProxy } = await import('../proxy.js');
+		const log = { info: vi.fn(), warn: vi.fn() };
+		initProxy(log);
+		expect(log.info).toHaveBeenCalledWith(
+			expect.stringContaining('http://proxy.example.com:8080'),
+		);
+	});
+
+	it('logs that NO_PROXY was defaulted when not supplied by user', async () => {
+		process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+		const { initProxy, DEFAULT_NO_PROXY } = await import('../proxy.js');
+		const log = { info: vi.fn(), warn: vi.fn() };
+		initProxy(log);
+		expect(log.info).toHaveBeenCalledWith(expect.stringContaining('defaulted'));
+		expect(log.info).toHaveBeenCalledWith(expect.stringContaining(DEFAULT_NO_PROXY));
+		expect(log.warn).not.toHaveBeenCalled();
+	});
+
+	it('logs user-supplied NO_PROXY exclusions without "defaulted" language', async () => {
+		process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+		process.env.NO_PROXY = 'custom.internal,10.0.0.0/8';
+		const { initProxy } = await import('../proxy.js');
+		const log = { info: vi.fn(), warn: vi.fn() };
+		initProxy(log);
+		expect(log.info).toHaveBeenCalledWith(expect.stringContaining('custom.internal'));
+		// Should NOT say "defaulted"
+		const allInfoCalls = (log.info as ReturnType<typeof vi.fn>).mock.calls.flat().join(' ');
+		expect(allInfoCalls).not.toContain('defaulted');
+		expect(log.warn).not.toHaveBeenCalled();
+	});
+
+	it('never warns regardless of NO_PROXY state when proxy is active', async () => {
+		process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+		const { initProxy } = await import('../proxy.js');
+		const log = { info: vi.fn(), warn: vi.fn() };
+		initProxy(log);
+		expect(log.warn).not.toHaveBeenCalled();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// resetProxy
+// ---------------------------------------------------------------------------
+
+describe('resetProxy', () => {
+	it('restores a default Agent dispatcher and clears activeProxyAgent', async () => {
+		process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+		const mod = await import('../proxy.js');
+
+		// Proxy should be active
+		expect(getGlobalDispatcher()).toBeInstanceOf(EnvHttpProxyAgent);
+		expect(mod.activeProxyAgent).not.toBeNull();
+
+		// Reset
+		mod.resetProxy();
+
+		// Should be back to a plain Agent
+		expect(getGlobalDispatcher()).toBeInstanceOf(Agent);
+		expect(mod.activeProxyAgent).toBeNull();
+	});
+
+	it('removes the auto-defaulted NO_PROXY on reset', async () => {
+		process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+		const mod = await import('../proxy.js');
+
+		// Default should have been applied
+		expect(process.env.NO_PROXY).toBe(mod.DEFAULT_NO_PROXY);
+
+		mod.resetProxy();
+
+		// Should be cleaned up
+		expect(process.env.NO_PROXY).toBeUndefined();
+		expect(mod.noProxyDefaulted).toBe(false);
+	});
+
+	it('preserves a user-supplied NO_PROXY on reset', async () => {
+		process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+		process.env.NO_PROXY = 'custom.internal';
+		const mod = await import('../proxy.js');
+
+		mod.resetProxy();
+
+		// User's value must not be deleted
+		expect(process.env.NO_PROXY).toBe('custom.internal');
+	});
+});

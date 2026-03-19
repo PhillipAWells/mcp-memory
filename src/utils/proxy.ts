@@ -1,0 +1,123 @@
+/**
+ * HTTP(S) Proxy Configuration
+ *
+ * Installs a global fetch dispatcher using undici's EnvHttpProxyAgent when any
+ * of the standard proxy environment variables are set (HTTPS_PROXY, HTTP_PROXY,
+ * https_proxy, http_proxy).
+ *
+ * This module must be imported before any HTTP client is constructed, because it
+ * patches the undici global dispatcher — affecting all three HTTP clients:
+ *   - OpenAI SDK (uses globalThis.fetch internally)
+ *   - Qdrant JS client (uses native fetch; exposes no proxy hook)
+ *   - HuggingFace Transformers.js (uses globalThis.fetch for model downloads)
+ *
+ * No new npm production dependencies are introduced. undici is a bundled
+ * dependency of Node.js 22+ and is already present in node_modules.
+ *
+ * Standard proxy environment variables:
+ *   HTTPS_PROXY / https_proxy — proxy for HTTPS requests
+ *   HTTP_PROXY  / http_proxy  — proxy for HTTP requests
+ *   NO_PROXY    / no_proxy    — comma-separated list of hosts to bypass
+ *
+ * When a proxy is active and NO_PROXY is not set, DEFAULT_NO_PROXY is applied
+ * automatically so local services (e.g. Qdrant on localhost) are never routed
+ * through the proxy unintentionally.
+ */
+
+import { Agent, EnvHttpProxyAgent, setGlobalDispatcher } from 'undici';
+import type { Dispatcher } from 'undici';
+
+/**
+ * The NO_PROXY value applied automatically when a proxy is configured but
+ * NO_PROXY is absent or empty. Excludes common localhost addresses.
+ */
+export const DEFAULT_NO_PROXY = 'localhost,127.0.0.1,::1';
+
+/**
+ * Resolve the active proxy URL from the standard environment variables.
+ * Returns the first non-empty value found in priority order, or null.
+ */
+export function getActiveProxyUrl(): string | null {
+	return (
+		process.env.HTTPS_PROXY ??
+		process.env.https_proxy ??
+		process.env.HTTP_PROXY ??
+		process.env.http_proxy ??
+		null
+	);
+}
+
+/**
+ * The EnvHttpProxyAgent installed as the global dispatcher, or null if no
+ * proxy is configured. Exposed for test introspection.
+ */
+export let activeProxyAgent: Dispatcher | null = null;
+
+/**
+ * True if NO_PROXY was automatically set to DEFAULT_NO_PROXY by this module
+ * (i.e. the user did not supply their own value). Used by initProxy() for
+ * accurate startup logging, and by resetProxy() for clean test teardown.
+ */
+export let noProxyDefaulted = false;
+
+// --- Module-level side effect ---
+// Runs synchronously when this module is first evaluated (at import time).
+// The proxy import in src/index.ts must appear before all other imports.
+const _proxyUrl = getActiveProxyUrl();
+
+if (_proxyUrl !== null) {
+	// If NO_PROXY is absent or empty, apply the safe default before constructing
+	// the EnvHttpProxyAgent (which reads NO_PROXY at construction/request time).
+	// This prevents local services such as Qdrant (localhost:6333) from being
+	// accidentally routed through the corporate proxy.
+	if (!process.env.NO_PROXY && !process.env.no_proxy) {
+		process.env.NO_PROXY = DEFAULT_NO_PROXY;
+		noProxyDefaulted = true;
+	}
+
+	const agent = new EnvHttpProxyAgent();
+	setGlobalDispatcher(agent);
+	activeProxyAgent = agent;
+}
+
+/**
+ * Log proxy status using the provided logger. Call this once during server
+ * startup, after the logger is available, to confirm proxy configuration.
+ *
+ * The global dispatcher is already installed by the time this function is
+ * called (the side effect above ran at import time).
+ */
+export function initProxy(log: { info: (msg: string) => void; warn: (msg: string) => void }): void {
+	const url = getActiveProxyUrl();
+
+	if (url === null) {
+		log.info('Proxy: not configured (HTTPS_PROXY / HTTP_PROXY not set)');
+		return;
+	}
+
+	log.info(`Proxy: active — routing all fetch traffic through ${url}`);
+
+	const noProxy = process.env.NO_PROXY ?? process.env.no_proxy ?? '';
+	if (noProxyDefaulted) {
+		log.info(
+			`Proxy: NO_PROXY defaulted to "${noProxy}" — set NO_PROXY explicitly to override`,
+		);
+	} else {
+		log.info(`Proxy: NO_PROXY exclusions: ${noProxy}`);
+	}
+}
+
+/**
+ * Reset the global dispatcher to a new default Agent and clear all proxy state.
+ * Also removes NO_PROXY from the environment if it was auto-defaulted.
+ *
+ * @internal — For use in tests only. Do not call in production code.
+ */
+export function resetProxy(): void {
+	if (noProxyDefaulted) {
+		delete process.env.NO_PROXY;
+		noProxyDefaulted = false;
+	}
+	setGlobalDispatcher(new Agent());
+	activeProxyAgent = null;
+}
