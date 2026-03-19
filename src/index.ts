@@ -9,6 +9,9 @@
  * classification, secrets detection, and workspace isolation.
  */
 
+// Proxy MUST be the first import — sets the global fetch dispatcher before any HTTP client module initialises.
+import { initProxy } from './utils/proxy.js';
+
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -28,6 +31,9 @@ import { extractErrorMessage } from './utils/errors.js';
  */
 async function main(): Promise<void> {
 	logger.info('Starting MCP Memory Server...');
+
+	// Initialize proxy configuration (if any proxy env vars are set)
+	initProxy(logger);
 
 	// Sanitize config to prevent logging sensitive information
 	const sanitizedConfig = {
