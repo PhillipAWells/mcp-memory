@@ -46,7 +46,7 @@ MCP Client (Claude Code) → MCP Server (src/index.ts)
                          → External: OpenAI API + Qdrant DB
 ```
 
-**Entry point** (`src/index.ts`): Initializes the MCP server, registers 9 tool handlers, and starts RulesManager to copy `rules/` into `.claude/rules/` on startup. When `EMBEDDING_PROVIDER=local`, preloads the HuggingFace/ONNX model in the background.
+**Entry point** (`src/index.ts`): Initializes the MCP server, registers 9 tool handlers, and starts RulesManager to copy `rules/` into `.claude/rules/` on startup. When `EMBEDDING_PROVIDER=local`, preloads the HuggingFace/ONNX model in the background. `src/utils/proxy.ts` is imported first to ensure the global fetch dispatcher is configured before any HTTP client is constructed.
 
 **Configuration** (`src/config.ts`): All environment variables are loaded and validated using Zod schemas. See `.env.example` for complete variable list. `QDRANT_URL` is the only required variable; embedding provider is auto-detected based on presence of `OPENAI_API_KEY`.
 
@@ -68,6 +68,7 @@ MCP Client (Claude Code) → MCP Server (src/index.ts)
 - `response.ts` — `successResponse()`, `errorResponse()`, `validationError()`, `notFoundError()` helpers for MCP protocol compliance.
 - `logger.ts` — Singleton logger with `debug/info/warn/error` methods; level controlled by `LOG_LEVEL` env var.
 - `retry.ts` — Exponential backoff retry logic for external API calls.
+- `proxy.ts` — Proxy initialisation; reads `HTTPS_PROXY`/`HTTP_PROXY` env vars and installs a global undici `EnvHttpProxyAgent` dispatcher at import time. Auto-defaults `NO_PROXY` to `localhost,127.0.0.1,::1` when a proxy is active and no exclusions are set. Must be the first import in `src/index.ts`.
 - `errors.ts` — Custom error types.
 
 ## Key Patterns
@@ -126,3 +127,5 @@ Or use `QDRANT_URL` env var to point to a cloud instance.
 **Rules Synchronization**: By default (`COPY_CLAUDE_RULES=true`), the server copies `rules/memory.md` into `.claude/rules/memory.md` on startup. This allows Claude Code to automatically load memory usage guidance as system context.
 
 **Development Container**: A custom `.devcontainer/Dockerfile` is provided with Node.js environment and post-creation setup hook.
+
+**Proxy Support**: All outbound HTTP traffic (OpenAI API, Qdrant, HuggingFace model downloads) is automatically proxied when `HTTPS_PROXY` or `HTTP_PROXY` is set. `NO_PROXY` defaults to `localhost,127.0.0.1,::1` when a proxy is active and the variable is absent, protecting local Qdrant traffic. See `src/utils/proxy.ts`.
