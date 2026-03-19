@@ -9,6 +9,12 @@
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 
+// Note: Proxy configuration (HTTPS_PROXY / HTTP_PROXY) is handled globally by
+// src/utils/proxy.ts, which patches the undici global dispatcher before this
+// module is loaded. No per-client fetch override is needed here because
+// @huggingface/transformers uses globalThis.fetch for model downloads, which
+// is automatically covered by the global dispatcher.
+
 /**
  * Minimal call signature for the HuggingFace feature-extraction pipeline.
  *

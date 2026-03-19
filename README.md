@@ -18,6 +18,7 @@ Model Context Protocol (MCP) server for persistent memory and knowledge manageme
 - **Dual Embeddings** - Small and large embedding vectors per memory for precision/recall trade-offs
 - **Local Embeddings** - Runs fully offline via HuggingFace/ONNX — no API key required
 - **Cost Optimization** - LRU caching and usage tracking for embedding API calls
+- **Corporate Proxy Support** — Routes all outbound traffic through HTTP(S) proxies via standard `HTTPS_PROXY` / `HTTP_PROXY` env vars; `NO_PROXY` defaults to `localhost,127.0.0.1,::1` automatically
 
 ## Quick Start
 
@@ -100,6 +101,20 @@ yarn test           # Run tests
 |---|---|---|
 | `LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error`, `silent` |
 | `COPY_CLAUDE_RULES` | `true` | Copy `rules/` → `.claude/rules/` on startup |
+
+### Proxy
+
+For environments behind a corporate firewall, set the standard proxy environment variables. All outbound traffic — OpenAI API calls, Qdrant requests, and HuggingFace model downloads — is automatically routed through the configured proxy.
+
+| Variable | Default | Description |
+|---|---|---|
+| `HTTPS_PROXY` | *(unset)* | Proxy URL for HTTPS traffic (e.g. `http://proxy.corp.com:8080`) |
+| `HTTP_PROXY` | *(unset)* | Proxy URL for HTTP traffic |
+| `NO_PROXY` | `localhost,127.0.0.1,::1` | Comma-separated hostnames/IPs to bypass the proxy. Defaults to local addresses when a proxy is active, preventing Qdrant (typically on `localhost`) from being routed through the proxy. |
+
+> Lowercase variants (`https_proxy`, `http_proxy`, `no_proxy`) are also accepted. Uppercase takes priority.
+>
+> `NO_PROXY` is **only auto-defaulted when a proxy is active** — if no proxy is configured, `NO_PROXY` is left untouched.
 
 ## Local Embeddings (No API Key)
 
@@ -237,6 +252,10 @@ Check for duplicates before storing — update existing memories rather than dup
 **Poor query results** — Try different phrasings; check whether a workspace filter is excluding relevant memories; lower `score_threshold` if results are sparse.
 
 **Storage rejected** — Content likely contains a detected secret; sanitize and retry.
+
+**Requests timing out or failing behind a corporate firewall** — Set `HTTPS_PROXY=http://proxy.corp.com:8080` (and optionally `HTTP_PROXY`). The server routes all traffic through the proxy automatically. Run with `LOG_LEVEL=debug` to confirm proxy is active at startup.
+
+**Proxy is set but Qdrant requests fail** — Check that Qdrant's hostname is covered by `NO_PROXY`. The server defaults `NO_PROXY` to `localhost,127.0.0.1,::1` automatically, but if Qdrant is reachable under a different hostname you must add it explicitly.
 
 ## License
 
