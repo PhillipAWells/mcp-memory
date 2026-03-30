@@ -360,7 +360,7 @@ describe('memory-update', () => {
 		expect(result.error_type).toBe('NOT_FOUND_ERROR');
 	});
 
-	it('blocks updating individual chunks of a chunked memory', async () => {
+	it('transparently updates all siblings when updating a chunk (metadata-only)', async () => {
 		mockQdrant.get.mockResolvedValueOnce({
 			...baseMemory,
 			metadata: {
@@ -370,13 +370,50 @@ describe('memory-update', () => {
 				chunk_group_id: 'group-id-xyz',
 			},
 		});
+		mockQdrant.list.mockResolvedValueOnce([
+			{
+				id: 'chunk-1',
+				content: 'chunk 1 content',
+				score: 1,
+				path: '',
+				metadata: {
+					...baseMemory.metadata,
+					chunk_index: 0,
+					total_chunks: 3,
+					chunk_group_id: 'group-id-xyz',
+				},
+			},
+			{
+				id: 'chunk-2',
+				content: 'chunk 2 content',
+				score: 1,
+				path: '',
+				metadata: {
+					...baseMemory.metadata,
+					chunk_index: 1,
+					total_chunks: 3,
+					chunk_group_id: 'group-id-xyz',
+				},
+			},
+			{
+				id: 'chunk-3',
+				content: 'chunk 3 content',
+				score: 1,
+				path: '',
+				metadata: {
+					...baseMemory.metadata,
+					chunk_index: 2,
+					total_chunks: 3,
+					chunk_group_id: 'group-id-xyz',
+				},
+			},
+		]);
 		const result = await getTool('memory-update').handler({
 			id: VALID_UUID,
 			metadata: { confidence: 0.9 },
 		});
-		expect(result.success).toBe(false);
-		expect(result.error_type).toBe('VALIDATION_ERROR');
-		expect(result.metadata?.chunk_group_id).toBe('group-id-xyz');
+		expect(result.success).toBe(true);
+		expect(result.data?.siblings_updated).toBe(3);
 	});
 
 	it('reindexes when content is updated and reindex=true', async () => {
