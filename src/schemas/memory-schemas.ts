@@ -190,6 +190,12 @@ export const MemoryUpdateInputSchema = z.object({
    * existing Qdrant point (upsert-first, no delete risk).  Default `false`.
    */
 	reindex: z.boolean().optional().default(false),
+	/**
+	   * When `true` (default), content longer than 1 000 characters is split into
+	   * overlapping chunks, each stored as a separate point that shares a
+	   * `chunk_group_id`.
+	   */
+	auto_chunk: z.boolean().optional().default(true),
 });
 
 /** Type-safe input for the `memory-update` tool, inferred from {@link MemoryUpdateInputSchema}. */
