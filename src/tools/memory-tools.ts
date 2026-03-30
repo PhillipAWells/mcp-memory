@@ -428,25 +428,120 @@ async function memoryUpdateHandler(args: any): Promise<StandardResponse> {
 			return notFoundError(`Memory with ID ${input.id}`);
 		}
 
-		// Guard against updating individual chunks of a chunked memory.
-		// Updating one chunk would leave its siblings stale with no way to sync them.
+		// Handle updates to individual chunks of a chunked memory transparently
 		if (existing.metadata?.chunk_index !== undefined) {
 			const chunkGroupId = existing.metadata?.chunk_group_id;
-			return errorResponse(
-				'Cannot update an individual chunk of a chunked memory',
-				'VALIDATION_ERROR',
-				'Updating one chunk would leave its siblings out of sync.',
-				{
-					id: input.id,
-					chunk_index: existing.metadata.chunk_index,
-					total_chunks: existing.metadata.total_chunks,
-					chunk_group_id: chunkGroupId,
-					suggestion: chunkGroupId
-						? `Delete all chunks sharing chunk_group_id "${chunkGroupId}" ` +
-              '(use memory-query or memory-list with metadata filter), then re-store the updated content.'
-						: 'Delete this chunk and its siblings, then re-store the updated content.',
-				},
-			);
+
+			// Case A: Content update - re-chunk and re-store all siblings
+			if (input.content) {
+				// Find all siblings sharing the same chunk_group_id
+				const siblings = chunkGroupId
+					? await qdrantService.list({ metadata: { chunk_group_id: chunkGroupId } })
+					: [{ id: input.id, metadata: existing.metadata }];
+
+				const siblingIds = siblings.map(s => s.id);
+
+				// Delete all old chunks
+				if (siblingIds.length > 0) {
+					await qdrantService.batchDelete(siblingIds);
+				}
+
+				// Re-chunk and re-store with new content
+				const baseMetadata = { ...existing.metadata };
+				// Strip chunk-specific fields from base before overlaying input metadata
+				delete baseMetadata.chunk_index;
+				delete baseMetadata.total_chunks;
+				delete baseMetadata.chunk_group_id;
+
+				const mergedMetadata = { ...baseMetadata, ...input.metadata };
+
+				// Decide: chunk the new content or store as single?
+				if (input.auto_chunk && input.content.length > CHUNK_THRESHOLD_LENGTH) {
+					const chunked = await embeddingService.generateChunkedEmbeddings(input.content);
+					const newChunkGroupId = uuidv4();
+
+					const newIds: string[] = [];
+					for (const { chunk, embedding, index, total } of chunked) {
+						const largeEmbedding = await embeddingService.generateLargeEmbedding(chunk);
+						const id = await qdrantService.upsert(
+							chunk,
+							embedding,
+							{ ...mergedMetadata, chunk_index: index, total_chunks: total, chunk_group_id: newChunkGroupId },
+							largeEmbedding,
+						);
+						newIds.push(id);
+					}
+
+					logger.info(`Chunked memory updated: re-stored ${newIds.length} chunks (deleted ${siblingIds.length} old chunks)`);
+
+					return successResponse(
+						'Chunked memory updated and re-stored',
+						{
+							id: newIds[0], // Return first chunk ID as representative
+							chunks: newIds.length,
+							old_chunks: siblingIds.length,
+							chunk_group_id: newChunkGroupId,
+						},
+						{
+							duration_ms: Date.now() - startTime,
+						},
+					);
+				} else {
+					// Store as a single memory (no chunking)
+					const dual = await embeddingService.generateDualEmbeddings(input.content);
+					const newId = await qdrantService.upsert(input.content, dual.small, mergedMetadata, dual.large);
+
+					logger.info(`Chunked memory updated: re-stored as single memory (deleted ${siblingIds.length} chunks)`);
+
+					return successResponse(
+						'Chunked memory updated and consolidated into single memory',
+						{
+							id: newId,
+							old_chunks: siblingIds.length,
+						},
+						{
+							duration_ms: Date.now() - startTime,
+						},
+					);
+				}
+			}
+
+			// Case B: Metadata-only update - update all siblings
+			if (chunkGroupId) {
+				const siblings = await qdrantService.list({ metadata: { chunk_group_id: chunkGroupId } });
+
+				for (const sibling of siblings) {
+					await qdrantService.updatePayload(sibling.id, input.metadata ?? {});
+				}
+
+				logger.info(`Updated metadata across ${siblings.length} chunk siblings`);
+
+				return successResponse(
+					'Metadata updated across all chunk siblings',
+					{
+						id: input.id,
+						siblings_updated: siblings.length,
+					},
+					{
+						duration_ms: Date.now() - startTime,
+					},
+				);
+			} else {
+				// No chunk_group_id, just update this chunk's metadata
+				await qdrantService.updatePayload(input.id, input.metadata ?? {});
+
+				logger.info(`Chunk metadata updated: ${input.id}`);
+
+				return successResponse(
+					'Chunk metadata updated',
+					{
+						id: input.id,
+					},
+					{
+						duration_ms: Date.now() - startTime,
+					},
+				);
+			}
 		}
 
 		// If content is being updated and reindex is requested
