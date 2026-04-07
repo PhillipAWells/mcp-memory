@@ -203,15 +203,15 @@ __metadata:
   linkType: hard
 
 "@huggingface/transformers@npm:^4.0.0":
-  version: 4.0.0
-  resolution: "@huggingface/transformers@npm:4.0.0"
+  version: 4.0.1
+  resolution: "@huggingface/transformers@npm:4.0.1"
   dependencies:
     "@huggingface/jinja": "npm:^0.5.6"
     "@huggingface/tokenizers": "npm:^0.1.3"
     onnxruntime-node: "npm:1.24.3"
     onnxruntime-web: "npm:1.25.0-dev.20260327-722743c0e2"
     sharp: "npm:^0.34.5"
-  checksum: 10c0/f5f46fb7567ff4a74755aaa83ba47b9d1f379ac3c15f01a145cb6734fca95bba8cd88f6f575b3dc89d2bdb0366d8b260e7871c59148bb4800feedd6eb7a3ca97
+  checksum: 10c0/6a910a3fb1424094028b111141283b938d2504d5f7d3dc085269846d2444bc2193467c8ceed853c5d90cad160e58bb643e7d7b3c521b9cb9d9dff14df72401f7
   languageName: node
   linkType: hard
 
