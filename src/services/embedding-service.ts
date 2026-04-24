@@ -79,9 +79,6 @@ export class EmbeddingService {
 		this.SMALL_DIMENSIONS = config.embedding.smallDimensions;
 		this.LARGE_DIMENSIONS = config.embedding.largeDimensions;
 		this.cache = new Map();
-		if (!config.openai.apiKey) {
-			throw new Error('OPENAI_API_KEY is required. Set it in your environment or .env file.');
-		}
 		this.client = new OpenAI({ apiKey: config.openai.apiKey });
 		logger.info(`Embedding service initialized (model: ${this.SMALL_MODEL})`);
 		logger.debug(`Max cache size: ${this.maxCacheSize}`);

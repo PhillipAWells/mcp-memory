@@ -71,7 +71,7 @@ function parseIntEnv(raw: string | undefined, fallback: number, name: string): n
 const ConfigSchema = z.object({
 	// OpenAI API
 	openai: z.object({
-		apiKey: z.string().optional(),
+		apiKey: z.string().min(1, 'OPENAI_API_KEY is required — set it in .env or the environment'),
 	}),
 
 	// Embedding provider

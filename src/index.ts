@@ -18,6 +18,9 @@ import {
 	CallToolRequestSchema,
 	ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
 import { config } from './config.js';
 import { logger } from './utils/logger.js';
@@ -51,11 +54,16 @@ async function main(): Promise<void> {
 	// Initialize rules (copy to Claude directory if enabled)
 	await rulesManager.initialize();
 
+	// Read server version from package.json
+	const serverVersion = JSON.parse(
+		readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../package.json'), 'utf-8'),
+	).version as string;
+
 	// Create MCP server instance
 	const server = new Server(
 		{
 			name: 'mcp-memory',
-			version: '1.0.0',
+			version: serverVersion,
 		},
 		{
 			capabilities: {

@@ -12,8 +12,7 @@ const EPISODIC_EXPIRY_DAYS = 90;
 const SHORT_TERM_EXPIRY_DAYS = 7;
 /** Character limit for content preview in list responses. */
 const CONTENT_PREVIEW_LENGTH = 200;
-/** Character threshold above which content is chunked. */
-const CHUNK_THRESHOLD_LENGTH = 1000;
+
 /** Max characters of query shown in debug logs. */
 const QUERY_LOG_LENGTH = 50;
 /** Max records to sort in memory (beyond this, warn and cap). */
@@ -21,6 +20,7 @@ const MAX_IN_MEMORY_SORT_COUNT = 10000;
 import { z } from 'zod';
 import { MCPTool, StandardResponse, SearchResult } from '../types/index.js';
 import { successResponse, errorResponse, validationError, notFoundError } from '../utils/response.js';
+import { config } from '../config.js';
 import { extractErrorMessage } from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
 import { qdrantService } from '../services/qdrant-client.js';
@@ -123,7 +123,7 @@ async function memoryStoreHandler(args: unknown): Promise<StandardResponse> {
 		const metadata = { ...inputMeta, ...(expiresAt !== undefined ? { expires_at: expiresAt } : {}), workspace };
 
 		// Handle chunking for long content
-		if (input.auto_chunk && input.content.length > CHUNK_THRESHOLD_LENGTH) {
+		if (input.auto_chunk && input.content.length > config.memory.chunkSize) {
 			const chunked = await embeddingService.generateChunkedEmbeddings(input.content);
 
 			// All chunks share a common group ID so siblings can be found and managed together
@@ -424,7 +424,7 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 				const mergedMetadata = { ...baseMetadata, ...input.metadata };
 
 				// Decide: chunk the new content or store as single?
-				if (input.auto_chunk && input.content.length > CHUNK_THRESHOLD_LENGTH) {
+				if (input.auto_chunk && input.content.length > config.memory.chunkSize) {
 					const chunked = await embeddingService.generateChunkedEmbeddings(input.content);
 					const newChunkGroupId = uuidv4();
 
