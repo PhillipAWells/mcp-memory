@@ -235,23 +235,35 @@ async function memoryListHandler(args: unknown): Promise<StandardResponse> {
 		let results: SearchResult[];
 
 		if (!input.sort_by || input.sort_by === 'created_at') {
-			// Qdrant scroll returns results roughly in creation order
-			// Fetch only what we need with pagination
-			results = await qdrantService.list(
+			// Qdrant scroll returns results in internal order, not guaranteed to be sorted
+			// For created_at, we must fetch all and sort in memory to ensure correct order
+			const totalCount = await qdrantService.count(input.filter);
+			const fetchLimit = Math.min(totalCount, MAX_IN_MEMORY_SORT_COUNT);
+			if (totalCount > MAX_IN_MEMORY_SORT_COUNT) {
+				logger.warn(
+					`Sorting ${totalCount} records by created_at: only the first ${MAX_IN_MEMORY_SORT_COUNT} are loaded for performance. ` +
+					'Results beyond this cap may be missing. Use filters to narrow the result set.',
+				);
+			}
+			const allResults = await qdrantService.list(
 				input.filter,
-				input.limit,
-				input.offset,
+				fetchLimit,
+				0,
 			);
 
-			// Apply sort order if specified
-			if (input.sort_order === 'asc') {
-				results.sort((a, b) => {
-					const aTime = new Date(a.metadata?.created_at ?? 0).getTime();
-					const bTime = new Date(b.metadata?.created_at ?? 0).getTime();
+			// Sort by created_at with requested order
+			const sortedResults = allResults.sort((a, b) => {
+				const aTime = new Date(a.metadata?.created_at ?? 0).getTime();
+				const bTime = new Date(b.metadata?.created_at ?? 0).getTime();
+				if (input.sort_order === 'asc') {
 					return aTime - bTime;
-				});
-			}
-			// Default DESC order from Qdrant is already correct
+				} else {
+					return bTime - aTime;
+				}
+			});
+
+			// Apply offset and limit after sorting
+			results = sortedResults.slice(input.offset, input.offset + input.limit);
 		} else {
 			// For other sort fields, we must fetch all matching records and sort in memory.
 			// Fetching only limit+offset would produce incorrect results because Qdrant's
@@ -384,7 +396,8 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 		logger.info(`Updating memory: ${input.id}`);
 
 		// Validation: at least one of content or metadata must be provided
-		if (!input.content && !input.metadata) {
+		const hasMetadata = input.metadata && Object.keys(input.metadata).length > 0;
+		if (!input.content && !hasMetadata) {
 			return validationError('At least one of content or metadata must be provided');
 		}
 

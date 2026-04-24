@@ -111,13 +111,15 @@ export function initProxy(log: { info: (msg: string) => void; warn: (msg: string
 
 	log.info(`Proxy: active — routing all fetch traffic through ${url}`);
 
-	const noProxy = process.env.NO_PROXY ?? process.env.no_proxy ?? '';
+	const noProxy = process.env.NO_PROXY || process.env.no_proxy || '';
 	if (noProxyDefaulted) {
 		log.info(
 			`Proxy: NO_PROXY defaulted to "${noProxy}" — set NO_PROXY explicitly to override`,
 		);
-	} else {
+	} else if (noProxy) {
 		log.info(`Proxy: NO_PROXY exclusions: ${noProxy}`);
+	} else {
+		log.info('Proxy: NO_PROXY not set (all domains will be proxied)');
 	}
 }
 
