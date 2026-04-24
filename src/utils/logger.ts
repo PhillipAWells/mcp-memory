@@ -9,7 +9,8 @@
 import { Logger, LogLevel, StderrTransport } from '@pawells/logger';
 import { config } from '../config.js';
 
-const level = (config.server.logLevel as LogLevel) || LogLevel.INFO;
+// Zod validates logLevel as a valid LogLevel enum member, so the cast is safe
+const level = (config.server.logLevel as LogLevel) ?? LogLevel.INFO;
 
 /**
  * Singleton logger instance, configured from environment variables.

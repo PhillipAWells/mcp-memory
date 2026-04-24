@@ -84,7 +84,7 @@ if (_proxyUrl !== null) {
 	// replaces them with our proxy-aware agent, so Qdrant traffic also goes through
 	// the proxy.
 	const _originalFetch = globalThis.fetch;
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any,@typescript-eslint/promise-function-async -- Wraps synchronous fetch call; must not be async
 	(globalThis as any).fetch = function(input: Parameters<typeof fetch>[0], init?: any) {
 		if (init?.dispatcher !== undefined) {
 			init.dispatcher = agent;

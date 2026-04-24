@@ -51,6 +51,7 @@ export interface MemoryMetadata {
 	aliases?: string[];
 
 	/** Custom caller-defined fields, passed through to Qdrant unchanged. */
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Open schemas require dynamic fields
 	[key: string]: any;
 }
 
@@ -208,6 +209,7 @@ export interface QdrantPayload {
 	/** ISO 8601 timestamp of the most recent access; `null` if never accessed. */
 	last_accessed_at?: string | null;
 	/** Arbitrary caller-defined fields. */
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Open schemas require dynamic fields
 	[key: string]: any;
 }
 
@@ -228,5 +230,6 @@ export interface SearchFilters {
 	/** Restrict to memories that have at least one of these tags. */
 	tags?: string[];
 	/** Match on arbitrary payload fields (exact value match per key). */
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Open schemas require dynamic metadata filtering
 	metadata?: Record<string, any>;
 }
