@@ -128,9 +128,14 @@ async function memoryStoreHandler(args: unknown): Promise<StandardResponse> {
 			// All chunks share a common group ID so siblings can be found and managed together
 			const chunkGroupId = uuidv4();
 
+			// Parallelize large embedding generation across all chunks
+			const largeEmbeddings = await Promise.all(
+				chunked.map(({ chunk }) => embeddingService.generateLargeEmbedding(chunk)),
+			);
+
 			const ids: string[] = [];
 			for (const { chunk, embedding, index, total } of chunked) {
-				const largeEmbedding = await embeddingService.generateLargeEmbedding(chunk);
+				const largeEmbedding = largeEmbeddings[index];
 				const id = await qdrantService.upsert(
 					chunk,
 					embedding,
@@ -444,9 +449,14 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 					const chunked = await embeddingService.generateChunkedEmbeddings(input.content);
 					const newChunkGroupId = uuidv4();
 
+					// Parallelize large embedding generation across all chunks
+					const largeEmbeddings = await Promise.all(
+						chunked.map(({ chunk }) => embeddingService.generateLargeEmbedding(chunk)),
+					);
+
 					const newIds: string[] = [];
 					for (const { chunk, embedding, index, total } of chunked) {
-						const largeEmbedding = await embeddingService.generateLargeEmbedding(chunk);
+						const largeEmbedding = largeEmbeddings[index];
 						const id = await qdrantService.upsert(
 							chunk,
 							embedding,
