@@ -832,10 +832,17 @@ export class QdrantService {
 
 		// Workspace filter
 		if (filter.workspace !== undefined) {
-			conditions.push({
-				key: 'workspace',
-				match: { value: filter.workspace },
-			});
+			if (filter.workspace === null) {
+				// When workspace is explicitly null, match memories with no workspace
+				conditions.push({
+					is_null: { key: 'workspace' },
+				});
+			} else {
+				conditions.push({
+					key: 'workspace',
+					match: { value: filter.workspace },
+				});
+			}
 		}
 
 		// Memory type filter

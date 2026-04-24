@@ -153,6 +153,7 @@ export function loadConfig(): Config {
 	// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
 	const apiKey = process.env.OPENAI_API_KEY || undefined; // || intentional: coerce empty string to undefined
 
+	const smallDimensions = parseIntEnv(process.env.SMALL_EMBEDDING_DIMENSIONS, OPENAI_SMALL_EMBEDDING_DIMENSIONS, 'SMALL_EMBEDDING_DIMENSIONS');
 	const largeDimensions = parseIntEnv(process.env.LARGE_EMBEDDING_DIMENSIONS, DEFAULT_OPENAI_LARGE_EMBEDDING_DIMENSIONS, 'LARGE_EMBEDDING_DIMENSIONS');
 
 	const rawConfig = {
@@ -160,7 +161,7 @@ export function loadConfig(): Config {
 			apiKey,
 		},
 		embedding: {
-			smallDimensions: OPENAI_SMALL_EMBEDDING_DIMENSIONS,
+			smallDimensions,
 			largeDimensions,
 		},
 		qdrant: {
