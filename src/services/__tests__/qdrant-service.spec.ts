@@ -328,14 +328,10 @@ describe('QdrantService.get (access tracking)', () => {
 			'test-collection',
 			expect.objectContaining({
 				wait: false,
-				points: expect.arrayContaining([
-					expect.objectContaining({
-						id: pointId,
-						payload: expect.objectContaining({
-							access_count: currentAccessCount + 1,
-						}),
-					}),
-				]),
+				points: expect.arrayContaining([pointId]),
+				payload: expect.objectContaining({
+					access_count: currentAccessCount + 1,
+				}),
 			}),
 		);
 	});
@@ -367,14 +363,10 @@ describe('QdrantService.get (access tracking)', () => {
 		expect(mockClient.setPayload).toHaveBeenCalledWith(
 			'test-collection',
 			expect.objectContaining({
-				points: expect.arrayContaining([
-					expect.objectContaining({
-						id: pointId,
-						payload: expect.objectContaining({
-							access_count: 1,
-						}),
-					}),
-				]),
+				points: expect.arrayContaining([pointId]),
+				payload: expect.objectContaining({
+					access_count: 1,
+				}),
 			}),
 		);
 	});
@@ -405,11 +397,11 @@ describe('QdrantService.get (access tracking)', () => {
 		// Verify setPayload includes a new last_accessed_at timestamp
 		const call = mockClient.setPayload.mock.calls[0];
 		const setPayloadArgs = call[1] as any;
-		const point = setPayloadArgs.points[0] as any;
+		const payload = setPayloadArgs.payload as any;
 
-		expect(point.payload.last_accessed_at).toBeDefined();
+		expect(payload.last_accessed_at).toBeDefined();
 		// Verify it's an ISO 8601 timestamp with milliseconds
-		expect(point.payload.last_accessed_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+		expect(payload.last_accessed_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
 	});
 
 	it('handles retrieve returning empty results gracefully', async () => {
@@ -820,7 +812,7 @@ describe('QdrantService.list', () => {
 			next_page_offset: null,
 		});
 
-		await service.list('my-workspace', 100, 0);
+		await service.list({ workspace: 'my-workspace' }, 100, 0);
 
 		expect(mockClient.scroll).toHaveBeenCalledWith(
 			'test-collection',
@@ -981,3 +973,230 @@ describe('QdrantService.updatePayload', () => {
 	});
 });
 
+// ── Error handling and edge cases ──────────────────────────────────────────────
+
+describe('QdrantService edge cases and error handling', () => {
+	let service: QdrantService;
+
+	beforeEach(async () => {
+		vi.clearAllMocks();
+		mockClient.getCollections.mockResolvedValue({ collections: [{ name: 'test-collection' }] });
+		mockClient.getCollection.mockResolvedValue({
+			config: {
+				params: {
+					vectors: {
+						dense: { size: 1536, distance: 'Cosine' },
+						dense_large: { size: 3072, distance: 'Cosine' },
+					},
+				},
+			},
+			points_count: 0,
+			indexed_vectors_count: 0,
+			segments_count: 1,
+			status: 'green',
+			optimizer_status: 'ok',
+		});
+		service = new QdrantService();
+		await service.initialize();
+		vi.clearAllMocks();
+	});
+
+	it('handles search returning empty results', async () => {
+		mockClient.search.mockResolvedValue([]);
+
+		const results = await service.search(new Array(1536).fill(0.1));
+		expect(results).toEqual([]);
+	});
+
+	it('handles list returning empty results', async () => {
+		mockClient.scroll.mockResolvedValue({ points: [] });
+
+		const results = await service.list();
+		expect(results).toEqual([]);
+	});
+
+	it('handles retrieve returning empty results', async () => {
+		mockClient.retrieve.mockResolvedValue([]);
+
+		const result = await service.get('nonexistent-id');
+		expect(result).toBeNull();
+	});
+
+	it('handles count with filter returning zero', async () => {
+		mockClient.count.mockResolvedValue({ count: 0 });
+
+		const count = await service.count();
+		expect(count).toBe(0);
+	});
+
+	it('handles delete of nonexistent point', async () => {
+		mockClient.delete.mockResolvedValue({});
+
+		await expect(service.delete('nonexistent')).resolves.not.toThrow();
+	});
+
+	it('handles batch delete with empty array', async () => {
+		mockClient.delete.mockResolvedValue({});
+
+		await expect(service.batchDelete([])).resolves.not.toThrow();
+	});
+
+	it('handles update payload for nonexistent point', async () => {
+		mockClient.setPayload.mockResolvedValue({});
+
+		await expect(service.updatePayload('nonexistent', { confidence: 0.8 })).resolves.not.toThrow();
+	});
+
+	it('returns multiple results from search', async () => {
+		mockClient.search.mockResolvedValue([
+			{ id: 'id-1', score: 0.95 },
+			{ id: 'id-2', score: 0.85 },
+		]);
+
+		const results = await service.search(new Array(1536).fill(0.1));
+		expect(results).toHaveLength(2);
+	});
+
+	it('handles batch upsert with many points', async () => {
+		mockClient.upsert.mockResolvedValue({});
+
+		const points = Array.from({ length: 100 }, (_, i) => ({
+			content: `content ${i}`,
+			vector: new Array(1536).fill(0.1),
+			metadata: { workspace: 'test' },
+		}));
+
+		const result = await service.batchUpsert(points);
+		expect(result.successfulIds).toHaveLength(100);
+		expect(result.failedPoints).toHaveLength(0);
+	});
+
+	it('handles batch upsert where upsert throws an error', async () => {
+		mockClient.upsert.mockRejectedValueOnce(new Error('Upsert failed'));
+
+		const points = Array.from({ length: 50 }, (_, i) => ({
+			content: `content ${i}`,
+			vector: new Array(1536).fill(0.1),
+			metadata: { workspace: 'test' },
+		}));
+
+		const result = await service.batchUpsert(points);
+		expect(result.successfulIds).toHaveLength(0);
+		expect(result.failedPoints).toHaveLength(50);
+	});
+
+	it('search with multiple results applies proper scoring', async () => {
+		mockClient.search.mockResolvedValue([
+			{ id: 'id-1', score: 0.95, payload: { content: 'match1' } },
+			{ id: 'id-2', score: 0.75, payload: { content: 'match2' } },
+			{ id: 'id-3', score: 0.55, payload: { content: 'match3' } },
+		]);
+
+		const results = await service.search(new Array(1536).fill(0.1));
+		expect(results).toHaveLength(3);
+		expect(results[0].score).toBe(0.95);
+		expect(results[2].score).toBe(0.55);
+	});
+
+	it('handles list with limit and offset parameters', async () => {
+		mockClient.scroll.mockResolvedValue({
+			points: [
+				{ id: 'id-1', payload: { content: 'data1' } },
+				{ id: 'id-2', payload: { content: 'data2' } },
+			],
+			next_page_offset: null,
+		});
+
+		const results = await service.list(undefined, 10, 5);
+		expect(results).toHaveLength(2);
+	});
+
+	it('handles count with memory_type filter', async () => {
+		mockClient.count.mockResolvedValue({ count: 25 });
+
+		const count = await service.count({ memory_type: 'long-term' });
+		expect(count).toBe(25);
+	});
+
+	it('handles list filter with tags', async () => {
+		mockClient.scroll.mockResolvedValue({
+			points: [
+				{ id: 'id-1', payload: { tags: ['tag1'] } },
+			],
+			next_page_offset: null,
+		});
+
+		const results = await service.list({ tags: ['tag1'] });
+		expect(results).toHaveLength(1);
+	});
+
+	it('handles update payload with multiple fields', async () => {
+		mockClient.setPayload.mockResolvedValue({});
+
+		await service.updatePayload('test-id', { confidence: 0.9, access_count: 5 });
+		expect(mockClient.setPayload).toHaveBeenCalled();
+	});
+
+	it('search respects the embedding vector size', async () => {
+		mockClient.search.mockResolvedValue([]);
+
+		const largeVector = new Array(1536).fill(0.5);
+		await service.search(largeVector);
+
+		expect(mockClient.search).toHaveBeenCalled();
+	});
+
+	it('handles upsert with dual embeddings (small and large vectors)', async () => {
+		mockClient.upsert.mockResolvedValue({});
+
+		await service.upsert('test content', new Array(1536).fill(0.1), { workspace: 'test' }, new Array(3072).fill(0.2));
+
+		expect(mockClient.upsert).toHaveBeenCalled();
+	});
+
+	it('batchDelete handles array of multiple IDs correctly', async () => {
+		mockClient.delete.mockResolvedValue({});
+
+		await service.batchDelete(['id-1', 'id-2', 'id-3']);
+
+		expect(mockClient.delete).toHaveBeenCalled();
+	});
+
+	it('count with min_confidence filter', async () => {
+		mockClient.count.mockResolvedValue({ count: 15 });
+
+		const count = await service.count({ min_confidence: 0.8 });
+		expect(count).toBe(15);
+	});
+
+	it('list with min_confidence and memory_type filters combined', async () => {
+		mockClient.scroll.mockResolvedValue({
+			points: [
+				{ id: 'id-1', payload: { memory_type: 'long-term', confidence: 0.9 } },
+			],
+			next_page_offset: null,
+		});
+
+		const results = await service.list({ memory_type: 'long-term', min_confidence: 0.8 });
+		expect(results).toHaveLength(1);
+	});
+
+	it('handles search with filter applied', async () => {
+		mockClient.search.mockResolvedValue([
+			{ id: 'id-filtered', score: 0.9, payload: { tags: ['important'] } },
+		]);
+
+		const results = await service.search(new Array(1536).fill(0.1), 10, { tags: ['important'] });
+		expect(results).toHaveLength(1);
+	});
+
+	it('handles get (retrieve) for single point', async () => {
+		mockClient.retrieve.mockResolvedValue([
+			{ id: 'test-id', payload: { content: 'test' } },
+		]);
+
+		const result = await service.get('test-id');
+		expect(result).not.toBeNull();
+		expect(result?.id).toBe('test-id');
+	});
+});
