@@ -1,6 +1,6 @@
 ## Project Overview
 
-`@pawells/mcp-memory` is a Model Context Protocol (MCP) server providing semantic memory and knowledge management for Claude Code and other MCP clients. It uses OpenAI embeddings combined with Qdrant vector database to store, search, and manage memories. Features include automatic memory classification (long-term/episodic/short-term), secrets detection, workspace isolation, hybrid search (dense vector + keyword full-text, fused via RRF), and LRU caching for cost optimization. Published to npm.
+`@pawells/mcp-memory` is a Model Context Protocol (MCP) server providing semantic memory and knowledge management for Claude Code and other MCP clients. It uses OpenAI embeddings combined with Qdrant vector database to store, search, and manage memories. Features include automatic memory classification (short-term/episodic/long-term), secrets detection, workspace isolation, hybrid search (dense vector + keyword full-text, fused via RRF), and LRU caching for cost optimization. Published to npm.
 
 ## Package Manager
 
@@ -75,9 +75,9 @@ MCP Client (Claude Code) → MCP Server (src/index.ts)
 ## Key Concepts
 
 **Memory Classification**: The server classifies memories into three retention tiers:
-- `long-term` — Permanent storage for facts, decisions, workflows, and established patterns
-- `episodic` — Session-specific experiences, auto-expires after 90 days
 - `short-term` — Volatile working context and in-progress state, auto-expires after 7 days
+- `episodic` — Session-specific experiences, auto-expires after 90 days
+- `long-term` — Permanent storage for facts, decisions, workflows, and established patterns
 
 Expired memories are automatically filtered from queries and listings.
 
@@ -102,27 +102,53 @@ Expired memories are automatically filtered from queries and listings.
 **Logging**: All significant operations log via `src/utils/logger.ts`. Control verbosity with `LOG_LEVEL` env var (debug/info/warn/error).
 
 **Memory types**: Caller classifies memories into three types with different retention:
-- `long-term` — Permanent storage (facts, decisions, workflows)
-- `episodic` — 90 days (events, session outcomes)
 - `short-term` — 7 days (working context, in-progress state)
+- `episodic` — 90 days (events, session outcomes)
+- `long-term` — Permanent storage (facts, decisions, workflows)
 
 Expired memories are automatically excluded from queries and listings.
 
 ## Public API
 
-The MCP server exposes 9 tools to clients:
+The MCP server exposes 9 tools to clients. All tools return `StandardResponse<T>` which includes `success`, `message`, `data`, and a `metadata` bag containing `duration_ms`.
 
-1. **memory-store** — Embed and store a new memory with optional metadata, chunking enabled by default
-2. **memory-query** — Search memories by natural-language query with optional hybrid search and pagination
-3. **memory-list** — List memories with filtering, sorting (by created_at, updated_at, access_count, confidence), and pagination
-4. **memory-get** — Retrieve a specific memory by ID
-5. **memory-update** — Update content and/or metadata; re-chunks if content is provided
-6. **memory-delete** — Delete a single memory by ID
-7. **memory-batch-delete** — Efficiently delete up to 100 memories in one call
-8. **memory-status** — Get collection health, embedding stats, and workspace summary
-9. **memory-count** — Count memories matching optional filters
+1. **memory-store** — Embed and store a new memory.
+   - Key params: `content` (required, max 100,000 chars), `metadata.memory_type`, `metadata.workspace`, `metadata.tags`, `metadata.confidence`, `auto_chunk` (default `true`).
+   - Returns: `{ id, memory_type, workspace, confidence }` for single memories; `{ ids[], chunks }` for chunked content.
 
-All tools accept optional `filter` (workspace, memory_type, min_confidence, tags) and return `StandardResponse<T>` with metadata (execution time, etc.). See `src/tools/memory-tools.ts` for handler implementations and `src/schemas/memory-schemas.ts` for input validation.
+2. **memory-query** — Search memories by natural-language query using vector similarity.
+   - Key params: `query` (required), `filter` (workspace, memory_type, min_confidence, tags), `limit` (default 10, max 100), `offset`, `score_threshold`, `use_hybrid_search`, `hybrid_alpha`, `hnsw_ef`.
+   - Returns: `{ results: [{ id, content, score, metadata }], query, count }`.
+
+3. **memory-list** — Browse memories with filtering, sorting, and pagination.
+   - Key params: `filter` (workspace, memory_type, tags), `sort_by` (created_at | updated_at | access_count | confidence), `sort_order` (asc | desc), `limit` (default 100, max 1,000), `offset`.
+   - Returns: `{ memories: [{ id, content (preview), metadata }], count, limit, offset }`.
+
+4. **memory-get** — Retrieve a single memory by its UUID.
+   - Key params: `id` (required UUID).
+   - Returns: `{ id, content, metadata }` with full content (not truncated).
+
+5. **memory-update** — Update content and/or metadata for an existing memory; re-embeds and re-chunks when content changes.
+   - Key params: `id` (required), `content` (optional), `metadata` (optional partial), `auto_chunk` (default `true`).
+   - Returns: `{ id, reindexed }` for single memories; `{ id, chunks, old_chunks, chunk_group_id }` for re-chunked content.
+
+6. **memory-delete** — Delete a single memory by ID; returns `NOT_FOUND` if the ID does not exist.
+   - Key params: `id` (required UUID).
+   - Returns: `{ id }`.
+
+7. **memory-batch-delete** — Delete up to 100 memories in a single Qdrant operation. Silently succeeds for non-existent IDs.
+   - Key params: `ids` (required, 1–100 UUIDs).
+   - Returns: `{ count, ids }` where `count` is the number of delete operations issued.
+
+8. **memory-status** — Collection health, per-type counts, workspace summary, and optional embedding cost stats.
+   - Key params: `workspace` (optional filter), `include_embedding_stats` (default `false`).
+   - Returns: `{ server, timestamp, collection: { points_count, status, ... }, by_type: { episodic, short_term, long_term }, embeddings? }`.
+
+9. **memory-count** — Count memories matching optional filter criteria without loading records.
+   - Key params: `filter` (workspace, memory_type, min_confidence, tags) — all optional.
+   - Returns: `{ count, filter }`.
+
+See `src/tools/memory-tools.ts` for handler implementations and `src/schemas/memory-schemas.ts` for input validation.
 
 ## TypeScript Configuration
 
@@ -147,6 +173,31 @@ Single workflow (`.github/workflows/ci.yml`) triggered on push to `main`, PRs to
 - **Push `v*` tag**: typecheck → lint → test → build → publish to GitHub Packages and npm (with provenance) → create GitHub Release
 
 ## Development Notes
+
+### Configuration
+
+All environment variables are loaded and validated at startup via `src/config.ts`. See `.env.example` for a complete template with comments.
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `OPENAI_API_KEY` | Yes | — | OpenAI API key for embedding generation |
+| `QDRANT_URL` | Yes* | `http://localhost:6333` | Qdrant instance URL (*defaults to localhost; required for remote) |
+| `QDRANT_API_KEY` | No | — | API key for authenticated Qdrant instances (min 8 chars when set) |
+| `QDRANT_COLLECTION` | No | `mcp-memory` | Qdrant collection name |
+| `QDRANT_TIMEOUT` | No | `30000` | Qdrant request timeout in milliseconds |
+| `LOG_LEVEL` | No | `info` | Log verbosity: `debug`, `info`, `warn`, `error`, `silent` |
+| `MEMORY_CHUNK_SIZE` | No | `1000` | Character threshold above which content is auto-chunked |
+| `MEMORY_CHUNK_OVERLAP` | No | `200` | Character overlap between adjacent chunks (must be < `MEMORY_CHUNK_SIZE`) |
+| `SMALL_EMBEDDING_DIMENSIONS` | No | `1536` | Output dimensions for `text-embedding-3-small` |
+| `LARGE_EMBEDDING_DIMENSIONS` | No | `3072` | Output dimensions for `text-embedding-3-large` |
+| `WORKSPACE_AUTO_DETECT` | No | `true` | Auto-detect workspace from env/package.json/directory |
+| `WORKSPACE_DEFAULT` | No | — | Override workspace slug used when auto-detection yields nothing |
+| `WORKSPACE_CACHE_TTL` | No | `60000` | Workspace detection cache TTL in milliseconds |
+| `COPY_CLAUDE_RULES` | No | `true` | Copy `rules/*.md` into `.claude/rules/` on startup |
+| `HTTPS_PROXY` / `HTTP_PROXY` | No | — | Route all outbound HTTP traffic through this proxy |
+| `NO_PROXY` | No | `localhost,127.0.0.1,::1` | Comma-separated hosts excluded from proxying |
+
+**CI note**: Only `OPENAI_API_KEY` is required in all environments. `QDRANT_URL` defaults to `http://localhost:6333`, so integration tests work without configuration when Qdrant runs locally via Docker.
 
 **Qdrant Dependency**: Integration tests require a running Qdrant instance. Run locally via:
 
@@ -189,8 +240,8 @@ Queries use Qdrant's `indexed_only: true` setting to skip segments that are curr
 
 **Workaround**: If a query returns zero results after a recent store, wait a few seconds and retry. Qdrant typically indexes segments within seconds. The `search()` method automatically tracks access counts on hits, so indexed memories are accessed as expected.
 
-### Sorting Large Result Sets May Load Many Records Into Memory
+### All Sorting Requires Loading Records Into Memory
 
-The `memory-list` tool with sorting by `access_count`, `confidence`, or `updated_at` loads up to 10,000 records into memory for sorting. For collections with many memories, this can consume significant memory.
+The `memory-list` tool loads up to 10,000 records into memory for sorting regardless of the sort field chosen (`created_at`, `updated_at`, `access_count`, or `confidence`). Qdrant's internal scroll order is not guaranteed to match any application-level sort order, so the server always fetches all matching records and sorts them in-process. For collections with many memories, this can consume significant memory.
 
-**Workaround**: Use the `workspace`, `memory_type`, or `tags` filters to narrow the result set before sorting, as this avoids loading the full collection into memory. Alternatively, sort by `created_at`, which uses Qdrant's native time-based indexing and does not require loading records into memory.
+**Workaround**: Use the `workspace`, `memory_type`, or `tags` filters to narrow the result set before sorting; this reduces the number of records loaded into memory. If the built-in scroll order is acceptable for your use case, omit `sort_by` entirely — the tool will return results in Qdrant's internal order without a full fetch.
