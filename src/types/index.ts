@@ -8,13 +8,13 @@
 
 /**
  * Memory classification type controlling retention policy and search behaviour.
- * - `episodic`   — specific experiences or events; auto-expires after 90 days.
  * - `short-term` — volatile working context; auto-expires after 7 days.
+ * - `episodic`   — specific experiences or events; auto-expires after 90 days.
  * - `long-term`  — persistent facts, concepts, and workflows; no expiry.
  */
 export type MemoryType =
-  | 'episodic'      // Specific experiences, events
   | 'short-term'    // Volatile working memory
+  | 'episodic'      // Specific experiences, events
   | 'long-term';    // Persistent knowledge (facts, concepts, workflows)
 
 /**
@@ -171,7 +171,6 @@ export interface QdrantPayload {
 	/** ISO 8601 timestamp of the most recent access; `null` if never accessed. */
 	last_accessed_at?: string | null;
 	/** Arbitrary caller-defined fields. */
-	 
 	[key: string]: unknown;
 }
 

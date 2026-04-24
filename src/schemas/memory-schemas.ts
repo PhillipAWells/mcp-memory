@@ -29,13 +29,13 @@ const BATCH_DELETE_MAX = 100;
 
 /**
  * Zod enum for the three supported memory classification types.
- * - `episodic`   — session-specific experiences (auto-expires in 90 days)
  * - `short-term` — volatile working context (auto-expires in 7 days)
+ * - `episodic`   — session-specific experiences (auto-expires in 90 days)
  * - `long-term`  — persistent facts, concepts, and workflows (no expiry)
  */
 const MemoryTypeSchema = z.enum([
-	'episodic',
 	'short-term',
+	'episodic',
 	'long-term',
 ]);
 
