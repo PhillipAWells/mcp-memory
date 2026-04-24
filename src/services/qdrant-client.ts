@@ -299,6 +299,7 @@ export class QdrantService {
 			{ field: 'access_count', schema: 'integer' as const },
 			{ field: 'last_accessed_at', schema: 'datetime' as const },
 			{ field: 'tags', schema: 'keyword' as const },
+			{ field: 'chunk_group_id', schema: 'keyword' as const },
 
 			// Text index for full-text search
 			{ field: 'content', schema: 'text' as const },

@@ -232,17 +232,6 @@ async function memoryListHandler(args: any): Promise<StandardResponse> {
 		const input = MemoryListInputSchema.parse(args);
 		logger.info('Listing memories...');
 
-		// Warn if sorting large result sets
-		if (input.sort_by && input.sort_by !== 'created_at') {
-			const estimatedCount = await qdrantService.count(input.filter);
-			if (estimatedCount > MAX_IN_MEMORY_SORT_COUNT) {
-				logger.warn(
-					`Sorting ${estimatedCount} records in memory may be slow. ` +
-          'Consider using filters to reduce result set size.',
-				);
-			}
-		}
-
 		// Determine fetch strategy based on sorting needs
 		let results: SearchResult[];
 
@@ -269,13 +258,13 @@ async function memoryListHandler(args: any): Promise<StandardResponse> {
 			// Fetching only limit+offset would produce incorrect results because Qdrant's
 			// scroll order is internal — not the requested sort order.
 			const totalCount = await qdrantService.count(input.filter);
-			const fetchLimit = Math.min(totalCount, MAX_IN_MEMORY_SORT_COUNT);
 			if (totalCount > MAX_IN_MEMORY_SORT_COUNT) {
 				logger.warn(
 					`Sorting ${totalCount} records: only the first ${MAX_IN_MEMORY_SORT_COUNT} are loaded for performance. ` +
-          'Results beyond this cap may be missing. Use filters to narrow the result set.',
+					'Results beyond this cap may be missing. Use filters to narrow the result set.',
 				);
 			}
+			const fetchLimit = Math.min(totalCount, MAX_IN_MEMORY_SORT_COUNT);
 			const allResults = await qdrantService.list(
 				input.filter,
 				fetchLimit,
