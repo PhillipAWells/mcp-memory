@@ -103,6 +103,7 @@ interface CollectionStats {
 	segments_count: number;
 	status: string;
 	optimizer_status: string;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Qdrant API response contains arbitrary config
 	config: any;
 	/** Cumulative count of access-tracking update failures since service start. */
 	access_tracking_failures: number;
@@ -357,11 +358,11 @@ export class QdrantService {
 			memory_type: metadata.memory_type ?? 'long-term',
 			confidence: metadata.confidence ?? DEFAULT_CONFIDENCE,
 			tags: metadata.tags ?? [],
-			created_at: metadata.created_at ?? now,
-			updated_at: now,
 			access_count: metadata.access_count ?? 0,
 			last_accessed_at: metadata.last_accessed_at ?? null,
 			...metadata,
+			created_at: metadata.created_at ?? now,
+			updated_at: now,
 		};
 
 		const vectorData = { dense: vector, dense_large: vectorLarge };
@@ -383,9 +384,11 @@ export class QdrantService {
 	}
 
 	/**
-   * Batch upsert multiple points with error tracking
-   * Supports dual embeddings (small + large) when enabled
-   */
+	 * Batch upsert multiple points into the collection.
+	 *
+	 * @internal — Not exposed via public API; retained for potential bulk import use cases.
+	 * Uses the same timestamp and metadata logic as upsert().
+	 */
 	public async batchUpsert(
 		points: Array<{
 			content: string;
@@ -415,11 +418,11 @@ export class QdrantService {
 					memory_type: p.metadata?.memory_type ?? 'long-term',
 					confidence: p.metadata?.confidence ?? DEFAULT_CONFIDENCE,
 					tags: p.metadata?.tags ?? [],
-					created_at: p.metadata?.created_at ?? now,
-					updated_at: now,
 					access_count: p.metadata?.access_count ?? 0,
 					last_accessed_at: p.metadata?.last_accessed_at ?? null,
 					...p.metadata,
+					created_at: p.metadata?.created_at ?? now,
+					updated_at: now,
 				};
 
 				const vectorData = { dense: p.vector, dense_large: p.vectorLarge };
@@ -542,7 +545,7 @@ export class QdrantService {
    */
 	private async hybridSearchWithRRF(
 		params: SearchParams,
-		filter: any,
+		filter?: Record<string, unknown>,
 	): Promise<SearchResult[]> {
 		const k = RRF_K; // RRF constant (typical value)
 		const limit = params.limit ?? DEFAULT_SEARCH_LIMIT;
@@ -567,7 +570,7 @@ export class QdrantService {
 		const textFilter = {
 			...filter,
 			must: [
-				...(filter?.must ?? []),
+				...(Array.isArray(filter?.must) ? filter.must : []),
 				{
 					key: 'content',
 					match: { text: queryText },
@@ -586,6 +589,7 @@ export class QdrantService {
 		// eslint-disable-next-line no-magic-numbers
 		const alpha = params.hybridAlpha ?? 0.5; // Default: equal weighting between dense and text
 		const rrfScores = new Map<string, number>();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Qdrant points have arbitrary payload structure
 		const pointsById = new Map<string, any>();
 
 		// Add vector search results (weighted by alpha)
@@ -799,10 +803,10 @@ export class QdrantService {
 	/**
    * Build Qdrant filter from SearchFilters
    */
-	private buildFilter(filter?: SearchFilters): any {
+	private buildFilter(filter?: SearchFilters): Record<string, unknown> | undefined {
 		if (!filter) return undefined;
 
-		const conditions: any[] = [];
+		const conditions: Array<Record<string, unknown>> = [];
 
 		// Workspace filter
 		if (filter.workspace !== undefined) {
@@ -868,25 +872,19 @@ export class QdrantService {
 	private async updateAccessTracking(ids: string[]): Promise<void> {
 		const now = new Date().toISOString();
 
-		// Get current access counts
-		const points = await this.client.retrieve(this.collectionName, {
-			ids,
-			with_payload: true,
-		});
-
-		// Update each point
-		for (const point of points) {
-			const currentCount = ((point.payload?.access_count as number | null | undefined) ?? 0);
-
-			await this.client.setPayload(this.collectionName, {
+		// Batch update all points in a single Qdrant call
+		// This reduces N+1 API calls (one per point) to a single batch operation
+		await withRetry(() => this.client.setPayload(
+			this.collectionName,
+			{
 				wait: false, // Don't wait for completion
-				points: [point.id],
+				points: ids, // Batch all points at once instead of per-point updates
 				payload: {
-					access_count: currentCount + 1,
+					access_count: { increment: 1 },
 					last_accessed_at: now,
 				},
-			});
-		}
+			},
+		));
 
 		logger.debug(`Updated access tracking for ${ids.length} points`);
 	}

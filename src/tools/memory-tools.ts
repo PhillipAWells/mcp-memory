@@ -68,7 +68,6 @@ function checkContentSecrets(content: string, idContext?: string): StandardRespo
 				secrets_detected: secretsList,
 				summary: getSecretsSummary(safetyCheck.detection),
 				suggestion: 'Remove sensitive data before storing. Use placeholders like [API_KEY] or [PASSWORD] instead.',
-				sanitized_preview: (safetyCheck.detection.sanitized ?? '').slice(0, CONTENT_PREVIEW_LENGTH) + '...',
 			},
 		);
 	}
@@ -273,8 +272,8 @@ async function memoryListHandler(args: unknown): Promise<StandardResponse> {
 
 			// Sort by requested field
 			const sortedResults = allResults.sort((a, b) => {
-				let aValue: any;
-				let bValue: any;
+				let aValue: number | string;
+				let bValue: number | string;
 
 				switch (input.sort_by) {
 					case 'updated_at':
@@ -512,8 +511,8 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 			}
 		}
 
-		// If content is being updated and reindex is requested
-		if (input.content && input.reindex) {
+		// Content update: always reindex
+		if (input.content) {
 			logger.debug('Re-generating dual embeddings for updated content');
 			const dual = await embeddingService.generateDualEmbeddings(input.content);
 
@@ -534,13 +533,7 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 
 			logger.info(`Memory updated and reindexed: ${input.id}`);
 		} else {
-			// Just update metadata
-			if (input.content) {
-				logger.warn(
-					`Memory ${input.id}: content provided but reindex=false — content update ignored. ` +
-					'Set reindex=true to regenerate embeddings for the new content.',
-				);
-			}
+			// Metadata-only update
 			await qdrantService.updatePayload(input.id, input.metadata ?? {});
 			logger.info(`Memory metadata updated: ${input.id}`);
 		}
@@ -549,7 +542,7 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 			'Memory updated successfully',
 			{
 				id: input.id,
-				reindexed: input.reindex && !!input.content,
+				reindexed: !!input.content,
 			},
 			{
 				duration_ms: Date.now() - startTime,
@@ -603,7 +596,12 @@ async function memoryDeleteHandler(args: unknown): Promise<StandardResponse> {
 }
 
 /**
- * Memory Batch Delete Tool
+ * Batch delete memories by ID.
+ *
+ * Unlike `memory-delete`, this tool silently succeeds for non-existent IDs.
+ * The returned `count` reflects the number of delete operations issued,
+ * not the number of memories actually deleted (Qdrant returns success
+ * for non-existent point deletions).
  */
 async function memoryBatchDeleteHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
