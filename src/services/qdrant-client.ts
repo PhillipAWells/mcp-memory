@@ -203,7 +203,7 @@ export class QdrantService {
 			);
 		}
 
-		const namedVectors = vectors as Record<string, { size?: number; distance?: string }>;
+		const namedVectors = vectors as unknown as Record<string, { size?: number; distance?: string }>;
 
 		const { dense, dense_large: denseLarge } = namedVectors;
 
@@ -353,6 +353,7 @@ export class QdrantService {
 		const now = new Date().toISOString();
 
 		const payload: QdrantPayload = {
+			...metadata,
 			content,
 			workspace: metadata.workspace ?? null,
 			memory_type: metadata.memory_type ?? 'long-term',
@@ -360,7 +361,6 @@ export class QdrantService {
 			tags: metadata.tags ?? [],
 			access_count: metadata.access_count ?? 0,
 			last_accessed_at: metadata.last_accessed_at ?? null,
-			...metadata,
 			created_at: metadata.created_at ?? now,
 			updated_at: now,
 		};
@@ -415,6 +415,7 @@ export class QdrantService {
 				const id = p.metadata?.id ?? uuidv4();
 
 				const payload: QdrantPayload = {
+					...p.metadata,
 					content: p.content,
 					workspace: p.metadata?.workspace ?? null,
 					memory_type: p.metadata?.memory_type ?? 'long-term',
@@ -422,7 +423,6 @@ export class QdrantService {
 					tags: p.metadata?.tags ?? [],
 					access_count: p.metadata?.access_count ?? 0,
 					last_accessed_at: p.metadata?.last_accessed_at ?? null,
-					...p.metadata,
 					created_at: p.metadata?.created_at ?? now,
 					updated_at: now,
 				};
@@ -514,7 +514,7 @@ export class QdrantService {
 		// Update access tracking (fire-and-forget)
 		const resultIds = results.map((r) => String(r.id));
 		if (resultIds.length > 0) {
-			this.updateAccessTracking(resultIds).catch((err) => {
+			this.updateAccessTracking(resultIds).catch((err: unknown) => {
 				this.accessTrackingFailureCount++;
 				// Rate-limit warning logs: only log if at least 10 seconds have passed
 				const now = Date.now();
@@ -528,14 +528,16 @@ export class QdrantService {
 			});
 		}
 
-		return results.map((r) => ({
-			id: String(r.id),
-			path: (r.payload?.path as string) || '',
-			content: (r.payload?.content as string) || '',
-			score: r.score,
-			// @ts-expect-error Qdrant client returns Record<string, any> but we know our schema uses QdrantPayload
-			metadata: r.payload as unknown as QdrantPayload,
-		}));
+		return results.map((r) => {
+			const payload = r.payload as unknown as Record<string, unknown>;
+			return {
+				id: String(r.id),
+				path: typeof payload?.path === 'string' ? payload.path : '',
+				content: typeof payload?.content === 'string' ? payload.content : '',
+				score: r.score,
+				metadata: payload as unknown as QdrantPayload,
+			};
+		});
 	}
 
 	/**
@@ -620,20 +622,20 @@ export class QdrantService {
 			.flatMap(([id, score]) => {
 				const point = pointsById.get(id);
 				if (!point) return [];
+				const payload = point.payload as unknown as Record<string, unknown>;
 				return [{
 					id,
-					path: (point.payload?.path as string) || '',
-					content: (point.payload?.content as string) || '',
+					path: typeof payload?.path === 'string' ? payload.path : '',
+					content: typeof payload?.content === 'string' ? payload.content : '',
 					score,
-					// @ts-expect-error Qdrant client returns Record<string, unknown> but we know our schema uses QdrantPayload
-					metadata: point.payload as unknown as QdrantPayload,
+					metadata: payload as unknown as QdrantPayload,
 				}];
 			});
 
 		// Update access tracking (fire-and-forget)
 		const resultIds = sortedResults.map((r) => r.id);
 		if (resultIds.length > 0) {
-			this.updateAccessTracking(resultIds).catch((err) => {
+			this.updateAccessTracking(resultIds).catch((err: unknown) => {
 				this.accessTrackingFailureCount++;
 				// Rate-limit warning logs: only log if at least 10 seconds have passed
 				const now = Date.now();
@@ -673,17 +675,17 @@ export class QdrantService {
 		const [point] = result;
 
 		// Update access tracking (fire-and-forget)
-		this.updateAccessTracking([id]).catch((err) =>
+		this.updateAccessTracking([id]).catch((err: unknown) =>
 			logger.warn('Failed to update access tracking:', err),
 		);
 
+		const payload = point.payload as unknown as Record<string, unknown>;
 		return {
 			id: String(point.id),
-			path: (point.payload?.path as string) || '',
-			content: (point.payload?.content as string) || '',
+			path: typeof payload?.path === 'string' ? payload.path : '',
+			content: typeof payload?.content === 'string' ? payload.content : '',
 			score: 1.0,
-			// @ts-expect-error Qdrant client returns Record<string, unknown> but we know our schema uses QdrantPayload
-			metadata: point.payload as unknown as QdrantPayload,
+			metadata: payload as unknown as QdrantPayload,
 		};
 	}
 
@@ -735,14 +737,16 @@ export class QdrantService {
 			with_vector: false,
 		}));
 
-		return results.points.map((p) => ({
-			id: String(p.id),
-			path: (p.payload?.path as string) || '',
-			content: (p.payload?.content as string) || '',
-			score: 1.0,
-			// @ts-expect-error Qdrant client returns Record<string, unknown> but we know our schema uses QdrantPayload
-			metadata: p.payload as unknown as QdrantPayload,
-		}));
+		return results.points.map((p) => {
+			const payload = p.payload as unknown as Record<string, unknown>;
+			return {
+				id: String(p.id),
+				path: typeof payload?.path === 'string' ? payload.path : '',
+				content: typeof payload?.content === 'string' ? payload.content : '',
+				score: 1.0,
+				metadata: payload as unknown as QdrantPayload,
+			};
+		});
 	}
 
 	/**
@@ -879,8 +883,10 @@ export class QdrantService {
 	 * @param ids - Array of point IDs to update
 	 * @throws {Error} If setPayload fails during update
 	 * @example
+	 * ```typescript
 	 * // Called internally after point retrieval
-	 * await updateAccessTracking(['point-1', 'point-2'])
+	 * await service.updateAccessTracking(['id1', 'id2']);
+	 * ```
 	 */
 	private async updateAccessTracking(ids: string[]): Promise<void> {
 		const now = new Date().toISOString();
@@ -900,24 +906,22 @@ export class QdrantService {
 			return;
 		}
 
-		// Build payload with incremented access_count for each point
-		const payloads = points.map((point) => ({
-			id: point.id,
-			payload: {
-				access_count: ((point.payload?.access_count as number) ?? 0) + 1,
-				last_accessed_at: now,
-			},
-		}));
-
-		// Batch update all points in a single Qdrant call
-		await withRetry(() =>
-			this.client.setPayload(this.collectionName, {
-				wait: false, // Don't wait for completion
-				points: payloads,
-			}),
+		// Update each point's access_count and last_accessed_at
+		// setPayload merges the provided payload with existing payload
+		await Promise.all(
+			points.map((point) =>
+				withRetry(() =>
+					this.client.setPayload(this.collectionName, {
+						wait: false,
+						points: [point.id],
+						payload: {
+							access_count: ((point.payload?.access_count as number) ?? 0) + 1,
+							last_accessed_at: now,
+						},
+					}),
+				),
+			),
 		);
-
-		logger.debug(`Updated access tracking for ${payloads.length} points`);
 	}
 
 	/**
