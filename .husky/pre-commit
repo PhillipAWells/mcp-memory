@@ -17,4 +17,4 @@ if (invalid.length) {
 }
 EOF
 
-yarn typecheck && yarn lint && yarn test && yarn build
+yarn typecheck && yarn lint && yarn test:coverage && yarn build

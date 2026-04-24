@@ -20,6 +20,7 @@ updates:
         patterns:
           - "typescript"
           - "@types/*"
+        update-types: ["patch"]
 
   - package-ecosystem: github-actions
     directory: /

@@ -32,6 +32,8 @@ jobs:
 
       - name: Install dependencies
         run: yarn install --immutable
+        env:
+          HUSKY: '0'
 
       - name: Type check
         run: yarn typecheck
@@ -58,9 +60,13 @@ jobs:
 
       - name: Install dependencies
         run: yarn install --immutable
+        env:
+          HUSKY: '0'
 
       - name: Test
-        run: yarn test
+        run: yarn test:coverage
+        env:
+          HUSKY: '0'
 
   build:
     name: Build
@@ -79,6 +85,8 @@ jobs:
 
       - name: Install dependencies
         run: yarn install --immutable
+        env:
+          HUSKY: '0'
 
       - name: Build
         run: yarn build

@@ -16,7 +16,6 @@ tmp/
 .env
 .env.local
 .env.*.local
-.npmrc
 
 # TypeScript
 *.tsbuildinfo

@@ -37,6 +37,8 @@ jobs:
 
       - name: Install dependencies
         run: yarn install --immutable
+        env:
+          HUSKY: '0'
 
       - name: Build
         run: yarn build
