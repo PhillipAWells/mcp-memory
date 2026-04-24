@@ -6,10 +6,9 @@
  * https_proxy, http_proxy).
  *
  * This module must be imported before any HTTP client is constructed, because it
- * patches the undici global dispatcher — affecting all three HTTP clients:
+ * patches the undici global dispatcher — affecting all HTTP clients:
  *   - OpenAI SDK (uses globalThis.fetch internally)
- *   - Qdrant JS client (uses native fetch; exposes no proxy hook)
- *   - HuggingFace Transformers.js (uses globalThis.fetch for model downloads)
+ *   - Qdrant JS client (passes its own undici Agent per-request; see fetch patch below)
  *
  * No new npm production dependencies are introduced. undici is a bundled
  * dependency of Node.js 22+ and is already present in node_modules.
@@ -76,8 +75,22 @@ if (_proxyUrl !== null) {
 	}
 
 	const agent = new EnvHttpProxyAgent();
-	setGlobalDispatcher(agent);
-	activeProxyAgent = agent;
+	setGlobalDispatcher(agent as unknown as Parameters<typeof setGlobalDispatcher>[0]);
+	activeProxyAgent = agent as unknown as Dispatcher;
+
+	// The Qdrant JS client passes its own undici Agent instance as `dispatcher`
+	// on every fetch call, which silently overrides the global dispatcher above.
+	// Wrapping globalThis.fetch here intercepts those per-request dispatchers and
+	// replaces them with our proxy-aware agent, so Qdrant traffic also goes through
+	// the proxy.
+	const _originalFetch = globalThis.fetch;
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	(globalThis as any).fetch = function(input: Parameters<typeof fetch>[0], init?: any) {
+		if (init?.dispatcher !== undefined) {
+			init.dispatcher = agent;
+		}
+		return _originalFetch.call(this, input, init);
+	};
 }
 
 /**
