@@ -8,11 +8,14 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 const { mockCreate } = vi.hoisted(() => ({ mockCreate: vi.fn() }));
 
-vi.mock('openai', () => ({
-	default: vi.fn().mockImplementation(function() {
-		return { embeddings: { create: mockCreate } };
-	}),
-}));
+vi.mock('openai', () => {
+	class MockOpenAI {
+		embeddings = { create: mockCreate };
+	}
+	return {
+		default: MockOpenAI,
+	};
+});
 
 // ── Mock config ───────────────────────────────────────────────────────────────
 vi.mock('../../config.js', () => ({

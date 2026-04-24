@@ -2691,8 +2691,6 @@ describe('memory-update - non-chunked content update', () => {
 	});
 });
 
-
-
 describe('memory-delete - edge cases', () => {
 	const VALID_UUID = '550e8400-e29b-41d4-a716-446655440011';
 
@@ -2804,7 +2802,6 @@ describe('memory-status - with embedding stats', () => {
 		expect((result.data as any).collection.status).toBe('green');
 	});
 });
-
 
 describe('memory-status - workspace filtering', () => {
 	beforeEach(() => {
@@ -3004,8 +3001,6 @@ describe('memory-store - error handling', () => {
 		expect(result.success).toBe(false);
 		expect(result.error_type).toBe('EXECUTION_ERROR');
 	});
-
-
 
 	it('returns EXECUTION_ERROR on large embedding generation failure', async () => {
 		const longContent = 'x '.repeat(600);
@@ -3292,7 +3287,6 @@ describe('memory-store - metadata passthrough', () => {
 		expect((result.data as any).workspace).toBe('test-ws');
 	});
 });
-
 
 describe('memory-status - input validation', () => {
 	beforeEach(() => {
@@ -3638,7 +3632,6 @@ describe('memory-list - error handling', () => {
 	});
 });
 
-
 describe('memory-update - chunked memory metadata-only edge cases', () => {
 	const VALID_UUID = '550e8400-e29b-41d4-a716-446655440017';
 	const baseMemory = {
@@ -3808,9 +3801,6 @@ describe('memory-batch-delete - return structure', () => {
 	});
 });
 
-
-
-
 describe('memory-get - not found error', () => {
 	const VALID_UUID = '550e8400-e29b-41d4-a716-446655440018';
 
@@ -3837,7 +3827,7 @@ describe('memory-status - response format details', () => {
 		const result = await getTool('memory-status').handler({});
 
 		expect(result.success).toBe(true);
-		const collection = (result.data as any).collection;
+		const { collection } = (result.data as any);
 		expect(collection.points_count).toBeDefined();
 		expect(collection.indexed_vectors_count).toBeDefined();
 		expect(collection.segments_count).toBeDefined();
@@ -3875,7 +3865,6 @@ describe('memory-status - response format details', () => {
 		expect((result.data as any).workspace).toBeUndefined();
 	});
 });
-
 
 describe('final coverage push', () => {
 	beforeEach(() => {
@@ -4621,7 +4610,7 @@ describe('coverage push - final boundary and edge cases', () => {
 				score: 0.9 - i * 0.01,
 				path: '',
 				metadata: { created_at: new Date().toISOString() },
-			}))
+			})),
 		);
 
 		const result = await getTool('memory-query').handler({

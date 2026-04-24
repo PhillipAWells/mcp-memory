@@ -106,4 +106,60 @@ describe('RulesManagerService', () => {
 		const rules = service.listTargetRules();
 		expect(rules).toContain('memory.md');
 	});
+
+	it('creates target directory and logs when source directory is empty', () => {
+		// Create source dir but don't add files
+		const service = makeServiceWithDirs(sourceDir, targetDir);
+		expect(() => service.initialize()).not.toThrow();
+		// Target dir IS created even if source is empty
+		expect(existsSync(targetDir)).toBe(true);
+	});
+
+	it('creates target directory if it does not exist', () => {
+		writeFileSync(join(sourceDir, 'memory.md'), '# Memory');
+		const service = makeServiceWithDirs(sourceDir, targetDir);
+		expect(existsSync(targetDir)).toBe(false);
+		service.initialize();
+		expect(existsSync(targetDir)).toBe(true);
+	});
+
+	it('listSourceRules returns empty array when source directory does not exist', () => {
+		const service = makeServiceWithDirs('/nonexistent/rules', targetDir);
+		const rules = service.listSourceRules();
+		expect(rules).toEqual([]);
+	});
+
+	it('getInfo returns correct configuration', () => {
+		const service = makeServiceWithDirs(sourceDir, targetDir);
+		const info = service.getInfo();
+		expect(info.sourceDir).toBe(sourceDir);
+		expect(info.targetDir).toBe(targetDir);
+		expect(info.copyEnabled).toBe(true);
+	});
+
+	it('listTargetRules returns empty array when target directory does not exist', () => {
+		const service = makeServiceWithDirs(sourceDir, targetDir);
+		const rules = service.listTargetRules();
+		expect(rules).toEqual([]);
+	});
+
+	it('includes both files and directories in listSourceRules', () => {
+		writeFileSync(join(sourceDir, 'file.md'), '# File');
+		mkdirSync(join(sourceDir, 'subdir'));
+		const service = makeServiceWithDirs(sourceDir, targetDir);
+		const rules = service.listSourceRules();
+		expect(rules).toContain('file.md');
+		expect(rules).toContain('subdir');
+	});
+
+	it('includes both files and directories in listTargetRules after copy', () => {
+		writeFileSync(join(sourceDir, 'file.md'), '# File');
+		mkdirSync(join(sourceDir, 'subdir'));
+		writeFileSync(join(sourceDir, 'subdir', 'nested.md'), '# Nested');
+		const service = makeServiceWithDirs(sourceDir, targetDir);
+		service.initialize();
+		const rules = service.listTargetRules();
+		expect(rules).toContain('file.md');
+		expect(rules).toContain('subdir');
+	});
 });
