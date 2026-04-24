@@ -165,19 +165,20 @@ export class EmbeddingService {
    */
 	public async generateBatchEmbeddings(texts: string[]): Promise<number[][]> {
 		logger.info(`Generating batch embeddings: ${texts.length} texts`);
+		this.totalEmbeddings += texts.length;
 
 		const embeddings: number[][] = [];
 		for (let i = 0; i < texts.length; i += BATCH_SIZE) {
 			const batch = texts.slice(i, i + BATCH_SIZE);
-			const batchResults = await Promise.all(
-				batch.map((text) => this.generateEmbedding(text)),
+			const batchResults = await this.generateOpenAIBatch(
+				batch,
+				this.SMALL_MODEL,
+				this.SMALL_DIMENSIONS,
+				'small',
 			);
 			embeddings.push(...batchResults);
-
 			logger.debug(
-				`Batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(
-					texts.length / BATCH_SIZE,
-				)} completed`,
+				`Batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(texts.length / BATCH_SIZE)} completed`,
 			);
 		}
 
@@ -387,6 +388,80 @@ export class EmbeddingService {
 		);
 
 		return embedding;
+	}
+
+	/**
+	 * Generate embeddings for a batch of texts using a single OpenAI API call.
+	 * Checks the LRU cache first; only uncached texts are sent to the API.
+	 *
+	 * @param texts   - Array of texts to embed.
+	 * @param model   - Model identifier.
+	 * @param dims    - Output dimensions.
+	 * @param variant - Cache key variant ('small' | 'large').
+	 * @returns Array of embedding vectors in the same order as `texts`.
+	 */
+	private async generateOpenAIBatch(
+		texts: string[],
+		model: string,
+		dims: number,
+		variant: 'small' | 'large',
+	): Promise<number[][]> {
+		const results: (number[] | null)[] = new Array(texts.length).fill(null);
+		const uncachedIndices: number[] = [];
+
+		for (let i = 0; i < texts.length; i++) {
+			const key = this.getCacheKey(texts[i], variant);
+			const cached = this.cache.get(key);
+			if (cached) {
+				this.cacheHits++;
+				this.cache.delete(key);
+				cached.hits++;
+				cached.timestamp = Date.now();
+				this.cache.set(key, cached);
+				results[i] = cached.embedding;
+			} else {
+				this.cacheMisses++;
+				uncachedIndices.push(i);
+			}
+		}
+
+		if (uncachedIndices.length > 0) {
+			const uncachedTexts = uncachedIndices.map(i => texts[i]);
+			const isLarge = model === this.LARGE_MODEL;
+
+			const response = await withRetry(
+				() => this.client.embeddings.create({ model, input: uncachedTexts, dimensions: dims }),
+				{
+					maxRetries: 3,
+					initialDelay: 1000,
+					retryableStatusCodes: [
+						HTTP_STATUS_TOO_MANY_REQUESTS,
+						HTTP_STATUS_INTERNAL_SERVER_ERROR,
+						HTTP_STATUS_BAD_GATEWAY,
+						HTTP_STATUS_SERVICE_UNAVAILABLE,
+						HTTP_STATUS_GATEWAY_TIMEOUT,
+					],
+				},
+			);
+
+			const tokens = response.usage.total_tokens;
+			const costPerM = isLarge ? COST_PER_MILLION_TOKENS_LARGE : COST_PER_MILLION_TOKENS_SMALL;
+			this.totalTokens += tokens;
+			this.totalCost += (tokens / TOKENS_PER_MILLION) * costPerM;
+
+			response.data.forEach((item, idx) => {
+				const originalIdx = uncachedIndices[idx];
+				const key = this.getCacheKey(texts[originalIdx], variant);
+				this.addToCache(key, item.embedding);
+				results[originalIdx] = item.embedding;
+			});
+
+			logger.debug(
+				`OpenAI batch embedding: ${uncachedTexts.length} texts, ${tokens} tokens, $${((tokens / TOKENS_PER_MILLION) * costPerM).toFixed(COST_LOG_PRECISION)}`,
+			);
+		}
+
+		return results as number[][];
 	}
 
 	private getCacheKey(text: string, variant: 'small' | 'large'): string {
