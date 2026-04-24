@@ -181,20 +181,15 @@ export type MemoryGetInput = z.infer<typeof MemoryGetInputSchema>;
 export const MemoryUpdateInputSchema = z.object({
 	/** UUID of the memory to update. */
 	id: z.string().uuid(),
-	/** Replacement content (1–100 000 characters). Required when `reindex` is `true`. */
+	/** Replacement content (1–100 000 characters). When provided, embeddings are regenerated. */
 	content: z.string().min(1).max(CONTENT_MAX_LENGTH).optional(),
 	/** Metadata fields to merge into the existing payload. */
 	metadata: MetadataInputSchema.optional(),
 	/**
-   * When `true`, regenerate embeddings from `content` and overwrite the
-   * existing Qdrant point (upsert-first, no delete risk).  Default `false`.
-   */
-	reindex: z.boolean().optional().default(false),
-	/**
-	   * When `true` (default), content longer than 1 000 characters is split into
-	   * overlapping chunks, each stored as a separate point that shares a
-	   * `chunk_group_id`.
-	   */
+	 * When `true` (default), content longer than 1 000 characters is split into
+	 * overlapping chunks, each stored as a separate point that shares a
+	 * `chunk_group_id`.
+	 */
 	auto_chunk: z.boolean().optional().default(true),
 });
 
