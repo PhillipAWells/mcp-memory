@@ -26,7 +26,7 @@ import { logger } from '../utils/logger.js';
 import { qdrantService } from '../services/qdrant-client.js';
 import { embeddingService } from '../services/embedding-service.js';
 import { workspaceDetector } from '../services/workspace-detector.js';
-import { isSafeToStore, getSecretsSummary, detectSecrets } from '../services/secrets-detector.js';
+import { isSafeToStore, getSecretsSummary } from '../services/secrets-detector.js';
 import {
 	MemoryStoreInputSchema,
 	MemoryQueryInputSchema,
@@ -43,6 +43,41 @@ import {
 /**
  * Memory Store Tool
  */
+
+/**
+ * Check content for secrets. Returns an error StandardResponse if unsafe, null if safe.
+ * Logs a warning for low/medium-confidence detections that don't block storage.
+ */
+function checkContentSecrets(content: string, idContext?: string): StandardResponse | null {
+	const safetyCheck = isSafeToStore(content);
+	if (!safetyCheck.safe) {
+		logger.warn(`Blocked memory operation: ${safetyCheck.reason}`);
+		const secretsList = safetyCheck.secrets?.map(s => ({
+			type: s.type,
+			pattern: s.pattern,
+			confidence: s.confidence,
+			context: s.context,
+		})) ?? [];
+		return errorResponse(
+			'Cannot store content containing sensitive information',
+			'VALIDATION_ERROR',
+			safetyCheck.reason,
+			{
+				...(idContext ? { id: idContext } : {}),
+				error_code: 'SECRETS_DETECTED',
+				secrets_detected: secretsList,
+				summary: getSecretsSummary(safetyCheck.detection),
+				suggestion: 'Remove sensitive data before storing. Use placeholders like [API_KEY] or [PASSWORD] instead.',
+				sanitized_preview: (safetyCheck.detection.sanitized ?? '').slice(0, CONTENT_PREVIEW_LENGTH) + '...',
+			},
+		);
+	}
+	if (safetyCheck.reason && safetyCheck.secrets) {
+		logger.warn(`Storing with warning: ${safetyCheck.reason}`);
+	}
+	return null;
+}
+
 async function memoryStoreHandler(args: any): Promise<StandardResponse> {
 	const startTime = Date.now();
 
@@ -51,36 +86,8 @@ async function memoryStoreHandler(args: any): Promise<StandardResponse> {
 		logger.info('Storing memory...');
 
 		// Check for secrets and sensitive information
-		const safetyCheck = isSafeToStore(input.content);
-		if (!safetyCheck.safe) {
-			logger.warn(`Blocked memory storage: ${safetyCheck.reason}`);
-
-			const detection = detectSecrets(input.content);
-			const secretsList = safetyCheck.secrets?.map(s => ({
-				type: s.type,
-				pattern: s.pattern,
-				confidence: s.confidence,
-				context: s.context,
-			})) ?? [];
-
-			return errorResponse(
-				'Cannot store content containing sensitive information',
-				'VALIDATION_ERROR',
-				safetyCheck.reason,
-				{
-					error_code: 'SECRETS_DETECTED',
-					secrets_detected: secretsList,
-					summary: getSecretsSummary(detection),
-					suggestion: 'Remove sensitive data before storing. Use placeholders like [API_KEY] or [PASSWORD] instead.',
-					sanitized_preview: detection.sanitized?.slice(0, CONTENT_PREVIEW_LENGTH) + '...',
-				},
-			);
-		}
-
-		// Warn if low/medium confidence secrets detected
-		if (safetyCheck.reason && safetyCheck.secrets) {
-			logger.warn(`Storing with warning: ${safetyCheck.reason}`);
-		}
+		const secretsError = checkContentSecrets(input.content);
+		if (secretsError) return secretsError;
 
 		// Build a new metadata object (do not mutate input.metadata)
 		const inputMeta = input.metadata ?? {};
@@ -390,36 +397,8 @@ async function memoryUpdateHandler(args: any): Promise<StandardResponse> {
 
 		// Check for secrets if content is being updated
 		if (input.content) {
-			const safetyCheck = isSafeToStore(input.content);
-			if (!safetyCheck.safe) {
-				logger.warn(`Blocked memory update: ${safetyCheck.reason}`);
-
-				const detection = detectSecrets(input.content);
-				const secretsList = safetyCheck.secrets?.map(s => ({
-					type: s.type,
-					pattern: s.pattern,
-					confidence: s.confidence,
-					context: s.context,
-				})) ?? [];
-
-				return errorResponse(
-					'Cannot update content with sensitive information',
-					'VALIDATION_ERROR',
-					safetyCheck.reason,
-					{
-						id: input.id,
-						error_code: 'SECRETS_DETECTED',
-						secrets_detected: secretsList,
-						summary: getSecretsSummary(detection),
-						suggestion: 'Remove sensitive data before updating. Use placeholders like [API_KEY] or [PASSWORD] instead.',
-					},
-				);
-			}
-
-			// Warn if low/medium confidence secrets detected
-			if (safetyCheck.reason && safetyCheck.secrets) {
-				logger.warn(`Updating with warning: ${safetyCheck.reason}`);
-			}
+			const secretsError = checkContentSecrets(input.content, input.id);
+			if (secretsError) return secretsError;
 		}
 
 		// Get existing memory

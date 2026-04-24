@@ -380,11 +380,12 @@ export function isSafeToStore(content: string): {
 	safe: boolean;
 	reason?: string;
 	secrets?: DetectedSecret[];
+	detection: SecretDetection;
 } {
 	const detection = detectSecrets(content);
 
 	if (!detection.found) {
-		return { safe: true };
+		return { safe: true, detection };
 	}
 
 	// Check for high-confidence secrets
@@ -397,6 +398,7 @@ export function isSafeToStore(content: string): {
 			safe: false,
 			reason: `Found ${highConfidence.length} high-confidence secret(s): ${highConfidence.map((s) => s.pattern).join(', ')}`,
 			secrets: highConfidence,
+			detection,
 		};
 	}
 
@@ -410,6 +412,7 @@ export function isSafeToStore(content: string): {
 			safe: false,
 			reason: `Found ${mediumConfidence.length} medium-confidence secret(s): ${mediumConfidence.map((s) => s.pattern).join(', ')}`,
 			secrets: mediumConfidence,
+			detection,
 		};
 	}
 
@@ -418,6 +421,7 @@ export function isSafeToStore(content: string): {
 		safe: true,
 		reason: `Found ${detection.secrets.length} potential secret(s) with low/medium confidence`,
 		secrets: detection.secrets,
+		detection,
 	};
 }
 
