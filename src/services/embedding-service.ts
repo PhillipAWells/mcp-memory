@@ -466,7 +466,12 @@ export class EmbeddingService {
 			);
 		}
 
-		return results as number[][];
+		// Type guard: ensure all results are populated (cache hit or API response)
+		const typedResults = results.filter((r): r is number[] => r !== null);
+		if (typedResults.length !== results.length) {
+			throw new Error(`Embedding generation failed: ${results.length - typedResults.length} entries remain null`);
+		}
+		return typedResults;
 	}
 
 	private getCacheKey(text: string, variant: 'small' | 'large'): string {

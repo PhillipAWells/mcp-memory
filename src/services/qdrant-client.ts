@@ -557,6 +557,10 @@ export class QdrantService {
 		// Pagination is not supported in hybrid search because it requires
 		// fusing two separate result sets; offset makes no sense semantically
 		if ((params.offset ?? 0) > 0) {
+			logger.warn(
+				'Hybrid search (RRF) does not support pagination (offset > 0). Returning empty results. ' +
+				'Use standard vector search without useHybridSearch=true to enable offset-based pagination.',
+			);
 			return [];
 		}
 
@@ -917,18 +921,23 @@ export class QdrantService {
 		// Update each point's access_count and last_accessed_at
 		// setPayload merges the provided payload with existing payload
 		await Promise.all(
-			points.map((point) =>
-				withRetry(() =>
+			points.map((point) => {
+				// Type guard: extract access_count from payload
+				const currentCount = typeof point.payload?.access_count === 'number'
+					? point.payload.access_count
+					: 0;
+
+				return withRetry(() =>
 					this.client.setPayload(this.collectionName, {
 						wait: false,
 						points: [point.id],
 						payload: {
-							access_count: ((point.payload?.access_count as number) ?? 0) + 1,
+							access_count: currentCount + 1,
 							last_accessed_at: now,
 						},
 					}),
-				),
-			),
+				);
+			}),
 		);
 	}
 
