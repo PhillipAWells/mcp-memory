@@ -863,30 +863,55 @@ export class QdrantService {
 	}
 
 	/**
-   * Update access tracking for retrieved points.
-   *
-   * Known limitation: this is a read-modify-write sequence (retrieve → increment → setPayload)
-   * with no atomic guarantee. Under concurrent access the count may be undercounted, but
-   * access_count is an analytic field and eventual consistency is acceptable here.
-   */
+	 * Update access tracking for retrieved points.
+	 *
+	 * Implements read-modify-write sequence: fetches current access_count,
+	 * increments it, then updates the point. Under concurrent access, the count
+	 * may be undercounted, but access_count is an analytic field and eventual
+	 * consistency is acceptable.
+	 *
+	 * @param ids - Array of point IDs to update
+	 * @throws {Error} If setPayload fails during update
+	 * @example
+	 * // Called internally after point retrieval
+	 * await updateAccessTracking(['point-1', 'point-2'])
+	 */
 	private async updateAccessTracking(ids: string[]): Promise<void> {
 		const now = new Date().toISOString();
 
-		// Batch update all points in a single Qdrant call
-		// This reduces N+1 API calls (one per point) to a single batch operation
-		await withRetry(() => this.client.setPayload(
-			this.collectionName,
-			{
-				wait: false, // Don't wait for completion
-				points: ids, // Batch all points at once instead of per-point updates
-				payload: {
-					access_count: { increment: 1 },
-					last_accessed_at: now,
-				},
-			},
-		));
+		// Read-modify-write: fetch current state, increment, write back
+		// Fetch all points to get their current access_count values
+		const points = await withRetry(() =>
+			this.client.retrieve(this.collectionName, {
+				ids,
+				with_payload: true,
+				with_vector: false,
+			}),
+		);
 
-		logger.debug(`Updated access tracking for ${ids.length} points`);
+		if (points.length === 0) {
+			logger.debug(`No points found for access tracking update: ${ids.length} requested`);
+			return;
+		}
+
+		// Build payload with incremented access_count for each point
+		const payloads = points.map((point) => ({
+			id: point.id,
+			payload: {
+				access_count: ((point.payload?.access_count as number) ?? 0) + 1,
+				last_accessed_at: now,
+			},
+		}));
+
+		// Batch update all points in a single Qdrant call
+		await withRetry(() =>
+			this.client.setPayload(this.collectionName, {
+				wait: false, // Don't wait for completion
+				points: payloads,
+			}),
+		);
+
+		logger.debug(`Updated access tracking for ${payloads.length} points`);
 	}
 
 	/**
