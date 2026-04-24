@@ -259,8 +259,8 @@ describe('memory-list', () => {
 	});
 
 	it('fetches from offset 0 when sorting in memory (not the user offset)', async () => {
-		// count() is called twice: once for warn-check, once for fetchLimit
-		mockQdrant.count.mockResolvedValueOnce(5).mockResolvedValueOnce(5);
+		// count() is called once for total count used to compute fetchLimit
+		mockQdrant.count.mockResolvedValueOnce(5);
 		mockQdrant.list.mockResolvedValueOnce([]);
 
 		await getTool('memory-list').handler({
@@ -274,8 +274,8 @@ describe('memory-list', () => {
 	});
 
 	it('caps fetch at MAX_IN_MEMORY_SORT_COUNT when count exceeds limit', async () => {
-		// count() is called twice: once for warn-check, once for fetchLimit
-		mockQdrant.count.mockResolvedValueOnce(20000).mockResolvedValueOnce(20000);
+		// count() is called once for total count used to compute fetchLimit
+		mockQdrant.count.mockResolvedValueOnce(20000);
 		mockQdrant.list.mockResolvedValueOnce([]);
 
 		await getTool('memory-list').handler({ sort_by: 'access_count' });
