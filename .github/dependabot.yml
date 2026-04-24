@@ -17,7 +17,7 @@ updates:
         patterns:
           - "@vitest/*"
           - "vitest"
-        update-types: ["minor", "patch"]
+        update-types: ["patch"]
       typescript:
         patterns:
           - "typescript"

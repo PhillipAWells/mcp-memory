@@ -231,8 +231,22 @@ describe('memory-list', () => {
 	});
 
 	it('paginates using limit and offset', async () => {
-		await getTool('memory-list').handler({ limit: 5, offset: 10 });
-		expect(mockQdrant.list).toHaveBeenCalledWith(undefined, 5, 10);
+		const now = new Date().toISOString();
+		const memories = Array.from({ length: 20 }, (_, i) => ({
+			id: `mem-${i}`,
+			content: `memory ${i}`,
+			score: 1,
+			path: '',
+			metadata: { created_at: new Date(Date.now() - i * 1000).toISOString(), updated_at: now, access_count: 0, confidence: 1, memory_type: 'long-term' as const, workspace: null, tags: [], last_accessed_at: null, expires_at: null, chunk_group_id: undefined },
+		}));
+		mockQdrant.count.mockResolvedValueOnce(20);
+		mockQdrant.list.mockResolvedValueOnce(memories);
+		
+		const result = await getTool('memory-list').handler({ limit: 5, offset: 10 });
+		expect(mockQdrant.count).toHaveBeenCalledWith(undefined);
+		// For created_at sorting, fetches all records (up to 10000) with offset 0, then slices
+		expect(mockQdrant.list).toHaveBeenCalledWith(undefined, 20, 0);
+		expect(result.success).toBe(true);
 	});
 
 	it('applies pagination correctly after in-memory sort by access_count desc', async () => {
@@ -2422,6 +2436,7 @@ describe('memory-list - sorting edge cases', () => {
 			{ id: '1', content: 'a', score: 1, path: '', metadata: { created_at: now } },
 		];
 
+		mockQdrant.count.mockResolvedValueOnce(2);
 		mockQdrant.list.mockResolvedValueOnce(memories);
 
 		const result = await getTool('memory-list').handler({
@@ -2432,14 +2447,21 @@ describe('memory-list - sorting edge cases', () => {
 		expect(result.success).toBe(true);
 		// Should be sorted asc, so id='1' comes first (earlier created_at)
 		expect((result.data as any).memories[0].id).toBe('1');
-		// count() should NOT be called for created_at sorting
-		expect(mockQdrant.count).not.toHaveBeenCalled();
+		// count() is now called to determine if we need in-memory sorting
+		expect(mockQdrant.count).toHaveBeenCalledWith(undefined);
 	});
 
 	it('applies pagination without in-memory sort for created_at', async () => {
-		mockQdrant.list.mockResolvedValueOnce([
-			{ id: '1', content: 'a', score: 1, path: '', metadata: { created_at: new Date().toISOString() } },
-		]);
+		const now = new Date().toISOString();
+		const memories = Array.from({ length: 15 }, (_, i) => ({
+			id: `mem-${i}`,
+			content: `memory ${i}`,
+			score: 1,
+			path: '',
+			metadata: { created_at: new Date(Date.now() - i * 1000).toISOString() },
+		}));
+		mockQdrant.count.mockResolvedValueOnce(15);
+		mockQdrant.list.mockResolvedValueOnce(memories);
 
 		await getTool('memory-list').handler({
 			sort_by: 'created_at',
@@ -2447,8 +2469,9 @@ describe('memory-list - sorting edge cases', () => {
 			offset: 10,
 		});
 
-		// Should fetch with user's offset directly (no need to load all for sorting)
-		expect(mockQdrant.list).toHaveBeenCalledWith(undefined, 5, 10);
+		// For created_at sorting, now loads all records for proper sorting (up to in-memory limit)
+		expect(mockQdrant.count).toHaveBeenCalledWith(undefined);
+		expect(mockQdrant.list).toHaveBeenCalledWith(undefined, 15, 0);
 	});
 
 	it('sorts by updated_at desc', async () => {
@@ -3083,14 +3106,17 @@ describe('memory-list - edge case sorting', () => {
 		expect(mockQdrant.list).toHaveBeenCalledWith(undefined, 100, 0);
 	});
 
-	it('handles default sort_by (created_at) without calling count()', async () => {
+	it('handles default sort_by (created_at) with count() call for proper sorting', async () => {
+		const now = new Date().toISOString();
+		mockQdrant.count.mockResolvedValueOnce(1);
 		mockQdrant.list.mockResolvedValueOnce([
-			{ id: '1', content: 'a', score: 1, path: '', metadata: { created_at: new Date().toISOString() } },
+			{ id: '1', content: 'a', score: 1, path: '', metadata: { created_at: now } },
 		]);
 
 		await getTool('memory-list').handler({});
 
-		expect(mockQdrant.count).not.toHaveBeenCalled();
+		// created_at sorting now calls count() to load all records for proper sort order
+		expect(mockQdrant.count).toHaveBeenCalledWith(undefined);
 		expect(mockQdrant.list).toHaveBeenCalled();
 	});
 });
@@ -3720,22 +3746,28 @@ describe('memory-list - default values', () => {
 	});
 
 	it('uses default limit of 100 when not specified', async () => {
+		mockQdrant.count.mockResolvedValueOnce(5);
 		mockQdrant.list.mockResolvedValueOnce([]);
 
 		await getTool('memory-list').handler({});
 
-		expect(mockQdrant.list).toHaveBeenCalledWith(undefined, 100, 0);
+		// For created_at sorting, loads all (5) and slices to limit 100
+		expect(mockQdrant.count).toHaveBeenCalledWith(undefined);
+		expect(mockQdrant.list).toHaveBeenCalledWith(undefined, 5, 0);
 	});
 
 	it('uses default offset of 0 when not specified', async () => {
+		mockQdrant.count.mockResolvedValueOnce(3);
 		mockQdrant.list.mockResolvedValueOnce([]);
 
 		await getTool('memory-list').handler({});
 
-		expect(mockQdrant.list).toHaveBeenCalledWith(undefined, 100, 0);
+		expect(mockQdrant.count).toHaveBeenCalledWith(undefined);
+		expect(mockQdrant.list).toHaveBeenCalledWith(undefined, 3, 0);
 	});
 
 	it('uses default sort_by of created_at', async () => {
+		mockQdrant.count.mockResolvedValueOnce(1);
 		mockQdrant.list.mockResolvedValueOnce([
 			{ id: '1', content: 'a', score: 1, path: '', metadata: { created_at: new Date().toISOString() } },
 		]);
@@ -3743,8 +3775,9 @@ describe('memory-list - default values', () => {
 		const result = await getTool('memory-list').handler({});
 
 		expect(result.success).toBe(true);
-		// Should not call count() when using default created_at
-		expect(mockQdrant.count).not.toHaveBeenCalled();
+		// created_at sorting now calls count() to load all records for proper ordering
+		expect(mockQdrant.count).toHaveBeenCalledWith(undefined);
+		expect(mockQdrant.list).toHaveBeenCalledWith(undefined, 1, 0);
 	});
 });
 
@@ -3899,9 +3932,15 @@ describe('final coverage push', () => {
 	});
 
 	it('memory-list uses correct pagination when not sorting', async () => {
-		mockQdrant.list.mockResolvedValueOnce([
-			{ id: '1', content: 'a', score: 1, path: '', metadata: { created_at: new Date().toISOString() } },
-		]);
+		const memories = Array.from({ length: 100 }, (_, i) => ({
+			id: `mem-${i}`,
+			content: `memory ${i}`,
+			score: 1,
+			path: '',
+			metadata: { created_at: new Date(Date.now() - i * 1000).toISOString() },
+		}));
+		mockQdrant.count.mockResolvedValueOnce(100);
+		mockQdrant.list.mockResolvedValueOnce(memories);
 
 		const result = await getTool('memory-list').handler({
 			limit: 50,
@@ -3909,8 +3948,9 @@ describe('final coverage push', () => {
 		});
 
 		expect(result.success).toBe(true);
-		// Should pass offset directly (not fetch from 0)
-		expect(mockQdrant.list).toHaveBeenCalledWith(undefined, 50, 25);
+		// For created_at sorting, loads all records for proper sort then applies offset/limit
+		expect(mockQdrant.count).toHaveBeenCalledWith(undefined);
+		expect(mockQdrant.list).toHaveBeenCalledWith(undefined, 100, 0);
 	});
 
 	it('memory-update merges metadata correctly', async () => {
@@ -4251,6 +4291,7 @@ describe('coverage push - sorting and pagination edge cases', () => {
 
 	it('memory-list with explicit limit and offset', async () => {
 		const now = new Date().toISOString();
+		mockQdrant.count.mockResolvedValueOnce(1);
 		mockQdrant.list.mockResolvedValueOnce([
 			{ id: '1', content: 'first', score: 1, path: '', metadata: { created_at: now } },
 		]);
@@ -4261,6 +4302,7 @@ describe('coverage push - sorting and pagination edge cases', () => {
 		});
 
 		expect(result.success).toBe(true);
+		expect(mockQdrant.count).toHaveBeenCalledWith(undefined);
 		expect(mockQdrant.list).toHaveBeenCalledWith(undefined, 1, 0);
 	});
 
