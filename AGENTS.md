@@ -72,6 +72,23 @@ MCP Client (Claude Code) → MCP Server (src/index.ts)
 - `proxy.ts` — Proxy initialisation; reads `HTTPS_PROXY`/`HTTP_PROXY` env vars and installs a global undici `EnvHttpProxyAgent` dispatcher at import time. Auto-defaults `NO_PROXY` to `localhost,127.0.0.1,::1` when a proxy is active and no exclusions are set. Must be the first import in `src/index.ts`.
 - `errors.ts` — Custom error types.
 
+## Key Concepts
+
+**Memory Classification**: The server classifies memories into three retention tiers:
+- `long-term` — Permanent storage for facts, decisions, workflows, and established patterns
+- `episodic` — Session-specific experiences, auto-expires after 90 days
+- `short-term` — Volatile working context and in-progress state, auto-expires after 7 days
+
+Expired memories are automatically filtered from queries and listings.
+
+**Dual Embeddings**: By default, all content is embedded twice — once with `text-embedding-3-small` (384 dimensions) for cost efficiency, and once with `text-embedding-3-large` (3072 dimensions) for accuracy. Queries can use either vector for flexible quality-vs-cost tradeoffs.
+
+**Hybrid Search (RRF)**: Text queries with `use_hybrid_search=true` combine dense vector similarity with full-text index search. Results are fused using Reciprocal Rank Fusion (RRF) with configurable weighting (default 50/50). Note: hybrid search does not support pagination.
+
+**Chunking**: Content longer than 1000 chars is automatically split into overlapping chunks. All chunks in a group share a `chunk_group_id`, and updates to any chunk trigger re-chunking of the entire group.
+
+**Workspace Isolation**: Optional workspace slug (`[a-zA-Z0-9_-]+`) isolates memories for multi-project scenarios. Auto-detected from env vars, package.json name, or directory name.
+
 ## Key Patterns
 
 **Adding a new tool**: Define Zod schema in `src/schemas/memory-schemas.ts`, implement handler in `src/tools/memory-tools.ts`, register in `src/tools/index.ts`.
@@ -90,6 +107,22 @@ MCP Client (Claude Code) → MCP Server (src/index.ts)
 - `short-term` — 7 days (working context, in-progress state)
 
 Expired memories are automatically excluded from queries and listings.
+
+## Public API
+
+The MCP server exposes 9 tools to clients:
+
+1. **memory-store** — Embed and store a new memory with optional metadata, chunking enabled by default
+2. **memory-query** — Search memories by natural-language query with optional hybrid search and pagination
+3. **memory-list** — List memories with filtering, sorting (by created_at, updated_at, access_count, confidence), and pagination
+4. **memory-get** — Retrieve a specific memory by ID
+5. **memory-update** — Update content and/or metadata; re-chunks if content is provided
+6. **memory-delete** — Delete a single memory by ID
+7. **memory-batch-delete** — Efficiently delete up to 100 memories in one call
+8. **memory-status** — Get collection health, embedding stats, and workspace summary
+9. **memory-count** — Count memories matching optional filters
+
+All tools accept optional `filter` (workspace, memory_type, min_confidence, tags) and return `StandardResponse<T>` with metadata (execution time, etc.). See `src/tools/memory-tools.ts` for handler implementations and `src/schemas/memory-schemas.ts` for input validation.
 
 ## TypeScript Configuration
 
@@ -130,6 +163,23 @@ Or use `QDRANT_URL` env var to point to a cloud instance.
 **Development Container**: A custom `.devcontainer/Dockerfile` is provided with Node.js environment and post-creation setup hook.
 
 **Proxy Support**: All outbound HTTP traffic (OpenAI API, Qdrant) is automatically proxied when `HTTPS_PROXY` or `HTTP_PROXY` is set. `NO_PROXY` defaults to `localhost,127.0.0.1,::1` when a proxy is active and the variable is absent, protecting local Qdrant traffic. See `src/utils/proxy.ts`.
+
+## Testing Notes
+
+**Coverage Threshold**: All tests must achieve 80% coverage on four metrics (lines, functions, branches, statements). Run `yarn test:coverage` to check. Coverage badges are generated in `coverage/`.
+
+**Unit Tests**: Located in `src/**/*.spec.ts`. Test isolated functions, services, and error conditions. Use Vitest's `describe` and `it` blocks. Mocks are limited to external dependencies (OpenAI, Qdrant).
+
+**Integration Tests**: Test end-to-end tool handlers with a live Qdrant instance. Requires `docker run -p 6333:6333 qdrant/qdrant` or `QDRANT_URL` set to a remote instance.
+
+**Fixtures**: Test data is hardcoded or generated inline (no separate fixture files). This keeps tests self-contained and easier to understand.
+
+**Mocking**: Use Vitest's `vi.mock()` for OpenAI client only. Real Qdrant queries are preferred in tests to catch integration bugs. If mocking Qdrant is necessary, create a minimal stub that covers only the specific method being tested.
+
+**Common Test Patterns**:
+- Tool handlers: call `parse()` on input schema first, then invoke the handler
+- Services: test both happy path and error conditions (network failures, validation)
+- Edge cases: empty inputs, boundary values, concurrent operations
 
 ## Common Gotchas
 

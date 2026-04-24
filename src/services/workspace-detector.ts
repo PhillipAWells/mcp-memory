@@ -280,15 +280,6 @@ export class WorkspaceDetectorService {
 	}
 
 	/**
-   * Return the cached workspace if the TTL has not expired, otherwise `null`.
-   *
-   * Returns `null` in two cases: when the cache has expired (TTL exceeded) or when
-   * no workspace has been cached yet. Callers should not distinguish between these
-   * cases; if a workspace is needed, call {@link detect} instead.
-   *
-   * @returns The cached workspace name, or `null` if cache is expired or empty.
-   */
-	/**
 	 * Return the cached workspace if the TTL has not expired, otherwise `null`.
 	 *
 	 * Differentiates between cache miss/expiration and never-detected state to support

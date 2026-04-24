@@ -4,7 +4,7 @@
  * Manages copying of rules to Claude's rules directory
  */
 
-import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from 'fs';
+import { existsSync, mkdirSync, readdirSync, copyFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { config } from '../config.js';
@@ -194,11 +194,10 @@ export class RulesManagerService {
 		}
 
 		try {
-			return readdirSync(this.sourceDir).filter((name) => {
-				const fullPath = join(this.sourceDir, name);
-				const stat = statSync(fullPath);
-				return stat.isFile() || stat.isDirectory();
-			});
+			const entries = readdirSync(this.sourceDir, { withFileTypes: true });
+			return entries
+				.filter((entry) => entry.isFile() || entry.isDirectory())
+				.map((entry) => entry.name);
 		} catch (error) {
 			logger.error('Failed to list source rules:', error);
 			return [];
@@ -215,11 +214,10 @@ export class RulesManagerService {
 		}
 
 		try {
-			return readdirSync(this.targetDir).filter((name) => {
-				const fullPath = join(this.targetDir, name);
-				const stat = statSync(fullPath);
-				return stat.isFile() || stat.isDirectory();
-			});
+			const entries = readdirSync(this.targetDir, { withFileTypes: true });
+			return entries
+				.filter((entry) => entry.isFile() || entry.isDirectory())
+				.map((entry) => entry.name);
 		} catch (error) {
 			logger.error('Failed to list target rules:', error);
 			return [];
