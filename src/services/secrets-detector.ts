@@ -99,7 +99,7 @@ const SECRET_PATTERNS: SecretPattern[] = [
 	// API Keys - Specific providers
 	{
 		type: 'openai_key',
-		regex: /sk-[a-zA-Z0-9]{48}/g,
+		regex: /\bsk-[a-zA-Z0-9_-]{20,}\b/g,
 		confidence: 'high',
 		description: 'OpenAI API key',
 	},
@@ -328,10 +328,15 @@ export function detectSecrets(content: string): SecretDetection {
 	for (const secret of secrets) {
 		const overlapping = deduplicated.find(
 			(existing) =>
+				// new starts inside existing
 				(secret.location.start >= existing.location.start &&
-          secret.location.start <= existing.location.end) ||
-        (secret.location.end >= existing.location.start &&
-          secret.location.end <= existing.location.end),
+					secret.location.start <= existing.location.end) ||
+				// new ends inside existing
+				(secret.location.end >= existing.location.start &&
+					secret.location.end <= existing.location.end) ||
+				// new completely contains existing
+				(secret.location.start <= existing.location.start &&
+					secret.location.end >= existing.location.end),
 		);
 
 		if (!overlapping) {
