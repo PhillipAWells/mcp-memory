@@ -316,3 +316,175 @@ describe('EmbeddingService stats', () => {
 		expect(stats.cacheMisses).toBe(0);
 	});
 });
+
+// ── generateBatchEmbeddings ───────────────────────────────────────────────────
+
+describe('EmbeddingService.generateBatchEmbeddings', () => {
+	let service: EmbeddingService;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		service = makeService();
+	});
+
+	it('returns embeddings array for batch of texts', async () => {
+		mockCreate.mockResolvedValue({
+			data: [
+				{ embedding: new Array(1536).fill(0.1) },
+				{ embedding: new Array(1536).fill(0.2) },
+			],
+			usage: { total_tokens: 20 },
+		});
+
+		const results = await service.generateBatchEmbeddings(['text 1', 'text 2']);
+		expect(Array.isArray(results)).toBe(true);
+		expect(results).toHaveLength(2);
+		expect(results[0]).toHaveLength(1536);
+	});
+
+	it('increments totalEmbeddings counter for each batch item', async () => {
+		mockCreate.mockResolvedValue({
+			data: [
+				{ embedding: new Array(1536).fill(0.1) },
+				{ embedding: new Array(1536).fill(0.2) },
+			],
+			usage: { total_tokens: 20 },
+		});
+
+		const initialStats = service.getStats();
+		await service.generateBatchEmbeddings(['text 1', 'text 2']);
+		const stats = service.getStats();
+		expect(stats.totalEmbeddings).toBe(initialStats.totalEmbeddings + 2);
+	});
+
+	it('counts cache hits when batch items are already cached', async () => {
+		mockCreate
+			.mockResolvedValueOnce({
+				data: [{ embedding: new Array(1536).fill(0.1) }],
+				usage: { total_tokens: 10 },
+			})
+			.mockResolvedValueOnce({
+				data: [{ embedding: new Array(1536).fill(0.2) }],
+				usage: { total_tokens: 10 },
+			});
+
+		// First: cache both texts
+		await service.generateBatchEmbeddings(['text 1', 'text 2']);
+		// Second: both should be cache hits
+		await service.generateBatchEmbeddings(['text 1', 'text 2']);
+
+		const stats = service.getStats();
+		expect(stats.cacheHits).toBe(2);
+		expect(stats.cacheMisses).toBe(2);
+	});
+});
+
+// ── generateChunkedEmbeddings ─────────────────────────────────────────────────
+
+describe('EmbeddingService.generateChunkedEmbeddings', () => {
+	let service: EmbeddingService;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		service = makeService();
+	});
+
+	it('returns array of chunks with embeddings for long content', async () => {
+		mockCreate.mockResolvedValue({
+			data: [{ embedding: new Array(1536).fill(0.1) }],
+			usage: { total_tokens: 10 },
+		});
+
+		// Create content longer than chunkSize (1000)
+		const longContent = 'x'.repeat(2000);
+		const result = await service.generateChunkedEmbeddings(longContent);
+
+		expect(Array.isArray(result)).toBe(true);
+		expect(result.length).toBeGreaterThan(0);
+		expect(result[0]).toHaveProperty('chunk');
+		expect(result[0]).toHaveProperty('embedding');
+		expect(result[0]).toHaveProperty('index');
+		expect(result[0]).toHaveProperty('total');
+	});
+
+	it('increments totalEmbeddings counter for each chunk', async () => {
+		mockCreate.mockResolvedValue({
+			data: [{ embedding: new Array(1536).fill(0.1) }],
+			usage: { total_tokens: 10 },
+		});
+
+		const longContent = 'x'.repeat(2000);
+		const initialStats = service.getStats();
+		const result = await service.generateChunkedEmbeddings(longContent);
+		const stats = service.getStats();
+
+		expect(stats.totalEmbeddings).toBe(initialStats.totalEmbeddings + result.length);
+	});
+});
+
+// ── clearCache ────────────────────────────────────────────────────────────────
+
+describe('EmbeddingService.clearCache', () => {
+	let service: EmbeddingService;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockCreate.mockResolvedValue(makeSmallResponse());
+		service = makeService();
+	});
+
+	it('clears the LRU cache', async () => {
+		const text = 'cache test';
+		await service.generateEmbedding(text);
+		expect(mockCreate).toHaveBeenCalledTimes(1);
+
+		service.clearCache();
+
+		await service.generateEmbedding(text);
+		expect(mockCreate).toHaveBeenCalledTimes(2);
+	});
+
+	it('resets cache hit/miss counters to zero', async () => {
+		const text = 'stat test';
+		await service.generateEmbedding(text);
+		await service.generateEmbedding(text);
+
+		service.clearCache();
+		const stats = service.getStats();
+		expect(stats.cacheHits).toBe(0);
+		expect(stats.cacheMisses).toBe(0);
+	});
+});
+
+// ── getCacheStats ─────────────────────────────────────────────────────────────
+
+describe('EmbeddingService.getCacheStats', () => {
+	let service: EmbeddingService;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockCreate.mockResolvedValue(makeSmallResponse());
+		service = makeService();
+	});
+
+	it('returns cache statistics including hit rate', async () => {
+		const text = 'cache stats test';
+		await service.generateEmbedding(text);
+		await service.generateEmbedding(text);
+		await service.generateEmbedding('other text');
+
+		const cacheStats = service.getCacheStats();
+		expect(cacheStats).toHaveProperty('size');
+		expect(cacheStats).toHaveProperty('maxSize');
+		expect(typeof cacheStats.size).toBe('number');
+		expect(typeof cacheStats.maxSize).toBe('number');
+	});
+
+	it('reflects cache state after clearing', async () => {
+		await service.generateEmbedding('text 1');
+		service.clearCache();
+
+		const stats = service.getCacheStats();
+		expect(stats.size).toBe(0);
+	});
+});
