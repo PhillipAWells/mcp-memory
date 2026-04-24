@@ -567,6 +567,12 @@ async function memoryUpdateHandler(args: any): Promise<StandardResponse> {
 			logger.info(`Memory updated and reindexed: ${input.id}`);
 		} else {
 			// Just update metadata
+			if (input.content) {
+				logger.warn(
+					`Memory ${input.id}: content provided but reindex=false — content update ignored. ` +
+					'Set reindex=true to regenerate embeddings for the new content.',
+				);
+			}
 			await qdrantService.updatePayload(input.id, input.metadata ?? {});
 			logger.info(`Memory metadata updated: ${input.id}`);
 		}

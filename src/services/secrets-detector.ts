@@ -66,9 +66,9 @@ const SECRET_CONTEXT_CHARS = 10;
 /**
  * Number of distinct medium-confidence detections required to block storage.
  *
- * Set to 5 (rather than 3) to reduce false positives from legitimate content
- * that contains multiple low-risk signals such as email addresses, phone
- * numbers, or generic config key names without actual secret values.
+ * Set to 3 to balance blocking genuine credential clusters while
+ * allowing individual low-risk signals such as email addresses or
+ * phone numbers to pass without blocking.
  */
 const MEDIUM_CONFIDENCE_BLOCK_THRESHOLD = 3;
 /** Confidence ordering for deduplication. */
