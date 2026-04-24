@@ -583,7 +583,8 @@ export class QdrantService {
 		}));
 
 		// Apply RRF: score = sum(alpha * 1 / (k + rank) for vector + (1 - alpha) * 1 / (k + rank) for text)
-		const alpha = params.hybridAlpha ?? 0.5;
+		// eslint-disable-next-line no-magic-numbers
+		const alpha = params.hybridAlpha ?? 0.5; // Default: equal weighting between dense and text
 		const rrfScores = new Map<string, number>();
 		const pointsById = new Map<string, any>();
 
