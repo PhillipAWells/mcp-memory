@@ -581,23 +581,24 @@ export class QdrantService {
 			with_vector: false,
 		}));
 
-		// Apply RRF: score = sum(1 / (k + rank))
+		// Apply RRF: score = sum(alpha * 1 / (k + rank) for vector + (1 - alpha) * 1 / (k + rank) for text)
+		const alpha = params.hybridAlpha ?? 0.5;
 		const rrfScores = new Map<string, number>();
 		const pointsById = new Map<string, any>();
 
-		// Add vector search results
+		// Add vector search results (weighted by alpha)
 		vectorResults.forEach((result, index) => {
 			const id = String(result.id);
 			const rank = index + 1;
-			rrfScores.set(id, (rrfScores.get(id) ?? 0) + 1 / (k + rank));
+			rrfScores.set(id, (rrfScores.get(id) ?? 0) + alpha * (1 / (k + rank)));
 			pointsById.set(id, result);
 		});
 
-		// Add text search results
+		// Add text search results (weighted by 1 - alpha)
 		textResults.points.forEach((result, index) => {
 			const id = String(result.id);
 			const rank = index + 1;
-			rrfScores.set(id, (rrfScores.get(id) ?? 0) + 1 / (k + rank));
+			rrfScores.set(id, (rrfScores.get(id) ?? 0) + (1 - alpha) * (1 / (k + rank)));
 			if (!pointsById.has(id)) {
 				pointsById.set(id, result);
 			}
