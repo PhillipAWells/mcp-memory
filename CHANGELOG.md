@@ -7,13 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added `MemoryError` class extending `Error` with `code` property for typed error handling
+
 ## [1.3.0] - 2026-04-24
 
 ### Added
 - Comprehensive code review and quality improvements
 - Enhanced test coverage (82%+ on core metrics)
 - Proper access_count tracking in Qdrant operations
-- Custom MCPMemoryError class with code property for error handling
 
 ### Changed
 - Removed async from synchronous RulesManager operations for efficiency
