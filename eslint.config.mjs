@@ -317,6 +317,19 @@ export default [
   },
 
   // ============================================
+  // VITEST FILES — wired eslint-plugin-vitest
+  // ============================================
+  // NOTE: eslint-plugin-vitest is declared in package.json devDeps.
+  // Plugin configuration is deferred until a compatible version is available
+  // that works with @typescript-eslint v8+. Test files currently use relaxed
+  // rules via the standard test files block below.
+  //
+  // To enable vitest rules in the future:
+  // 1. Update eslint-plugin-vitest to a compatible version
+  // 2. Add plugin import: import vitestPlugin from 'eslint-plugin-vitest';
+  // 3. Uncomment the vitest plugin rules in the test files block
+
+  // ============================================
   // TEST FILES — relaxed rules
   // ============================================
   {

@@ -24,7 +24,7 @@ jobs:
       contents: write
       id-token: write
     steps:
-      - uses: actions/checkout@0ad4c9a3629326bcc8a5a7bda12e16da52f39ba7 # v6
+      - uses: actions/checkout@0ad4c9a3629326bcc8a5a7bda12e16da52f39ba7 # v4
 
       - name: Enable corepack
         run: corepack enable
@@ -45,6 +45,8 @@ jobs:
 
       - name: Publish to npm
         run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365ced6552512f7 # v3

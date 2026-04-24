@@ -26,30 +26,3 @@ export function extractErrorMessage(error: unknown): string {
 	}
 	return String(error);
 }
-
-/**
- * Custom error for mcp-memory operations.
- *
- * Extends Error with a code property for programmatic error handling.
- * Always includes the original error as a cause for proper error chaining.
- *
- * @param message - Human-readable error message
- * @param code - Machine-readable error code (e.g., 'SECRET_DETECTED', 'INVALID_INPUT')
- * @param options - Optional ErrorOptions with cause for error chaining
- * @example
- * const cause = new Error('OpenAI API returned 429');
- * throw new MCPMemoryError(
- *   'Failed to generate embedding after retries',
- *   'EMBEDDING_FAILED',
- *   { cause }
- * );
- */
-export class MCPMemoryError extends Error {
-	public readonly code: string;
-
-	constructor(message: string, code: string, options?: ErrorOptions) {
-		super(message, options);
-		this.name = 'MCPMemoryError';
-		this.code = code;
-	}
-}

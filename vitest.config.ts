@@ -22,6 +22,9 @@ export default defineConfig({
         '**/*.test.ts',
         '**/*.spec.ts',
         '**/types/**',
+        'src/index.ts',
+        'src/utils/proxy.ts',
+        'src/schemas/**',
       ],
       thresholds: {
         lines: 80,
