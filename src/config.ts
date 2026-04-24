@@ -34,8 +34,13 @@ const MIN_QDRANT_API_KEY_LENGTH = 8;
  *
  * @param raw      - Raw string from the environment (or undefined).
  * @param fallback - Default value used when `raw` is undefined.
+ * @returns The parsed boolean value.
+ * @example
+ * parseBoolEnv('true', false) // true
+ * parseBoolEnv('false', true) // false
+ * parseBoolEnv(undefined, true) // true
  */
-function parseBoolEnv(raw: string | undefined, fallback: boolean): boolean {
+export function parseBoolEnv(raw: string | undefined, fallback: boolean): boolean {
 	if (raw === undefined) return fallback;
 	const lower = raw.toLowerCase();
 	return lower !== 'false' && lower !== '0' && lower !== 'no' && lower !== 'off';
@@ -45,11 +50,17 @@ function parseBoolEnv(raw: string | undefined, fallback: boolean): boolean {
  * Parse an integer from an environment variable string.
  * Throws a descriptive error if the value is not a valid integer.
  *
- * @param raw   - Raw string from the environment (or undefined).
+ * @param raw      - Raw string from the environment (or undefined).
  * @param fallback - Default value used when `raw` is undefined.
- * @param name  - Variable name used in error messages.
+ * @param name     - Variable name used in error messages.
+ * @returns The parsed integer value or the fallback.
+ * @throws {Error} If the value is not a valid integer.
+ * @example
+ * parseIntEnv('123', 10, 'MY_VAR') // 123
+ * parseIntEnv(undefined, 10, 'MY_VAR') // 10
+ * parseIntEnv('abc', 10, 'MY_VAR') // throws Error
  */
-function parseIntEnv(raw: string | undefined, fallback: number, name: string): number {
+export function parseIntEnv(raw: string | undefined, fallback: number, name: string): number {
 	if (raw === undefined) return fallback;
 	const parsed = parseInt(raw, 10);
 	if (isNaN(parsed) || !isFinite(parsed)) {
@@ -133,9 +144,12 @@ export type Config = z.infer<typeof ConfigSchema>;
  * 3. The assembled object is parsed by Zod — any schema violation throws.
  *
  * @returns Validated, immutable configuration object.
- * @throws If `OPENAI_API_KEY` is not set, or if any value fails Zod validation.
+ * @throws {Error} If `OPENAI_API_KEY` is not set, or if any value fails Zod validation.
+ * @example
+ * // In production, set OPENAI_API_KEY and QDRANT_URL in .env or environment
+ * const config = loadConfig();
  */
-function loadConfig(): Config {
+export function loadConfig(): Config {
 	// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
 	const apiKey = process.env.OPENAI_API_KEY || undefined; // || intentional: coerce empty string to undefined
 
@@ -158,7 +172,7 @@ function loadConfig(): Config {
 			timeout: parseIntEnv(process.env.QDRANT_TIMEOUT, DEFAULT_QDRANT_TIMEOUT_MS, 'QDRANT_TIMEOUT'),
 		},
 		server: {
-			logLevel: (process.env.LOG_LEVEL ?? 'info') as 'debug' | 'info' | 'warn' | 'error' | 'silent',
+			logLevel: process.env.LOG_LEVEL ?? 'info',
 		},
 		memory: {
 			chunkSize: parseIntEnv(process.env.MEMORY_CHUNK_SIZE, DEFAULT_CHUNK_SIZE, 'MEMORY_CHUNK_SIZE'),
