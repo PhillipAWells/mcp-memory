@@ -233,11 +233,11 @@ async function memoryListHandler(args: unknown): Promise<StandardResponse> {
 
 		// Determine fetch strategy based on sorting needs
 		let results: SearchResult[];
+		const totalCount = await qdrantService.count(input.filter);
 
 		if (!input.sort_by || input.sort_by === 'created_at') {
 			// Qdrant scroll returns results in internal order, not guaranteed to be sorted
 			// For created_at, we must fetch all and sort in memory to ensure correct order
-			const totalCount = await qdrantService.count(input.filter);
 			const fetchLimit = Math.min(totalCount, MAX_IN_MEMORY_SORT_COUNT);
 			if (totalCount > MAX_IN_MEMORY_SORT_COUNT) {
 				logger.warn(
@@ -268,7 +268,6 @@ async function memoryListHandler(args: unknown): Promise<StandardResponse> {
 			// For other sort fields, we must fetch all matching records and sort in memory.
 			// Fetching only limit+offset would produce incorrect results because Qdrant's
 			// scroll order is internal — not the requested sort order.
-			const totalCount = await qdrantService.count(input.filter);
 			if (totalCount > MAX_IN_MEMORY_SORT_COUNT) {
 				logger.warn(
 					`Sorting ${totalCount} records: only the first ${MAX_IN_MEMORY_SORT_COUNT} are loaded for performance. ` +
