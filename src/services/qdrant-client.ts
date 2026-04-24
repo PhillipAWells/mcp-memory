@@ -875,7 +875,7 @@ export class QdrantService {
 
 		// Update each point
 		for (const point of points) {
-			const currentCount = (point.payload?.access_count as number) || 0;
+			const currentCount = ((point.payload?.access_count as number | null | undefined) ?? 0);
 
 			await this.client.setPayload(this.collectionName, {
 				wait: false, // Don't wait for completion
