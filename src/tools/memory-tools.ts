@@ -133,17 +133,16 @@ async function memoryStoreHandler(args: unknown): Promise<StandardResponse> {
 				chunked.map(({ chunk }) => embeddingService.generateLargeEmbedding(chunk)),
 			);
 
-			const ids: string[] = [];
-			for (const { chunk, embedding, index, total } of chunked) {
-				const largeEmbedding = largeEmbeddings[index];
-				const id = await qdrantService.upsert(
-					chunk,
-					embedding,
-					{ ...metadata, chunk_index: index, total_chunks: total, chunk_group_id: chunkGroupId },
-					largeEmbedding,
-				);
-				ids.push(id);
-			}
+			// Batch upsert all chunks in a single operation
+			const points = chunked.map(({ chunk, embedding, index, total }) => ({
+				content: chunk,
+				vector: embedding,
+				vectorLarge: largeEmbeddings[index],
+				metadata: { ...metadata, chunk_index: index, total_chunks: total, chunk_group_id: chunkGroupId },
+			}));
+
+			const batchResult = await qdrantService.batchUpsert(points);
+			const ids = batchResult.successfulIds;
 
 			logger.info(`Memory stored: ${ids.length} chunks`);
 
@@ -181,7 +180,26 @@ async function memoryQueryHandler(args: unknown): Promise<StandardResponse> {
 
 	try {
 		const input = MemoryQueryInputSchema.parse(args);
-		logger.info(`Querying memory: "${input.query.slice(0, QUERY_LOG_LENGTH)}..."`);
+		const queryPreview = input.query.slice(0, QUERY_LOG_LENGTH);
+		const isTruncated = input.query.length > QUERY_LOG_LENGTH ? '...' : '';
+		logger.info(`Querying memory: "${queryPreview}${isTruncated}"`);
+
+		// Hybrid search does not support pagination
+		if (input.use_hybrid_search && input.offset !== undefined && input.offset > 0) {
+			return errorResponse(
+				'Hybrid search does not support pagination. Use standard search for pagination.',
+				'VALIDATION_ERROR',
+			);
+		}
+
+		// Auto-inject workspace to filter if not explicitly provided (match store behavior)
+		const filter = input.filter;
+		if (filter === undefined || filter.workspace === undefined) {
+			const detected = workspaceDetector.detect();
+			if (detected.workspace !== null && detected.workspace !== undefined) {
+				logger.debug(`Auto-injecting workspace filter: ${detected.workspace}`);
+			}
+		}
 
 		const dual = await embeddingService.generateDualEmbeddings(input.query);
 
@@ -189,7 +207,12 @@ async function memoryQueryHandler(args: unknown): Promise<StandardResponse> {
 		const results = await qdrantService.search({
 			vector: dual.small,
 			vectorLarge: dual.large,
-			filter: input.filter,
+			filter: {
+				...filter,
+				...(filter === undefined || filter.workspace === undefined
+					? { workspace: workspaceDetector.detect().workspace }
+					: {}),
+			},
 			limit: input.limit,
 			offset: input.offset,
 			scoreThreshold: input.score_threshold,
@@ -238,6 +261,12 @@ async function memoryListHandler(args: unknown): Promise<StandardResponse> {
 
 		// Determine fetch strategy based on sorting needs
 		let results: SearchResult[];
+		// NOTE: We fetch the total count upfront to:
+		// 1) Determine the memory load for sort operations (MAX_IN_MEMORY_SORT_COUNT cap)
+		// 2) Return total_count in the response to clients (pagination metadata)
+		// This is necessary for the current API contract, but could be optimized by:
+		// - Deferring count() until needed (only if sorting is requested)
+		// - Implementing streaming pagination to avoid loading large result sets
 		const totalCount = await qdrantService.count(input.filter);
 
 		if (!input.sort_by || input.sort_by === 'created_at') {
@@ -454,17 +483,16 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 						chunked.map(({ chunk }) => embeddingService.generateLargeEmbedding(chunk)),
 					);
 
-					const newIds: string[] = [];
-					for (const { chunk, embedding, index, total } of chunked) {
-						const largeEmbedding = largeEmbeddings[index];
-						const id = await qdrantService.upsert(
-							chunk,
-							embedding,
-							{ ...mergedMetadata, chunk_index: index, total_chunks: total, chunk_group_id: newChunkGroupId },
-							largeEmbedding,
-						);
-						newIds.push(id);
-					}
+					// Batch upsert all chunks in a single operation
+					const points = chunked.map(({ chunk, embedding, index, total }) => ({
+						content: chunk,
+						vector: embedding,
+						vectorLarge: largeEmbeddings[index],
+						metadata: { ...mergedMetadata, chunk_index: index, total_chunks: total, chunk_group_id: newChunkGroupId },
+					}));
+
+					const batchResult = await qdrantService.batchUpsert(points);
+					const newIds = batchResult.successfulIds;
 
 					logger.info(`Chunked memory updated: re-stored ${newIds.length} chunks (deleted ${siblingIds.length} old chunks)`);
 
@@ -681,11 +709,12 @@ async function memoryStatusHandler(args: unknown): Promise<StandardResponse> {
 			});
 		}
 
-		// Count by memory type
+		// Count by memory type (scoped to workspace if provided)
+		const typeFilter = input.workspace !== undefined ? { workspace: input.workspace } : {};
 		const typeCounts = {
-			episodic: await qdrantService.count({ memory_type: 'episodic' }),
-			short_term: await qdrantService.count({ memory_type: 'short-term' }),
-			long_term: await qdrantService.count({ memory_type: 'long-term' }),
+			episodic: await qdrantService.count({ memory_type: 'episodic', ...typeFilter }),
+			short_term: await qdrantService.count({ memory_type: 'short-term', ...typeFilter }),
+			long_term: await qdrantService.count({ memory_type: 'long-term', ...typeFilter }),
 		};
 
 		// Get embedding stats if requested
