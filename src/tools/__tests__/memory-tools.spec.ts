@@ -172,10 +172,11 @@ describe('memory-store', () => {
 			{ chunk: 'c2', embedding: new Array(384).fill(0.1), index: 1, total: 2 },
 		]);
 		await getTool('memory-store').handler({ content: longContent, auto_chunk: true });
-		// Each upsert call passes (id, embeddings, payload) — extract the payload (3rd arg)
-		const calls = mockQdrant.upsert.mock.calls as unknown as [string, unknown, Record<string, unknown>][];
-		const groupId0 = calls[0]?.[2]?.chunk_group_id;
-		const groupId1 = calls[1]?.[2]?.chunk_group_id;
+		// For chunked content, batchUpsert is called with an array of points
+		const calls = mockQdrant.batchUpsert.mock.calls as unknown as Array<Array<{ metadata: Record<string, unknown> }[]>>;
+		const points = calls[0]?.[0] ?? [];
+		const groupId0 = points[0]?.metadata?.chunk_group_id;
+		const groupId1 = points[1]?.metadata?.chunk_group_id;
 		expect(groupId0).toBeDefined();
 		expect(groupId0).toBe(groupId1);
 	});
@@ -4133,7 +4134,7 @@ describe('coverage push - validation boundary cases', () => {
 		mockQdrant.upsert.mockResolvedValue('id');
 		const maxContent = 'a'.repeat(100_000); // Exactly at max
 
-		const result = await getTool('memory-store').handler({ content: maxContent });
+		const result = await getTool('memory-store').handler({ content: maxContent, auto_chunk: false });
 
 		expect(result.success).toBe(true);
 		expect(mockQdrant.upsert).toHaveBeenCalled();
