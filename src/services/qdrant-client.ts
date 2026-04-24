@@ -60,7 +60,7 @@ const HTTPS_DEFAULT_PORT = 443;
  */
 interface QdrantPoint {
 	id: string;
-	vector: number[] | { dense?: number[]; sparse?: number[] };
+	vector: { dense: number[]; dense_large?: number[] };
 	payload: QdrantPayload;
 }
 
@@ -386,8 +386,10 @@ export class QdrantService {
 	/**
 	 * Batch upsert multiple points into the collection.
 	 *
-	 * @internal — Not exposed via public API; retained for potential bulk import use cases.
 	 * Uses the same timestamp and metadata logic as upsert().
+	 *
+	 * @param points - Array of points to upsert, each with content, vector(s), and optional metadata.
+	 * @returns Result with successful IDs, failed points, and total processed count.
 	 */
 	public async batchUpsert(
 		points: Array<{

@@ -49,7 +49,7 @@ export class RulesManagerService {
 	/**
    * Initialize rules - copy to Claude directory if enabled
    */
-	public async initialize(): Promise<void> {
+	public initialize(): void {
 		if (!config.rules.copyClaudeRules) {
 			logger.info('Rule copying disabled (COPY_CLAUDE_RULES=false)');
 			return;
@@ -68,7 +68,7 @@ export class RulesManagerService {
 			this.ensureDirectoryExists(this.targetDir);
 
 			// Copy rules
-			const copiedCount = await this.copyRules();
+			const copiedCount = this.copyRules();
 
 			if (copiedCount > 0) {
 				logger.info(`Copied ${copiedCount} rule file(s) to ${this.targetDir}`);
@@ -86,7 +86,7 @@ export class RulesManagerService {
    *
    * @returns The total number of files successfully copied.
    */
-	private async copyRules(): Promise<number> {
+	private copyRules(): number {
 		let copiedCount = 0;
 
 		// Read source directory
@@ -99,7 +99,7 @@ export class RulesManagerService {
 			try {
 				if (entry.isDirectory()) {
 					// Recursively copy subdirectory (for future nested rule organization)
-					copiedCount += await this.copyDirectory(sourcePath, targetPath);
+					copiedCount += this.copyDirectory(sourcePath, targetPath);
 				} else if (entry.isFile()) {
 					// Copy file
 					copyFileSync(sourcePath, targetPath);
@@ -121,7 +121,7 @@ export class RulesManagerService {
    * @param target - Absolute path to the destination directory (created if absent).
    * @returns The number of files copied in this subtree.
    */
-	private async copyDirectory(source: string, target: string): Promise<number> {
+	private copyDirectory(source: string, target: string): number {
 		let copiedCount = 0;
 
 		// Ensure target directory exists
@@ -137,7 +137,7 @@ export class RulesManagerService {
 			try {
 				if (entry.isDirectory()) {
 					// Recursively copy subdirectory
-					copiedCount += await this.copyDirectory(sourcePath, targetPath);
+					copiedCount += this.copyDirectory(sourcePath, targetPath);
 				} else if (entry.isFile()) {
 					// Copy file
 					copyFileSync(sourcePath, targetPath);

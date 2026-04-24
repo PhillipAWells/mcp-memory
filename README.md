@@ -6,7 +6,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/PhillipAWells?style=social)](https://github.com/sponsors/PhillipAWells)
 
-Model Context Protocol (MCP) server for persistent memory and knowledge management using Qdrant vector database and OpenAI embeddings.
+## Description
+
+`@pawells/mcp-memory` is a Model Context Protocol (MCP) server that provides persistent semantic memory and knowledge management for Claude Code and other AI agents. It combines OpenAI embeddings with Qdrant vector database to enable hybrid search (dense vectors + keyword indexing) with automatic memory expiry, workspace isolation, and comprehensive secrets detection to prevent accidental storage of sensitive credentials.
 
 ## Features
 

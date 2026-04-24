@@ -1,6 +1,6 @@
 ## Project Overview
 
-`@pawells/mcp-memory` is a Model Context Protocol (MCP) server providing semantic memory and knowledge management for Claude Code and other MCP clients. It uses OpenAI embeddings combined with Qdrant vector database to store, search, and manage memories. Features include automatic memory classification (long-term/episodic/short-term), secrets detection, workspace isolation, hybrid search (dense vector + keyword full-text, fused via RRF), and LRU caching for cost optimization. Published to npm and GitHub Packages.
+`@pawells/mcp-memory` is a Model Context Protocol (MCP) server providing semantic memory and knowledge management for Claude Code and other MCP clients. It uses OpenAI embeddings combined with Qdrant vector database to store, search, and manage memories. Features include automatic memory classification (long-term/episodic/short-term), secrets detection, workspace isolation, hybrid search (dense vector + keyword full-text, fused via RRF), and LRU caching for cost optimization. Published to npm.
 
 ## Package Manager
 
