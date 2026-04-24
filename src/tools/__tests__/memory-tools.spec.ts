@@ -12,6 +12,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 const { mockQdrant, mockEmbedding, mockWorkspace } = vi.hoisted(() => {
 	const mockQdrant = {
 		upsert: vi.fn().mockResolvedValue('test-id-1234'),
+		batchUpsert: vi.fn().mockResolvedValue({ successfulIds: ['test-id-1'], failedPoints: [], totalProcessed: 1 }),
 		search: vi.fn().mockResolvedValue([]),
 		get: vi.fn().mockResolvedValue(null),
 		list: vi.fn().mockResolvedValue([]),
@@ -598,7 +599,7 @@ describe('memory-update - chunked memory content updates', () => {
 		vi.clearAllMocks();
 	});
 
-	it('reindexes content when reindex=true for chunked memory', async () => {
+	it('re-chunks content when auto_chunk=true for updated memory', async () => {
 		mockQdrant.get.mockResolvedValueOnce({
 			...baseMemory,
 			metadata: {
@@ -648,13 +649,13 @@ describe('memory-update - chunked memory content updates', () => {
 			},
 		]);
 
-		mockQdrant.upsert.mockResolvedValue('new-chunk-id-1');
+		mockQdrant.batchUpsert.mockResolvedValue({ successfulIds: ['new-chunk-id-1', 'new-chunk-id-2', 'new-chunk-id-3'], failedPoints: [], totalProcessed: 3 });
 		mockQdrant.batchDelete.mockResolvedValue(undefined);
 
 		const result = await getTool('memory-update').handler({
 			id: VALID_UUID,
 			content: 'completely new content that needs re-chunking',
-			reindex: true,
+			auto_chunk: true,
 		});
 
 		expect(result.success).toBe(true);
@@ -835,9 +836,9 @@ describe('memory-update - chunked memory content updates', () => {
 	});
 });
 
-// ── memory-update edge cases for reindex parameter ──────────────────────────────
+// ── memory-update edge cases for content and metadata updates ──────────────────────────────
 
-describe('memory-update - reindex parameter behavior', () => {
+describe('memory-update - content and metadata update behavior', () => {
 	const VALID_UUID = '550e8400-e29b-41d4-a716-446655440004';
 	const baseMemory = {
 		id: VALID_UUID,
@@ -851,21 +852,21 @@ describe('memory-update - reindex parameter behavior', () => {
 		vi.clearAllMocks();
 	});
 
-	it('reindexes content when reindex=true explicitly', async () => {
+	it('re-embeds content when content is updated', async () => {
 		mockQdrant.get.mockResolvedValueOnce(baseMemory);
-		mockQdrant.upsert.mockResolvedValue('reindexed-id');
+		mockQdrant.upsert.mockResolvedValue('reembedded-id');
 
 		const result = await getTool('memory-update').handler({
 			id: VALID_UUID,
 			content: 'updated content',
-			reindex: true,
+			auto_chunk: true,
 		});
 
 		expect(result.success).toBe(true);
 		expect(mockQdrant.upsert).toHaveBeenCalled();
 	});
 
-	it('updates metadata without reindexing when only metadata is changed', async () => {
+	it('updates metadata without re-embedding when only metadata is changed', async () => {
 		mockQdrant.get.mockResolvedValueOnce(baseMemory);
 
 		const result = await getTool('memory-update').handler({
@@ -877,7 +878,7 @@ describe('memory-update - reindex parameter behavior', () => {
 		expect(mockQdrant.updatePayload).toHaveBeenCalled();
 	});
 
-	it('handles content updates with reindex', async () => {
+	it('handles content updates with auto_chunk enabled (default)', async () => {
 		mockQdrant.get.mockResolvedValueOnce(baseMemory);
 		mockQdrant.upsert.mockResolvedValue('new-id');
 
