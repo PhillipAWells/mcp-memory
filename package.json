@@ -23,7 +23,7 @@
 		"test:ui": "vitest --ui",
 		"test:coverage": "vitest --coverage",
 		"pipeline": "yarn typecheck && yarn lint && yarn test:coverage && yarn build",
-		"prepublishOnly": "npm run build",
+		"prepublishOnly": "yarn build",
 		"prepare": "husky"
 	},
 	"dependencies": {
