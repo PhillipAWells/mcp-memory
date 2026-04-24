@@ -531,6 +531,7 @@ export class QdrantService {
 			path: (r.payload?.path as string) || '',
 			content: (r.payload?.content as string) || '',
 			score: r.score,
+			// @ts-expect-error Qdrant client returns Record<string, any> but we know our schema uses QdrantPayload
 			metadata: r.payload as unknown as QdrantPayload,
 		}));
 	}
@@ -589,8 +590,8 @@ export class QdrantService {
 		// eslint-disable-next-line no-magic-numbers
 		const alpha = params.hybridAlpha ?? 0.5; // Default: equal weighting between dense and text
 		const rrfScores = new Map<string, number>();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Qdrant points have arbitrary payload structure
-		const pointsById = new Map<string, any>();
+		// Qdrant points have arbitrary payload structure; using Record<string, unknown> for type safety
+		const pointsById = new Map<string, Record<string, unknown>>();
 
 		// Add vector search results (weighted by alpha)
 		vectorResults.forEach((result, index) => {
@@ -622,6 +623,7 @@ export class QdrantService {
 					path: (point.payload?.path as string) || '',
 					content: (point.payload?.content as string) || '',
 					score,
+					// @ts-expect-error Qdrant client returns Record<string, unknown> but we know our schema uses QdrantPayload
 					metadata: point.payload as unknown as QdrantPayload,
 				}];
 			});
@@ -678,6 +680,7 @@ export class QdrantService {
 			path: (point.payload?.path as string) || '',
 			content: (point.payload?.content as string) || '',
 			score: 1.0,
+			// @ts-expect-error Qdrant client returns Record<string, unknown> but we know our schema uses QdrantPayload
 			metadata: point.payload as unknown as QdrantPayload,
 		};
 	}
@@ -735,6 +738,7 @@ export class QdrantService {
 			path: (p.payload?.path as string) || '',
 			content: (p.payload?.content as string) || '',
 			score: 1.0,
+			// @ts-expect-error Qdrant client returns Record<string, unknown> but we know our schema uses QdrantPayload
 			metadata: p.payload as unknown as QdrantPayload,
 		}));
 	}

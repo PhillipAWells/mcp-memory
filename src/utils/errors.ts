@@ -21,7 +21,8 @@ export function extractErrorMessage(error: unknown): string {
 		return error.message;
 	}
 	if (typeof error === 'object' && error !== null && 'message' in error) {
-		return String((error as Record<string, unknown>).message);
+		const msg = error.message;
+		return String(msg);
 	}
 	return String(error);
 }

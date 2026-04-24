@@ -18,7 +18,7 @@ const QUERY_LOG_LENGTH = 50;
 /** Max records to sort in memory (beyond this, warn and cap). */
 const MAX_IN_MEMORY_SORT_COUNT = 10000;
 import { z } from 'zod';
-import { MCPTool, StandardResponse, SearchResult } from '../types/index.js';
+import type { MCPTool, StandardResponse, SearchResult } from '../types/index.js';
 import { successResponse, errorResponse, validationError, notFoundError } from '../utils/response.js';
 import { config } from '../config.js';
 import { extractErrorMessage } from '../utils/errors.js';
@@ -382,6 +382,11 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 	try {
 		const input = MemoryUpdateInputSchema.parse(args);
 		logger.info(`Updating memory: ${input.id}`);
+
+		// Validation: at least one of content or metadata must be provided
+		if (!input.content && !input.metadata) {
+			return validationError('At least one of content or metadata must be provided');
+		}
 
 		// Check for secrets if content is being updated
 		if (input.content) {

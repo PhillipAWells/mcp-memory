@@ -75,7 +75,9 @@ if (_proxyUrl !== null) {
 	}
 
 	const agent = new EnvHttpProxyAgent();
+	// @ts-expect-error EnvHttpProxyAgent is a Dispatcher but TypeScript doesn't recognize the structural match
 	setGlobalDispatcher(agent as unknown as Parameters<typeof setGlobalDispatcher>[0]);
+	// @ts-expect-error EnvHttpProxyAgent is assignable to Dispatcher but TypeScript doesn't recognize it
 	activeProxyAgent = agent as unknown as Dispatcher;
 
 	// The Qdrant JS client passes its own undici Agent instance as `dispatcher`
