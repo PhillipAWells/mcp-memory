@@ -5,12 +5,28 @@
  * accidental storage in semantic memory.
  */
 
+/**
+ * Result of secret detection in content.
+ *
+ * @property found - Whether any secrets were detected.
+ * @property secrets - Array of detected secret instances.
+ * @property sanitized - Optional sanitized version of content with secrets replaced by placeholders.
+ */
 export interface SecretDetection {
 	found: boolean;
 	secrets: DetectedSecret[];
 	sanitized?: string;
 }
 
+/**
+ * A single detected secret instance in content.
+ *
+ * @property type - The type of secret detected.
+ * @property pattern - Human-readable description of the detection pattern.
+ * @property location - Character indices of the detected secret in the original content.
+ * @property context - Surrounding context with the secret redacted.
+ * @property confidence - Confidence level: high/medium/low.
+ */
 export interface DetectedSecret {
 	type: SecretType;
 	pattern: string;
@@ -22,6 +38,12 @@ export interface DetectedSecret {
 	confidence: 'high' | 'medium' | 'low';
 }
 
+/**
+ * Enumeration of detectable secret types.
+ *
+ * Includes API keys, tokens (JWT, OAuth, Bearer), credentials (AWS, GCP, Azure),
+ * database URLs, private keys, and PII (email, phone, SSN, credit cards).
+ */
 export type SecretType =
   | 'api_key'
   | 'bearer_token'
@@ -281,7 +303,21 @@ function applySanitization(content: string, secrets: DetectedSecret[]): string {
 }
 
 /**
- * Detect secrets and sensitive information in content
+ * Detect secrets and sensitive information in content.
+ *
+ * Scans content against 18+ secret patterns (API keys, tokens, credentials, PII).
+ * High-confidence patterns are prioritized; overlapping detections are deduplicated
+ * by keeping the highest-confidence match. Credit card numbers are validated with
+ * Luhn algorithm to reduce false positives.
+ *
+ * @param content - The text to scan for secrets.
+ * @returns Detection result with found flag, list of secrets, and sanitized content.
+ * @example
+ * const detection = detectSecrets('API key: sk-abc123');
+ * if (detection.found) {
+ *   console.log('Secrets detected:', detection.secrets.length);
+ *   console.log('Sanitized:', detection.sanitized);
+ * }
  */
 export function detectSecrets(content: string): SecretDetection {
 	const secrets: DetectedSecret[] = [];
@@ -366,7 +402,17 @@ export function detectSecrets(content: string): SecretDetection {
 }
 
 /**
- * Sanitize content by replacing detected secrets with placeholders
+ * Sanitize content by replacing detected secrets with placeholders.
+ *
+ * Runs secret detection and returns content with all detected secrets replaced
+ * by `[REDACTED_<type>]` placeholders. If no secrets are found, returns
+ * the original content unchanged.
+ *
+ * @param content - The text to sanitize.
+ * @returns Sanitized content with secrets replaced by placeholders.
+ * @example
+ * const sanitized = sanitizeContent('password: secret123');
+ * // Returns: 'password: [REDACTED_PASSWORD]'
  */
 export function sanitizeContent(content: string): string {
 	const detection = detectSecrets(content);
@@ -374,7 +420,20 @@ export function sanitizeContent(content: string): string {
 }
 
 /**
- * Check if content is safe to store (no high-confidence secrets)
+ * Check if content is safe to store in semantic memory.
+ *
+ * Returns `safe: true` if the content contains no high-confidence secrets
+ * and fewer than 3 distinct medium-confidence detections. Includes metadata
+ * on why storage may be unsafe and the raw detection result for logging.
+ *
+ * @param content - The text to validate for storage.
+ * @returns Object with safe flag, optional reason, detected secrets, and full detection result.
+ * @throws {never} Does not throw; always returns a result object.
+ * @example
+ * const result = isSafeToStore('Database URL: postgres://user:pass@host/db');
+ * if (!result.safe) {
+ *   console.error('Cannot store:', result.reason);
+ * }
  */
 export function isSafeToStore(content: string): {
 	safe: boolean;
@@ -426,7 +485,17 @@ export function isSafeToStore(content: string): {
 }
 
 /**
- * Get a user-friendly summary of detected secrets
+ * Get a user-friendly summary of detected secrets.
+ *
+ * Aggregates detected secrets by type and counts high-confidence matches
+ * to produce a readable summary for logging or error messages.
+ *
+ * @param detection - The result from detectSecrets().
+ * @returns Human-readable summary string (e.g., "Detected: 2 api_key(s), 1 jwt_token(s) (1 high confidence)").
+ * @example
+ * const detection = detectSecrets(content);
+ * console.log(getSecretsSummary(detection));
+ * // Output: "No secrets detected" or "Detected: 1 api_key(s) (1 high confidence)"
  */
 export function getSecretsSummary(detection: SecretDetection): string {
 	if (!detection.found) {

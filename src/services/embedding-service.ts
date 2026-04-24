@@ -55,8 +55,8 @@ const HTTP_STATUS_GATEWAY_TIMEOUT = 504;
 /**
  * Embedding Service
  *
- * Generates embeddings with caching and cost tracking.
- * Provider (openai | local) is determined by config.embedding.provider.
+ * Generates embeddings using OpenAI text-embedding-3-small and
+ * text-embedding-3-large with LRU caching and cost tracking.
  */
 export class EmbeddingService {
 	private readonly client: OpenAI;

@@ -412,12 +412,11 @@ describe('memory-update', () => {
 		expect((result.data as any).siblings_updated).toBe(3);
 	});
 
-	it('reindexes when content is updated and reindex=true', async () => {
+	it('automatically reindexes when content is updated', async () => {
 		mockQdrant.get.mockResolvedValueOnce(baseMemory);
 		const result = await getTool('memory-update').handler({
 			id: VALID_UUID,
 			content: 'new content here',
-			reindex: true,
 		});
 		expect(result.success).toBe(true);
 		expect(mockQdrant.upsert).toHaveBeenCalledTimes(1);

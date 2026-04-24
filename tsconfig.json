@@ -3,8 +3,6 @@
 		"target": "ES2022",
 		"module": "ES2022",
 		"moduleResolution": "bundler",
-		"outDir": "./build",
-		"rootDir": "./src",
 		"strict": true,
 		"esModuleInterop": true,
 		"skipLibCheck": true,
@@ -18,8 +16,7 @@
 		"strictFunctionTypes": true,
 		"lib": [
 			"ES2022"
-		],
-		"types": ["vitest/globals"]
+		]
 	},
 	"include": [
 		"src/**/*"

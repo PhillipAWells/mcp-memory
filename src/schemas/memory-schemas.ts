@@ -175,8 +175,8 @@ export type MemoryGetInput = z.infer<typeof MemoryGetInputSchema>;
  * Input schema for the `memory-update` tool.
  *
  * At least one of `content` or `metadata` must be provided (enforced by
- * the handler, not the schema).  Setting `reindex: true` regenerates
- * embeddings for the new content and overwrites the point atomically.
+ * the handler, not the schema). When content is provided, embeddings are
+ * automatically regenerated and the point is overwritten atomically.
  */
 export const MemoryUpdateInputSchema = z.object({
 	/** UUID of the memory to update. */

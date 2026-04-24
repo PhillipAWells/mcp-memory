@@ -775,7 +775,7 @@ export const memoryTools: MCPTool[] = [
 	{
 		name: 'memory-update',
 		description:
-      'Update memory content or metadata. Can optionally reindex content with new embeddings',
+      'Update memory content or metadata. Content updates automatically trigger reindexing with new embeddings',
 		inputSchema: memorySchemas['memory-update'],
 		handler: memoryUpdateHandler,
 	},
