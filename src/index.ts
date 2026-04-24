@@ -4,9 +4,9 @@
  * MCP Memory Server
  *
  * Model Context Protocol server for persistent semantic memory and knowledge
- * management. Uses OpenAI embeddings (or a local HuggingFace/ONNX model) with
- * Qdrant vector database to store, search, and manage memories with automatic
- * classification, secrets detection, and workspace isolation.
+ * management. Uses OpenAI embeddings with Qdrant vector database to store,
+ * search, and manage memories with automatic classification, secrets detection,
+ * and workspace isolation.
  */
 
 // Proxy MUST be the first import — sets the global fetch dispatcher before any HTTP client module initialises.
@@ -23,7 +23,6 @@ import { config } from './config.js';
 import { logger } from './utils/logger.js';
 import { tools } from './tools/index.js';
 import { rulesManager } from './services/rules-manager.js';
-import { preloadLocalPipeline } from './services/local-embedding-provider.js';
 import { extractErrorMessage } from './utils/errors.js';
 
 /**
@@ -51,14 +50,6 @@ async function main(): Promise<void> {
 
 	// Initialize rules (copy to Claude directory if enabled)
 	await rulesManager.initialize();
-
-	// Preload local embedding model in the background so it is ready before the
-	// first request arrives.  Only triggered when using the local provider.
-	if (config.embedding.provider === 'local') {
-		preloadLocalPipeline().catch((err) =>
-			logger.warn('Local embedding model preload failed (will retry on first request):', err),
-		);
-	}
 
 	// Create MCP server instance
 	const server = new Server(

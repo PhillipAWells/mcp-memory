@@ -1,6 +1,6 @@
 ## Project Overview
 
-`@pawells/mcp-memory` is a Model Context Protocol (MCP) server providing semantic memory and knowledge management for Claude Code and other MCP clients. It uses OpenAI embeddings (or local HuggingFace/ONNX models) combined with Qdrant vector database to store, search, and manage memories. Features include automatic memory classification (long-term/episodic/short-term), secrets detection, workspace isolation, hybrid search (semantic + BM25 text), and LRU caching for cost optimization. Published to npm and GitHub Packages.
+`@pawells/mcp-memory` is a Model Context Protocol (MCP) server providing semantic memory and knowledge management for Claude Code and other MCP clients. It uses OpenAI embeddings combined with Qdrant vector database to store, search, and manage memories. Features include automatic memory classification (long-term/episodic/short-term), secrets detection, workspace isolation, hybrid search (semantic + BM25 text), and LRU caching for cost optimization. Published to npm and GitHub Packages.
 
 ## Package Manager
 
@@ -46,9 +46,9 @@ MCP Client (Claude Code) → MCP Server (src/index.ts)
                          → External: OpenAI API + Qdrant DB
 ```
 
-**Entry point** (`src/index.ts`): Initializes the MCP server, registers 9 tool handlers, and starts RulesManager to copy `rules/` into `.claude/rules/` on startup. When `EMBEDDING_PROVIDER=local`, preloads the HuggingFace/ONNX model in the background. `src/utils/proxy.ts` is imported first to ensure the global fetch dispatcher is configured before any HTTP client is constructed.
+**Entry point** (`src/index.ts`): Initializes the MCP server, registers 9 tool handlers, and starts RulesManager to copy `rules/` into `.claude/rules/` on startup. `src/utils/proxy.ts` is imported first to ensure the global fetch dispatcher is configured before any HTTP client is constructed.
 
-**Configuration** (`src/config.ts`): All environment variables are loaded and validated using Zod schemas. See `.env.example` for complete variable list. `QDRANT_URL` is the only required variable; embedding provider is auto-detected based on presence of `OPENAI_API_KEY`.
+**Configuration** (`src/config.ts`): All environment variables are loaded and validated using Zod schemas. See `.env.example` for complete variable list. `OPENAI_API_KEY` and `QDRANT_URL` are required.
 
 **Types** (`src/types/index.ts`): Shared interfaces including `MemoryType`, `MemoryMetadata`, `SearchResult`, `StandardResponse<T>`, `ErrorType`, `MCPTool`, `EmbeddingStats`, `QdrantPayload`, and `SearchFilters`.
 
@@ -58,8 +58,7 @@ MCP Client (Claude Code) → MCP Server (src/index.ts)
 
 **Services** (singleton exports from `src/services/`):
 - `QdrantService` — Vector database operations; stores two named vectors per point (`dense` for small embeddings, `dense_large` for large). Supports dense HNSW + sparse BM25 hybrid search with Reciprocal Rank Fusion (RRF).
-- `EmbeddingService` — OpenAI embeddings (text-embedding-3-small/large) or local HuggingFace model with 10,000-entry LRU cache and cost tracking.
-- `LocalEmbeddingProvider` — HuggingFace/ONNX CPU inference (default: `Xenova/all-MiniLM-L6-v2`, 384d). Model cached at `~/.cache/mcp-memory/models`; first call downloads ~20–140 MB depending on model.
+- `EmbeddingService` — OpenAI embeddings (text-embedding-3-small/large) with 10,000-entry LRU cache and cost tracking.
 - `SecretsDetector` — Blocks storage of 18+ secret patterns (API keys, tokens, passwords, etc.). High-confidence matches block immediately; 3+ distinct medium-confidence matches also block.
 - `WorkspaceDetector` — Derives workspace name from env var → package.json → directory name. Reserved names (`system`, `admin`, `root`, etc.) are rejected.
 - `RulesManager` — Copies `rules/*.md` into `.claude/rules/` at startup.
@@ -122,10 +121,10 @@ docker run -p 6333:6333 qdrant/qdrant
 
 Or use `QDRANT_URL` env var to point to a cloud instance.
 
-**Embedding Setup**: Either configure `OPENAI_API_KEY` for OpenAI embeddings, or leave unset to use local HuggingFace embeddings (downloads model on first use, ~20–140 MB cached).
+**Embedding Setup**: Set `OPENAI_API_KEY` — required for all embedding operations.
 
 **Rules Synchronization**: By default (`COPY_CLAUDE_RULES=true`), the server copies `rules/memory.md` into `.claude/rules/memory.md` on startup. This allows Claude Code to automatically load memory usage guidance as system context.
 
 **Development Container**: A custom `.devcontainer/Dockerfile` is provided with Node.js environment and post-creation setup hook.
 
-**Proxy Support**: All outbound HTTP traffic (OpenAI API, Qdrant, HuggingFace model downloads) is automatically proxied when `HTTPS_PROXY` or `HTTP_PROXY` is set. `NO_PROXY` defaults to `localhost,127.0.0.1,::1` when a proxy is active and the variable is absent, protecting local Qdrant traffic. See `src/utils/proxy.ts`.
+**Proxy Support**: All outbound HTTP traffic (OpenAI API, Qdrant) is automatically proxied when `HTTPS_PROXY` or `HTTP_PROXY` is set. `NO_PROXY` defaults to `localhost,127.0.0.1,::1` when a proxy is active and the variable is absent, protecting local Qdrant traffic. See `src/utils/proxy.ts`.

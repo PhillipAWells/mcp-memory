@@ -1,10 +1,8 @@
 /**
  * Embedding Service
  *
- * Generates embeddings with LRU caching and cost tracking.
- * Supports two providers:
- *   - 'openai'  — OpenAI text-embedding-3-small / text-embedding-3-large (requires OPENAI_API_KEY)
- *   - 'local'   — @huggingface/transformers running locally (no API key required)
+ * Generates embeddings using OpenAI text-embedding-3-small / text-embedding-3-large,
+ * with LRU caching and cost tracking.
  */
 
 import OpenAI from 'openai';
@@ -12,7 +10,6 @@ import { createHash } from 'crypto';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { withRetry } from '../utils/retry.js';
-import { generateLocalEmbedding } from './local-embedding-provider.js';
 import type { EmbeddingStats } from '../types/index.js';
 
 /**
@@ -62,7 +59,7 @@ const HTTP_STATUS_GATEWAY_TIMEOUT = 504;
  * Provider (openai | local) is determined by config.embedding.provider.
  */
 export class EmbeddingService {
-	private readonly client: OpenAI | null;
+	private readonly client: OpenAI;
 	private readonly cache: Map<string, CacheEntry>;
 	private readonly maxCacheSize: number = MAX_CACHE_SIZE;
 
@@ -82,24 +79,11 @@ export class EmbeddingService {
 		this.SMALL_DIMENSIONS = config.embedding.smallDimensions;
 		this.LARGE_DIMENSIONS = config.embedding.largeDimensions;
 		this.cache = new Map();
-
-		if (config.embedding.provider === 'openai') {
-			if (!config.openai.apiKey) {
-				throw new Error(
-					'OPENAI_API_KEY is required when EMBEDDING_PROVIDER=openai. ' +
-          'Set the key or omit EMBEDDING_PROVIDER to use local embeddings.',
-				);
-			}
-			this.client = new OpenAI({ apiKey: config.openai.apiKey });
-			logger.info(`Embedding service initialized (provider: openai, model: ${this.SMALL_MODEL})`);
-		} else {
-			this.client = null;
-			logger.info(
-				`Embedding service initialized (provider: local, model: ${config.embedding.localModel}, ` +
-        `dimensions: ${this.SMALL_DIMENSIONS})`,
-			);
+		if (!config.openai.apiKey) {
+			throw new Error('OPENAI_API_KEY is required. Set it in your environment or .env file.');
 		}
-
+		this.client = new OpenAI({ apiKey: config.openai.apiKey });
+		logger.info(`Embedding service initialized (model: ${this.SMALL_MODEL})`);
 		logger.debug(`Max cache size: ${this.maxCacheSize}`);
 	}
 
@@ -126,18 +110,14 @@ export class EmbeddingService {
 		this.cacheMisses++;
 		logger.debug(`Generating embedding for text: "${this.truncate(text, DEBUG_TRUNCATE_LEN)}"`);
 
-		const embedding = config.embedding.provider === 'openai'
-			? await this.generateOpenAIEmbedding(text, this.SMALL_MODEL, this.SMALL_DIMENSIONS)
-			: await generateLocalEmbedding(text);
+		const embedding = await this.generateOpenAIEmbedding(text, this.SMALL_MODEL, this.SMALL_DIMENSIONS);
 
 		this.addToCache(cacheKey, embedding);
 		return embedding;
 	}
 
 	/**
-   * Generate large embedding for a single text.
-   * With OpenAI: uses text-embedding-3-large (higher quality).
-   * With local provider: uses the same local model (no quality distinction).
+   * Generate large embedding for a single text using text-embedding-3-large.
    */
 	public async generateLargeEmbedding(text: string): Promise<number[]> {
 		this.totalEmbeddings++;
@@ -159,36 +139,24 @@ export class EmbeddingService {
 		this.cacheMisses++;
 		logger.debug(`Generating large embedding for text: "${this.truncate(text, DEBUG_TRUNCATE_LEN)}"`);
 
-		const embedding = config.embedding.provider === 'openai'
-			? await this.generateOpenAIEmbedding(text, this.LARGE_MODEL, this.LARGE_DIMENSIONS)
-			: await generateLocalEmbedding(text);
+		const embedding = await this.generateOpenAIEmbedding(text, this.LARGE_MODEL, this.LARGE_DIMENSIONS);
 
 		this.addToCache(cacheKey, embedding);
 		return embedding;
 	}
 
 	/**
-   * Generate both small and large embeddings.
-   * With OpenAI: two separate API calls (different quality models) in parallel.
-   * With local provider: single inference, result reused for both vectors.
+   * Generate both small and large embeddings in parallel.
    */
 	public async generateDualEmbeddings(text: string): Promise<{
 		small: number[];
 		large: number[];
 	}> {
-		if (config.embedding.provider === 'local') {
-			// Local: one model, one inference — reuse for both named vectors
-			const embedding = await this.generateEmbedding(text);
-			logger.debug('Dual embeddings generated (local, single inference)');
-			return { small: embedding, large: embedding };
-		}
-
-		// OpenAI: generate both in parallel
 		const [small, large] = await Promise.all([
 			this.generateEmbedding(text),
 			this.generateLargeEmbedding(text),
 		]);
-		logger.debug('Dual embeddings generated (openai, parallel)');
+		logger.debug('Dual embeddings generated (parallel)');
 		return { small, large };
 	}
 
@@ -315,11 +283,9 @@ export class EmbeddingService {
 	}
 
 	/**
-   * Estimate cost for text.
-   * Returns 0 for local provider (no API cost).
+   * Estimate cost for text (based on text-embedding-3-small pricing).
    */
 	public estimateCost(text: string): number {
-		if (config.embedding.provider === 'local') return 0;
 		const tokens = this.estimateTokens(text);
 		return (tokens / TOKENS_PER_MILLION) * COST_PER_MILLION_TOKENS_SMALL;
 	}
@@ -390,14 +356,8 @@ export class EmbeddingService {
 	): Promise<number[]> {
 		const isLarge = model === this.LARGE_MODEL;
 
-		if (!this.client) {
-			throw new Error('OpenAI client is not initialized');
-		}
-		// eslint-disable-next-line prefer-destructuring -- needed for type narrowing after null guard
-		const client = this.client;
-
 		const result = await withRetry(
-			() => client.embeddings.create({ model, input: text, dimensions }),
+			() => this.client.embeddings.create({ model, input: text, dimensions }),
 			{
 				maxRetries: 3,
 				initialDelay: 1000,
@@ -431,9 +391,7 @@ export class EmbeddingService {
 
 	private getCacheKey(text: string, variant: 'small' | 'large'): string {
 		const hash = createHash('sha256');
-		const model = config.embedding.provider === 'openai'
-			? (variant === 'large' ? this.LARGE_MODEL : this.SMALL_MODEL)
-			: config.embedding.localModel;
+		const model = variant === 'large' ? this.LARGE_MODEL : this.SMALL_MODEL;
 		const dims = variant === 'large' ? this.LARGE_DIMENSIONS : this.SMALL_DIMENSIONS;
 		hash.update(model);
 		hash.update(String(dims));

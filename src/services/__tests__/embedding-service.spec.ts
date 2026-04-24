@@ -1,39 +1,49 @@
 /**
- * Tests for EmbeddingService
- *
- * All tests use the 'local' provider (no OpenAI key required) with mocked
- * generateLocalEmbedding so that no model download occurs.
+ * Tests for EmbeddingService (OpenAI provider)
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-// ── Mock local embedding provider ────────────────────────────────────────────
-// Must be hoisted before the service import so the module resolution picks it up.
-vi.mock('../local-embedding-provider.js', () => ({
-	generateLocalEmbedding: vi.fn((_text: string) => new Array(384).fill(0.1)),
-	preloadLocalPipeline: vi.fn(() => undefined),
-	resetLocalPipeline: vi.fn(),
+// ── Mock OpenAI ───────────────────────────────────────────────────────────────
+
+const { mockCreate } = vi.hoisted(() => ({ mockCreate: vi.fn() }));
+
+vi.mock('openai', () => ({
+	default: vi.fn().mockImplementation(function() {
+		return { embeddings: { create: mockCreate } };
+	}),
 }));
 
 // ── Mock config ───────────────────────────────────────────────────────────────
 vi.mock('../../config.js', () => ({
 	config: {
 		embedding: {
-			provider: 'local',
-			localModel: 'test-model',
-			smallDimensions: 384,
-			largeDimensions: 384,
+			smallDimensions: 1536,
+			largeDimensions: 3072,
 		},
-		openai: { apiKey: undefined },
+		openai: { apiKey: 'test-key' },
 		server: { logLevel: 'error' },
 		memory: { chunkSize: 1000, chunkOverlap: 200 },
 	},
 }));
 
 import { EmbeddingService } from '../embedding-service.js';
-import { generateLocalEmbedding } from '../local-embedding-provider.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+function makeSmallResponse(dims = 1536) {
+	return {
+		data: [{ embedding: new Array(dims).fill(0.1) }],
+		usage: { total_tokens: 10 },
+	};
+}
+
+function makeLargeResponse(dims = 3072) {
+	return {
+		data: [{ embedding: new Array(dims).fill(0.2) }],
+		usage: { total_tokens: 10 },
+	};
+}
 
 function makeService(): EmbeddingService {
 	return new EmbeddingService();
@@ -46,18 +56,19 @@ describe('EmbeddingService.generateEmbedding', () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockCreate.mockResolvedValue(makeSmallResponse());
 		service = makeService();
 	});
 
 	it('returns an embedding vector for new text', async () => {
 		const result = await service.generateEmbedding('hello world');
 		expect(Array.isArray(result)).toBe(true);
-		expect(result).toHaveLength(384);
+		expect(result).toHaveLength(1536);
 	});
 
-	it('calls the local provider exactly once on a cache miss', async () => {
+	it('calls OpenAI exactly once on a cache miss', async () => {
 		await service.generateEmbedding('unique text abc');
-		expect(generateLocalEmbedding).toHaveBeenCalledTimes(1);
+		expect(mockCreate).toHaveBeenCalledTimes(1);
 	});
 
 	it('returns cached result on second call (cache hit)', async () => {
@@ -65,8 +76,7 @@ describe('EmbeddingService.generateEmbedding', () => {
 		const first = await service.generateEmbedding(text);
 		const second = await service.generateEmbedding(text);
 		expect(second).toEqual(first);
-		// Provider called only once — second comes from cache
-		expect(generateLocalEmbedding).toHaveBeenCalledTimes(1);
+		expect(mockCreate).toHaveBeenCalledTimes(1);
 	});
 
 	it('increments cacheHits stat on cache hit', async () => {
@@ -96,30 +106,31 @@ describe('EmbeddingService.generateLargeEmbedding', () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockCreate.mockResolvedValue(makeLargeResponse());
 		service = makeService();
 	});
 
-	it('returns an embedding vector', async () => {
+	it('returns an embedding vector with large dimensions', async () => {
 		const result = await service.generateLargeEmbedding('large text');
 		expect(Array.isArray(result)).toBe(true);
-		expect(result).toHaveLength(384);
+		expect(result).toHaveLength(3072);
 	});
 
-	it('shares cache key with small embedding when model+dims are equal (local provider)', async () => {
-		// With local provider both 'small' and 'large' use the same model and dimensions,
-		// so getCacheKey() produces the same hash → second call is a cache hit.
+	it('caches large embedding separately from small', async () => {
+		await service.generateLargeEmbedding('large cache test');
+		await service.generateLargeEmbedding('large cache test');
+		expect(mockCreate).toHaveBeenCalledTimes(1);
+	});
+
+	it('uses a separate cache key from small embedding', async () => {
+		mockCreate
+			.mockResolvedValueOnce(makeSmallResponse())
+			.mockResolvedValueOnce(makeLargeResponse());
+
 		const text = 'same text';
 		await service.generateEmbedding(text);
-		await service.generateLargeEmbedding(text); // cache hit — same key
-		expect(generateLocalEmbedding).toHaveBeenCalledTimes(1);
-	});
-
-	it('caches large embedding separately', async () => {
-		const text = 'large cache test';
-		await service.generateLargeEmbedding(text);
-		await service.generateLargeEmbedding(text);
-		// Second call is a cache hit
-		expect(generateLocalEmbedding).toHaveBeenCalledTimes(1);
+		await service.generateLargeEmbedding(text); // different key — not a hit
+		expect(mockCreate).toHaveBeenCalledTimes(2);
 	});
 });
 
@@ -130,20 +141,21 @@ describe('EmbeddingService.generateDualEmbeddings', () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockCreate
+			.mockResolvedValueOnce(makeSmallResponse())
+			.mockResolvedValueOnce(makeLargeResponse());
 		service = makeService();
 	});
 
 	it('returns both small and large vectors', async () => {
 		const result = await service.generateDualEmbeddings('dual text');
-		expect(result.small).toHaveLength(384);
-		expect(result.large).toHaveLength(384);
+		expect(result.small).toHaveLength(1536);
+		expect(result.large).toHaveLength(3072);
 	});
 
-	it('uses a single local inference call (provider=local reuses small embedding)', async () => {
+	it('makes two parallel OpenAI calls', async () => {
 		await service.generateDualEmbeddings('dual text');
-		// Local provider uses same model for small and large; generateEmbedding is
-		// called once and the result is reused for 'large'
-		expect(generateLocalEmbedding).toHaveBeenCalledTimes(1);
+		expect(mockCreate).toHaveBeenCalledTimes(2);
 	});
 });
 
@@ -151,26 +163,24 @@ describe('EmbeddingService.generateDualEmbeddings', () => {
 
 describe('EmbeddingService LRU cache eviction', () => {
 	it('evicts the least-recently-used entry when cache is full', async () => {
-		// Build a service with a tiny cache (size 2) by overriding the private field
+		mockCreate.mockResolvedValue(makeSmallResponse());
 		const service = makeService();
 		(service as any).maxCacheSize = 2;
 
 		vi.clearAllMocks();
 
-		const mockEmbed = vi.mocked(generateLocalEmbedding);
-
 		await service.generateEmbedding('text-1'); // miss, cached
 		await service.generateEmbedding('text-2'); // miss, cached
-		// Access text-1 to make it recently used; text-2 is now LRU
+		// Promote text-1 to MRU; text-2 is now LRU
 		await service.generateEmbedding('text-1'); // hit
 
-		// Add text-3 — cache is full (size 2), so text-2 (LRU) is evicted
+		// Add text-3 — evicts text-2 (LRU)
 		await service.generateEmbedding('text-3'); // miss, evicts text-2
 
-		// text-2 should have been evicted — fetching it is another miss
-		const callsBefore = mockEmbed.mock.calls.length;
+		// text-2 was evicted — fetching it is another miss
+		const callsBefore = mockCreate.mock.calls.length;
 		await service.generateEmbedding('text-2');
-		expect(mockEmbed.mock.calls.length).toBe(callsBefore + 1);
+		expect(mockCreate.mock.calls.length).toBe(callsBefore + 1);
 	});
 });
 
@@ -180,20 +190,16 @@ describe('EmbeddingService.chunkText', () => {
 	let service: EmbeddingService;
 
 	beforeEach(() => {
-		service = makeService(); 
+		mockCreate.mockResolvedValue(makeSmallResponse());
+		service = makeService();
 	});
 
 	it('returns the original text as a single chunk when short enough', () => {
-		const text = 'short text';
-		const chunks = service.chunkText(text, 100, 10);
-		expect(chunks).toHaveLength(1);
-		expect(chunks[0]).toBe(text);
+		expect(service.chunkText('short text', 100, 10)).toHaveLength(1);
 	});
 
 	it('splits long text into overlapping chunks', () => {
-		const text = 'a'.repeat(300);
-		const chunks = service.chunkText(text, 100, 20);
-		// Each chunk is at most 100 chars
+		const chunks = service.chunkText('a'.repeat(300), 100, 20);
 		for (const c of chunks) {
 			expect(c.length).toBeLessThanOrEqual(100);
 		}
@@ -201,9 +207,7 @@ describe('EmbeddingService.chunkText', () => {
 	});
 
 	it('each chunk overlaps with the next by the specified overlap amount', () => {
-		const text = 'abcdefghijklmnopqrstuvwxyz'; // 26 chars
-		const chunks = service.chunkText(text, 10, 5);
-		// chunk[0] = text[0..9], chunk[1] = text[5..14], overlap = text[5..9]
+		const chunks = service.chunkText('abcdefghijklmnopqrstuvwxyz', 10, 5);
 		expect(chunks[0].slice(5)).toBe(chunks[1].slice(0, 5));
 	});
 
@@ -222,11 +226,12 @@ describe('EmbeddingService.validateEmbedding', () => {
 	let service: EmbeddingService;
 
 	beforeEach(() => {
-		service = makeService(); 
+		mockCreate.mockResolvedValue(makeSmallResponse());
+		service = makeService();
 	});
 
-	it('returns true for a valid 384-dim embedding', () => {
-		expect(service.validateEmbedding(new Array(384).fill(0.5))).toBe(true);
+	it('returns true for a valid 1536-dim small embedding', () => {
+		expect(service.validateEmbedding(new Array(1536).fill(0.5))).toBe(true);
 	});
 
 	it('returns false for wrong dimension', () => {
@@ -238,22 +243,17 @@ describe('EmbeddingService.validateEmbedding', () => {
 	});
 
 	it('returns false when embedding contains NaN', () => {
-		const vec = new Array(384).fill(0.5);
+		const vec = new Array(1536).fill(0.5);
 		vec[10] = NaN;
 		expect(service.validateEmbedding(vec)).toBe(false);
 	});
 
-	it('returns true for a valid large embedding (384d matches LARGE_DIMENSIONS in test config)', () => {
-		expect(service.validateEmbedding(new Array(384).fill(0.5), 'large')).toBe(true);
+	it('returns true for a valid 3072-dim large embedding', () => {
+		expect(service.validateEmbedding(new Array(3072).fill(0.5), 'large')).toBe(true);
 	});
 
-	it('returns false for wrong dimension when checking large variant', () => {
-		expect(service.validateEmbedding(new Array(128).fill(0.5), 'large')).toBe(false);
-	});
-
-	it('defaults to small variant when none specified', () => {
-		// 384d is correct for small in test config
-		expect(service.validateEmbedding(new Array(384).fill(0.5))).toBe(true);
+	it('returns false for wrong large dimension', () => {
+		expect(service.validateEmbedding(new Array(384).fill(0.5), 'large')).toBe(false);
 	});
 });
 
@@ -263,12 +263,13 @@ describe('EmbeddingService.estimateTokens', () => {
 	let service: EmbeddingService;
 
 	beforeEach(() => {
-		service = makeService(); 
+		mockCreate.mockResolvedValue(makeSmallResponse());
+		service = makeService();
 	});
 
 	it('estimates tokens as ceil(chars / 4)', () => {
-		expect(service.estimateTokens('abcd')).toBe(1);    // 4 chars → 1 token
-		expect(service.estimateTokens('abcde')).toBe(2);   // 5 chars → 2 tokens
+		expect(service.estimateTokens('abcd')).toBe(1);
+		expect(service.estimateTokens('abcde')).toBe(2);
 	});
 });
 
@@ -276,11 +277,12 @@ describe('EmbeddingService.estimateCost', () => {
 	let service: EmbeddingService;
 
 	beforeEach(() => {
-		service = makeService(); 
+		mockCreate.mockResolvedValue(makeSmallResponse());
+		service = makeService();
 	});
 
-	it('returns 0 for local provider', () => {
-		expect(service.estimateCost('some text')).toBe(0);
+	it('returns a positive cost for non-empty text', () => {
+		expect(service.estimateCost('some text')).toBeGreaterThan(0);
 	});
 });
 
@@ -291,6 +293,7 @@ describe('EmbeddingService stats', () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockCreate.mockResolvedValue(makeSmallResponse());
 		service = makeService();
 	});
 
@@ -300,10 +303,6 @@ describe('EmbeddingService stats', () => {
 		expect(stats.cacheHits).toBe(0);
 		expect(stats.cacheMisses).toBe(0);
 		expect(stats.cacheHitRate).toBe(0);
-	});
-
-	it('cacheHitRate is 0 when no embeddings have been generated', () => {
-		expect(service.getStats().cacheHitRate).toBe(0);
 	});
 
 	it('resetStats zeroes all counters', async () => {

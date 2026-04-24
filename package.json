@@ -22,7 +22,6 @@
 		"prepare": "husky"
 	},
 	"dependencies": {
-		"@huggingface/transformers": "^4.0.0",
 		"@modelcontextprotocol/sdk": "^1.28.0",
 		"@pawells/logger": "1.2.2",
 		"@qdrant/js-client-rest": "^1.17.0",

@@ -51,8 +51,8 @@ const { mockQdrant, mockEmbedding, mockWorkspace } = vi.hoisted(() => {
 // ── Module mocks (hoisted automatically by Vitest) ────────────────────────────
 vi.mock('../../config.js', () => ({
 	config: {
-		embedding: { provider: 'local', localModel: 'test-model', smallDimensions: 384, largeDimensions: 384 },
-		openai: { apiKey: undefined },
+		embedding: { smallDimensions: 1536, largeDimensions: 3072 },
+		openai: { apiKey: 'test-key' },
 		memory: { chunkSize: 1000, chunkOverlap: 200 },
 		workspace: { autoDetect: false, default: 'test-workspace', cacheTTL: 60000 },
 		qdrant: { url: 'http://localhost:6333', collection: 'test', timeout: 5000 },
@@ -63,10 +63,6 @@ vi.mock('../../config.js', () => ({
 vi.mock('../../services/qdrant-client.js', () => ({ qdrantService: mockQdrant }));
 vi.mock('../../services/embedding-service.js', () => ({ embeddingService: mockEmbedding }));
 vi.mock('../../services/workspace-detector.js', () => ({ workspaceDetector: mockWorkspace }));
-vi.mock('../../services/local-embedding-provider.js', () => ({
-	generateLocalEmbedding: vi.fn(() => new Array(384).fill(0.1)),
-	preloadLocalPipeline: vi.fn(),
-}));
 
 import { memoryTools } from '../memory-tools.js';
 

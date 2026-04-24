@@ -22,8 +22,6 @@ const DEFAULT_CHUNK_OVERLAP = 200;
 const DEFAULT_WORKSPACE_CACHE_TTL_MS = 60000;
 /** OpenAI text-embedding-3-small output dimensions. */
 const OPENAI_SMALL_EMBEDDING_DIMENSIONS = 1536;
-/** Default output dimensions for the local HuggingFace embedding model. */
-const DEFAULT_LOCAL_EMBEDDING_DIMENSIONS = 384;
 /** Default output dimensions for OpenAI text-embedding-3-large. */
 const DEFAULT_OPENAI_LARGE_EMBEDDING_DIMENSIONS = 3072;
 /** Minimum length for QDRANT_API_KEY to guard against accidental single-char values. */
@@ -71,17 +69,13 @@ function parseIntEnv(raw: string | undefined, fallback: number, name: string): n
  * field is missing or invalid.
  */
 const ConfigSchema = z.object({
-	// OpenAI API (optional — only required when provider is 'openai')
+	// OpenAI API
 	openai: z.object({
 		apiKey: z.string().optional(),
 	}),
 
 	// Embedding provider
 	embedding: z.object({
-		// 'openai' uses OpenAI API; 'local' uses @huggingface/transformers (free, no API key)
-		provider: z.enum(['openai', 'local']),
-		// HuggingFace model id used when provider is 'local'
-		localModel: z.string(),
 		// Vector dimensions for the primary (small/dense) embedding
 		smallDimensions: z.number().int().positive(),
 		// Vector dimensions for the secondary (large) embedding
@@ -139,43 +133,20 @@ export type Config = z.infer<typeof ConfigSchema>;
  * 3. The assembled object is parsed by Zod — any schema violation throws.
  *
  * @returns Validated, immutable configuration object.
- * @throws If `EMBEDDING_PROVIDER=openai` is set without `OPENAI_API_KEY`,
- *   or if any value fails Zod validation.
+ * @throws If `OPENAI_API_KEY` is not set, or if any value fails Zod validation.
  */
 function loadConfig(): Config {
 	// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
 	const apiKey = process.env.OPENAI_API_KEY || undefined; // || intentional: coerce empty string to undefined
 
-	// Determine embedding provider:
-	//   - explicit EMBEDDING_PROVIDER env var overrides everything
-	//   - otherwise: 'openai' if OPENAI_API_KEY is set, 'local' if not
-	const explicitProvider = process.env.EMBEDDING_PROVIDER as 'openai' | 'local' | undefined;
-	const provider: 'openai' | 'local' = explicitProvider ?? (apiKey ? 'openai' : 'local');
-
-	// Fail early with a clear message if openai provider is requested but the key is absent
-	if (provider === 'openai' && !apiKey) {
-		throw new Error(
-			'OPENAI_API_KEY is required when EMBEDDING_PROVIDER=openai. ' +
-      'Either set OPENAI_API_KEY or remove EMBEDDING_PROVIDER to use local embeddings.',
-		);
-	}
-
-	const localModel = process.env.LOCAL_EMBEDDING_MODEL ?? 'Xenova/all-MiniLM-L6-v2';
-	const localDimensions = parseIntEnv(process.env.LOCAL_EMBEDDING_DIMENSIONS, DEFAULT_LOCAL_EMBEDDING_DIMENSIONS, 'LOCAL_EMBEDDING_DIMENSIONS');
-	const openaiLargeDimensions = parseIntEnv(process.env.LARGE_EMBEDDING_DIMENSIONS, DEFAULT_OPENAI_LARGE_EMBEDDING_DIMENSIONS, 'LARGE_EMBEDDING_DIMENSIONS');
-
-	// Derive vector dimensions from the chosen provider
-	const smallDimensions = provider === 'openai' ? OPENAI_SMALL_EMBEDDING_DIMENSIONS : localDimensions;
-	const largeDimensions = provider === 'openai' ? openaiLargeDimensions : localDimensions;
+	const largeDimensions = parseIntEnv(process.env.LARGE_EMBEDDING_DIMENSIONS, DEFAULT_OPENAI_LARGE_EMBEDDING_DIMENSIONS, 'LARGE_EMBEDDING_DIMENSIONS');
 
 	const rawConfig = {
 		openai: {
 			apiKey,
 		},
 		embedding: {
-			provider,
-			localModel,
-			smallDimensions,
+			smallDimensions: OPENAI_SMALL_EMBEDDING_DIMENSIONS,
 			largeDimensions,
 		},
 		qdrant: {
