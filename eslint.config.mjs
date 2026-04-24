@@ -96,21 +96,6 @@ export default [
       'import/no-duplicates': 'error',
       'import/no-cycle': 'warn',
       'import/no-self-import': 'error',
-      'import/order': [
-        'error',
-        {
-          groups: [
-            'builtin',
-            'external',
-            'internal',
-            'parent',
-            'sibling',
-            'index',
-          ],
-          alphabeticallyIgnoreCase: true,
-          'newlines-between': 'always',
-        },
-      ],
 
       // ---- TypeScript: explicit type annotations ----
       '@typescript-eslint/explicit-function-return-type': [
@@ -132,7 +117,7 @@ export default [
       '@typescript-eslint/no-inferrable-types': 'off',   // verbose but harmless
       '@typescript-eslint/consistent-type-imports': [
         'error',
-        { prefer: 'type-only' },
+        { fixStyle: 'separate-type-imports' },
       ],
 
       // ---- TypeScript: type-checked rules (require parserOptions.project) ----
