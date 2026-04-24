@@ -395,9 +395,8 @@ describe('QdrantService.get (access tracking)', () => {
 		await new Promise((resolve) => setTimeout(resolve, 50));
 
 		// Verify setPayload includes a new last_accessed_at timestamp
-		const call = mockClient.setPayload.mock.calls[0];
-		const setPayloadArgs = call[1] as any;
-		const payload = setPayloadArgs.payload as any;
+		const [, setPayloadArgs] = mockClient.setPayload.mock.calls[0] as unknown[];
+		const payload = (setPayloadArgs as any).payload as any;
 
 		expect(payload.last_accessed_at).toBeDefined();
 		// Verify it's an ISO 8601 timestamp with milliseconds
@@ -512,7 +511,7 @@ describe('QdrantService.upsert', () => {
 
 		await service.upsert('content', vector, {});
 
-		const afterCall = new Date().toISOString();
+		const _afterCall = new Date().toISOString();
 		const calls = mockClient.upsert.mock.calls[0] as unknown[];
 		const point = (calls[1] as any).points[0] as any;
 		const createdAt = point.payload.created_at;
@@ -520,6 +519,22 @@ describe('QdrantService.upsert', () => {
 
 		expect(new Date(createdAt).getTime()).toBeGreaterThanOrEqual(new Date(beforeCall).getTime());
 		expect(new Date(updatedAt).getTime()).toBeGreaterThanOrEqual(new Date(beforeCall).getTime());
+	});
+
+	it('overrides provided metadata.updated_at with fresh timestamp', async () => {
+		const vector = new Array(1536).fill(0.1);
+		const oldTimestamp = '2025-01-01T00:00:00Z';
+		mockClient.upsert.mockResolvedValue({});
+		const beforeCall = new Date().toISOString();
+
+		await service.upsert('content', vector, { updated_at: oldTimestamp });
+
+		const calls = mockClient.upsert.mock.calls[0] as unknown[];
+		const point = (calls[1] as any).points[0] as any;
+		const actualUpdatedAt = point.payload.updated_at;
+
+		expect(actualUpdatedAt).not.toBe(oldTimestamp);
+		expect(new Date(actualUpdatedAt).getTime()).toBeGreaterThanOrEqual(new Date(beforeCall).getTime());
 	});
 
 	it('applies default values for optional metadata fields', async () => {
@@ -1004,7 +1019,7 @@ describe('QdrantService edge cases and error handling', () => {
 	it('handles search returning empty results', async () => {
 		mockClient.search.mockResolvedValue([]);
 
-		const results = await service.search(new Array(1536).fill(0.1));
+		const results = await service.search({ vector: new Array(1536).fill(0.1) });
 		expect(results).toEqual([]);
 	});
 
@@ -1053,7 +1068,7 @@ describe('QdrantService edge cases and error handling', () => {
 			{ id: 'id-2', score: 0.85 },
 		]);
 
-		const results = await service.search(new Array(1536).fill(0.1));
+		const results = await service.search({ vector: new Array(1536).fill(0.1) });
 		expect(results).toHaveLength(2);
 	});
 
@@ -1092,7 +1107,7 @@ describe('QdrantService edge cases and error handling', () => {
 			{ id: 'id-3', score: 0.55, payload: { content: 'match3' } },
 		]);
 
-		const results = await service.search(new Array(1536).fill(0.1));
+		const results = await service.search({ vector: new Array(1536).fill(0.1) });
 		expect(results).toHaveLength(3);
 		expect(results[0].score).toBe(0.95);
 		expect(results[2].score).toBe(0.55);
@@ -1141,7 +1156,7 @@ describe('QdrantService edge cases and error handling', () => {
 		mockClient.search.mockResolvedValue([]);
 
 		const largeVector = new Array(1536).fill(0.5);
-		await service.search(largeVector);
+		await service.search({ vector: largeVector });
 
 		expect(mockClient.search).toHaveBeenCalled();
 	});
@@ -1186,7 +1201,7 @@ describe('QdrantService edge cases and error handling', () => {
 			{ id: 'id-filtered', score: 0.9, payload: { tags: ['important'] } },
 		]);
 
-		const results = await service.search(new Array(1536).fill(0.1), 10, { tags: ['important'] });
+		const results = await service.search({ vector: new Array(1536).fill(0.1), limit: 10, filter: { tags: ['important'] } });
 		expect(results).toHaveLength(1);
 	});
 

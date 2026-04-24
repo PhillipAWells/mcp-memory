@@ -132,6 +132,10 @@ describe('WorkspaceDetectorService.equals', () => {
 	it('returns false when one is null', () => {
 		expect(detector.equals('foo', null)).toBe(false);
 	});
+
+	it('returns false when comparing null to a string', () => {
+		expect(detector.equals(null, 'foo')).toBe(false);
+	});
 });
 
 // ── cache ────────────────────────────────────────────────────────────────────
@@ -151,6 +155,15 @@ describe('WorkspaceDetectorService cache', () => {
 	});
 
 	it('getCached returns null before any detection', () => {
+		expect(detector.getCached()).toBeNull();
+	});
+
+	it('clears cache returns null immediately after', () => {
+		detector.detect(undefined, process.cwd());
+		// Cache should have been populated by auto-detection
+		const _cached = detector.getCached();
+		// Cache might be null if TTL expired, but we can test the clear works
+		detector.clearCache();
 		expect(detector.getCached()).toBeNull();
 	});
 });
@@ -263,5 +276,18 @@ describe('WorkspaceDetectorService.detect — malformed package.json recovery', 
 
 	it('does not throw when package.json is unparseable', () => {
 		expect(() => detector.detect(undefined, tmpDir)).not.toThrow();
+	});
+
+	it('falls back to default when package.json has no name field', () => {
+		const tmpDir2 = mkdtempSync(join(tmpdir(), 'mcp-test-no-name-'));
+		writeFileSync(join(tmpDir2, 'package.json'), JSON.stringify({}));
+		try {
+			const detector2 = makeDetector();
+			const result = detector2.detect(undefined, tmpDir2);
+			// Falls through to directory name or default
+			expect(result.source).toBe('directory');
+		} finally {
+			rmSync(tmpDir2, { recursive: true, force: true });
+		}
 	});
 });
