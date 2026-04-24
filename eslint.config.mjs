@@ -113,7 +113,7 @@ export default [
           overrides: { constructors: 'no-public' },
         },
       ],
-      '@typescript-eslint/no-explicit-any': 'off',       // codebase uses `any` intentionally
+      '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-inferrable-types': 'off',   // verbose but harmless
 
       // ---- TypeScript: type-checked rules (require parserOptions.project) ----
