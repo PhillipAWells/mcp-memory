@@ -6,7 +6,7 @@
  * by hand and cannot accidentally omit required fields.
  */
 
-import { StandardResponse, ErrorType } from '../types/index.js';
+import type { StandardResponse, ErrorType } from '../types/index.js';
 
 /**
  * Build a successful {@link StandardResponse}.

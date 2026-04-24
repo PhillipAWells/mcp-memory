@@ -45,7 +45,7 @@ export function extractErrorMessage(error: unknown): string {
  * );
  */
 export class MCPMemoryError extends Error {
-	readonly code: string;
+	public readonly code: string;
 
 	constructor(message: string, code: string, options?: ErrorOptions) {
 		super(message, options);
