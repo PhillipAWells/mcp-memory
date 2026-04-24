@@ -1,6 +1,6 @@
 ## Project Overview
 
-`@pawells/mcp-memory` is a Model Context Protocol (MCP) server providing semantic memory and knowledge management for Claude Code and other MCP clients. It uses OpenAI embeddings combined with Qdrant vector database to store, search, and manage memories. Features include automatic memory classification (long-term/episodic/short-term), secrets detection, workspace isolation, hybrid search (semantic + BM25 text), and LRU caching for cost optimization. Published to npm and GitHub Packages.
+`@pawells/mcp-memory` is a Model Context Protocol (MCP) server providing semantic memory and knowledge management for Claude Code and other MCP clients. It uses OpenAI embeddings combined with Qdrant vector database to store, search, and manage memories. Features include automatic memory classification (long-term/episodic/short-term), secrets detection, workspace isolation, hybrid search (dense vector + keyword full-text, fused via RRF), and LRU caching for cost optimization. Published to npm and GitHub Packages.
 
 ## Package Manager
 
@@ -57,7 +57,9 @@ MCP Client (Claude Code) → MCP Server (src/index.ts)
 **Tools** (`src/tools/memory-tools.ts`): Implements 9 MCP tools for memory management. Each tool is registered with input schemas and returns `StandardResponse<T>` for MCP protocol compliance.
 
 **Services** (singleton exports from `src/services/`):
-- `QdrantService` — Vector database operations; stores two named vectors per point (`dense` for small embeddings, `dense_large` for large). Supports dense HNSW + sparse BM25 hybrid search with Reciprocal Rank Fusion (RRF).
+- `QdrantService` — Vector database operations; stores two named vectors per point (`dense` for small embeddings, `dense_large` for large). Combines dense HNSW vector similarity search with Qdrant keyword full-text index search, fused via manual Reciprocal Rank Fusion (RRF).
+
+  > **Note:** The text index uses Qdrant's keyword tokenizer for word-level full-text matching, not statistical BM25 scoring.
 - `EmbeddingService` — OpenAI embeddings (text-embedding-3-small/large) with 10,000-entry LRU cache and cost tracking.
 - `SecretsDetector` — Blocks storage of 18+ secret patterns (API keys, tokens, passwords, etc.). High-confidence matches block immediately; 3+ distinct medium-confidence matches also block.
 - `WorkspaceDetector` — Derives workspace name from env var → package.json → directory name. Reserved names (`system`, `admin`, `root`, etc.) are rejected.
@@ -128,3 +130,17 @@ Or use `QDRANT_URL` env var to point to a cloud instance.
 **Development Container**: A custom `.devcontainer/Dockerfile` is provided with Node.js environment and post-creation setup hook.
 
 **Proxy Support**: All outbound HTTP traffic (OpenAI API, Qdrant) is automatically proxied when `HTTPS_PROXY` or `HTTP_PROXY` is set. `NO_PROXY` defaults to `localhost,127.0.0.1,::1` when a proxy is active and the variable is absent, protecting local Qdrant traffic. See `src/utils/proxy.ts`.
+
+## Common Gotchas
+
+### Recently Stored Memories May Not Appear in Search
+
+Queries use Qdrant's `indexed_only: true` setting to skip segments that are currently being indexed by the background HNSW indexer. For small collections or immediately after a store operation, a query issued moments later may return zero results for the memory you just stored, even though the store operation succeeded.
+
+**Workaround**: If a query returns zero results after a recent store, wait a few seconds and retry. Qdrant typically indexes segments within seconds. The `search()` method automatically tracks access counts on hits, so indexed memories are accessed as expected.
+
+### Sorting Large Result Sets May Load Many Records Into Memory
+
+The `memory-list` tool with sorting by `access_count`, `confidence`, or `updated_at` loads up to 10,000 records into memory for sorting. For collections with many memories, this can consume significant memory.
+
+**Workaround**: Use the `filter_by_updated_at` parameter to narrow the result set before sorting. Alternatively, sort by `created_at`, which uses Qdrant's native time-based indexing and does not require loading records into memory.

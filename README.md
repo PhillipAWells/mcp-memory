@@ -16,7 +16,6 @@ Model Context Protocol (MCP) server for persistent memory and knowledge manageme
 - **Workspace Isolation** - Multi-workspace support for organization-wide deployments
 - **Secrets Detection** - Blocks storage of API keys, tokens, passwords, and other sensitive data
 - **Dual Embeddings** - Small and large embedding vectors per memory for precision/recall trade-offs
-- **Local Embeddings** - Runs fully offline via HuggingFace/ONNX — no API key required
 - **Cost Optimization** - LRU caching and usage tracking for embedding API calls
 - **Corporate Proxy Support** — Routes all outbound traffic through HTTP(S) proxies via standard `HTTPS_PROXY` / `HTTP_PROXY` env vars; `NO_PROXY` defaults to `localhost,127.0.0.1,::1` automatically
 
@@ -26,7 +25,7 @@ Model Context Protocol (MCP) server for persistent memory and knowledge manageme
 
 - Node.js >= 22.0.0
 - Qdrant vector database (local or cloud)
-- OpenAI API key *(optional — only needed for OpenAI embeddings; local embeddings work without one)*
+- OpenAI API key (**required**)
 
 ### Installation
 
@@ -38,7 +37,7 @@ Then configure:
 
 ```bash
 cp .env.example .env
-# Edit .env with your QDRANT_URL (and optionally OPENAI_API_KEY)
+# Edit .env with your QDRANT_URL and OPENAI_API_KEY
 ```
 
 ### Running Qdrant Locally
@@ -64,12 +63,8 @@ yarn test           # Run tests
 
 | Variable | Default | Description |
 |---|---|---|
-| `OPENAI_API_KEY` | *(optional)* | OpenAI API key — required only when `EMBEDDING_PROVIDER=openai` |
-| `EMBEDDING_PROVIDER` | auto-detected | `openai` or `local`; defaults to `openai` if `OPENAI_API_KEY` is set, `local` otherwise |
+| `OPENAI_API_KEY` | *(required)* | OpenAI API key |
 | `LARGE_EMBEDDING_DIMENSIONS` | `3072` | Output dimensions for OpenAI `text-embedding-3-large` |
-| `LOCAL_EMBEDDING_MODEL` | `Xenova/all-MiniLM-L6-v2` | HuggingFace model ID for local embeddings |
-| `LOCAL_EMBEDDING_DIMENSIONS` | `384` | Output dimensions of the local model (must match model) |
-| `LOCAL_EMBEDDING_CACHE_DIR` | `~/.cache/mcp-memory/models` | Cache directory for downloaded local models |
 
 ### Qdrant
 
@@ -104,7 +99,7 @@ yarn test           # Run tests
 
 ### Proxy
 
-For environments behind a corporate firewall, set the standard proxy environment variables. All outbound traffic — OpenAI API calls, Qdrant requests, and HuggingFace model downloads — is automatically routed through the configured proxy.
+For environments behind a corporate firewall, set the standard proxy environment variables. All outbound traffic — OpenAI API calls and Qdrant requests — is automatically routed through the configured proxy.
 
 | Variable | Default | Description |
 |---|---|---|
@@ -115,22 +110,6 @@ For environments behind a corporate firewall, set the standard proxy environment
 > Lowercase variants (`https_proxy`, `http_proxy`, `no_proxy`) are also accepted. Uppercase takes priority.
 >
 > `NO_PROXY` is **only auto-defaulted when a proxy is active** — if no proxy is configured, `NO_PROXY` is left untouched.
-
-## Local Embeddings (No API Key)
-
-When `OPENAI_API_KEY` is not set, the server automatically uses the HuggingFace `Xenova/all-MiniLM-L6-v2` model via ONNX for CPU inference. The model (~22 MB) is downloaded on first use and cached at `~/.cache/mcp-memory/models`.
-
-Alternative local models:
-
-| Model | Dimensions | Size | Notes |
-|---|---|---|---|
-| `Xenova/all-MiniLM-L6-v2` | 384 | ~22 MB | Default, fast |
-| `Xenova/bge-small-en-v1.5` | 384 | ~22 MB | Slightly better quality |
-| `Xenova/bge-base-en-v1.5` | 768 | ~110 MB | Higher quality |
-
-To switch models, set `LOCAL_EMBEDDING_MODEL` and `LOCAL_EMBEDDING_DIMENSIONS` to match.
-
-> **Note:** Local and OpenAI embeddings are incompatible — switching providers after a collection is created requires re-indexing.
 
 ## Memory Types
 
@@ -180,7 +159,7 @@ MCP Server (src/index.ts)
 Tool Handlers (src/tools/memory-tools.ts)
        ↓
 Services:
-  ├── EmbeddingService  — OpenAI or local HuggingFace embeddings with LRU cache
+  ├── EmbeddingService  — OpenAI embeddings (small + large) with LRU cache
   ├── QdrantService     — Vector DB operations, hybrid search
   ├── SecretsDetector   — Blocks sensitive data at store time
   ├── WorkspaceDetector — Derives workspace from env var → package.json → directory name
@@ -189,7 +168,9 @@ Services:
 
 ### Hybrid Search
 
-When `use_hybrid_search: true`, results from dense vector search and sparse BM25 text search are merged using Reciprocal Rank Fusion (RRF) before applying the result limit. This improves recall for queries that mix exact terms with conceptual meaning.
+When `use_hybrid_search: true`, results from dense HNSW vector similarity search and Qdrant keyword full-text index search are merged using Reciprocal Rank Fusion (RRF) before applying the result limit. This improves recall for queries that mix exact terms with conceptual meaning.
+
+> **Note:** The text component uses Qdrant's keyword tokenizer for word-level full-text matching, not statistical BM25 scoring.
 
 ## Agent Integration
 
