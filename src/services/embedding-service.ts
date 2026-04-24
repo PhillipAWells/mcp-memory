@@ -458,7 +458,6 @@ export class EmbeddingService {
 			);
 		}
 
-		// @ts-expect-error All null entries in results array are guaranteed to be filled by the for loop above (cached) or response.data.forEach (uncached), so safe to cast to number[][]
 		return results as number[][];
 	}
 
