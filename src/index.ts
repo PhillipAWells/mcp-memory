@@ -55,9 +55,19 @@ async function main(): Promise<void> {
 	rulesManager.initialize();
 
 	// Read server version from package.json
-	const serverVersion = JSON.parse(
-		readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../package.json'), 'utf-8'),
-	).version as string;
+	let serverVersion = 'unknown';
+	try {
+		const packageJson = JSON.parse(
+			readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../package.json'), 'utf-8'),
+		) as { version?: string };
+		if (packageJson.version !== undefined) {
+			serverVersion = packageJson.version;
+		}
+	} catch (cause) {
+		logger.warn(
+			`Failed to read package.json version: ${extractErrorMessage(cause)}. Using default version.`,
+		);
+	}
 
 	// Create MCP server instance
 	const server = new Server(
