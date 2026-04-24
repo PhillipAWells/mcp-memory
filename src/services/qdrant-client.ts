@@ -89,7 +89,7 @@ interface SearchParams {
 	// Hybrid search options
 	query?: string; // Text query for hybrid search
 	useHybridSearch?: boolean; // Enable hybrid search with RRF
-	hybridAlpha?: number; // Weight between dense (1.0) and sparse (0.0) search, default 0.5
+	hybridAlpha?: number; // Weight between dense (1.0) and keyword full-text (0.0) search, default 0.5
 	// Dual embedding options
 }
 
