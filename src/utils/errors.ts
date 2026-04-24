@@ -26,3 +26,46 @@ export function extractErrorMessage(error: unknown): string {
 	}
 	return String(error);
 }
+
+/**
+ * Custom error class for memory operations.
+ *
+ * Extends Error with a code property for categorizing different failure modes.
+ * When wrapping another error, always pass the original error as the `cause`.
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   await qdrant.upsert(points);
+ * } catch (cause) {
+ *   throw new MemoryError('STORAGE_FAILED', 'Failed to store memory', { cause });
+ * }
+ * ```
+ */
+export class MemoryError extends Error {
+	/**
+	 * Error code for categorizing the failure.
+	 * Common codes: STORAGE_FAILED, SEARCH_FAILED, VALIDATION_FAILED, WORKSPACE_INVALID
+	 */
+	public readonly code: string;
+
+	/**
+	 * Create a new MemoryError.
+	 *
+	 * @param code - Error code for categorizing the failure
+	 * @param message - Human-readable error message
+	 * @param options - Optional { cause } to chain from another error
+	 */
+	constructor(
+		code: string,
+		message: string,
+		options?: { cause?: unknown },
+	) {
+		super(message);
+		this.name = 'MemoryError';
+		this.code = code;
+		if (options?.cause !== undefined) {
+			this.cause = options.cause;
+		}
+	}
+}
