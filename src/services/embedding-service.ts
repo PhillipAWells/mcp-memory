@@ -241,6 +241,8 @@ export class EmbeddingService {
 	public clearCache(): void {
 		const previousSize = this.cache.size;
 		this.cache.clear();
+		this.cacheHits = 0;
+		this.cacheMisses = 0;
 		logger.info(`Cache cleared: ${previousSize} entries removed`);
 	}
 

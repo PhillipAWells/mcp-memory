@@ -358,15 +358,13 @@ describe('EmbeddingService.generateBatchEmbeddings', () => {
 	});
 
 	it('counts cache hits when batch items are already cached', async () => {
-		mockCreate
-			.mockResolvedValueOnce({
-				data: [{ embedding: new Array(1536).fill(0.1) }],
-				usage: { total_tokens: 10 },
-			})
-			.mockResolvedValueOnce({
-				data: [{ embedding: new Array(1536).fill(0.2) }],
-				usage: { total_tokens: 10 },
-			});
+		mockCreate.mockResolvedValueOnce({
+			data: [
+				{ embedding: new Array(1536).fill(0.1) },
+				{ embedding: new Array(1536).fill(0.2) },
+			],
+			usage: { total_tokens: 20 },
+		});
 
 		// First: cache both texts
 		await service.generateBatchEmbeddings(['text 1', 'text 2']);
@@ -390,9 +388,11 @@ describe('EmbeddingService.generateChunkedEmbeddings', () => {
 	});
 
 	it('returns array of chunks with embeddings for long content', async () => {
-		mockCreate.mockResolvedValue({
-			data: [{ embedding: new Array(1536).fill(0.1) }],
-			usage: { total_tokens: 10 },
+		mockCreate.mockImplementation(({ input }: { input: string[] }) => {
+			return Promise.resolve({
+				data: input.map(() => ({ embedding: new Array(1536).fill(0.1) })),
+				usage: { total_tokens: 10 * input.length },
+			});
 		});
 
 		// Create content longer than chunkSize (1000)
@@ -408,9 +408,11 @@ describe('EmbeddingService.generateChunkedEmbeddings', () => {
 	});
 
 	it('increments totalEmbeddings counter for each chunk', async () => {
-		mockCreate.mockResolvedValue({
-			data: [{ embedding: new Array(1536).fill(0.1) }],
-			usage: { total_tokens: 10 },
+		mockCreate.mockImplementation(({ input }: { input: string[] }) => {
+			return Promise.resolve({
+				data: input.map(() => ({ embedding: new Array(1536).fill(0.1) })),
+				usage: { total_tokens: 10 * input.length },
+			});
 		});
 
 		const longContent = 'x'.repeat(2000);
