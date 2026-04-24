@@ -67,6 +67,7 @@ jobs:
         run: yarn test:coverage
         env:
           HUSKY: '0'
+          OPENAI_API_KEY: 'test-ci-key'
 
   build:
     name: Build

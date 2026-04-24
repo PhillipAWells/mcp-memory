@@ -23,6 +23,10 @@ updates:
           - "typescript"
           - "@types/*"
         update-types: ["patch"]
+      mcp-sdk:
+        patterns:
+          - "@modelcontextprotocol/*"
+        update-types: ["patch"]
 
   - package-ecosystem: github-actions
     directory: /
