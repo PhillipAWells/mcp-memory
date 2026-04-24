@@ -5,18 +5,6 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-
-/** Expiry in days for episodic memories. */
-const EPISODIC_EXPIRY_DAYS = 90;
-/** Expiry in days for short-term memories. */
-const SHORT_TERM_EXPIRY_DAYS = 7;
-/** Character limit for content preview in list responses. */
-const CONTENT_PREVIEW_LENGTH = 200;
-
-/** Max characters of query shown in debug logs. */
-const QUERY_LOG_LENGTH = 50;
-/** Max records to sort in memory (beyond this, warn and cap). */
-const MAX_IN_MEMORY_SORT_COUNT = 10000;
 import { z } from 'zod';
 import type { MCPTool, StandardResponse, SearchResult } from '../types/index.js';
 import { successResponse, errorResponse, validationError, notFoundError } from '../utils/response.js';
@@ -39,6 +27,18 @@ import {
 	MemoryCountInputSchema,
 	memorySchemas,
 } from '../schemas/memory-schemas.js';
+
+/** Expiry in days for episodic memories. */
+const EPISODIC_EXPIRY_DAYS = 90;
+/** Expiry in days for short-term memories. */
+const SHORT_TERM_EXPIRY_DAYS = 7;
+/** Character limit for content preview in list responses. */
+const CONTENT_PREVIEW_LENGTH = 200;
+
+/** Max characters of query shown in debug logs. */
+const QUERY_LOG_LENGTH = 50;
+/** Max records to sort in memory (beyond this, warn and cap). */
+const MAX_IN_MEMORY_SORT_COUNT = 10000;
 
 /**
  * Memory Store Tool
@@ -685,6 +685,7 @@ async function memoryStatusHandler(args: unknown): Promise<StandardResponse> {
 					segments_count: qdrantStats.segments_count,
 					status: qdrantStats.status,
 					optimizer_status: qdrantStats.optimizer_status,
+					access_tracking_failures: qdrantStats.access_tracking_failures,
 				},
 				workspace: input.workspace
 					? {
@@ -787,7 +788,7 @@ export const memoryTools: MCPTool[] = [
 	},
 	{
 		name: 'memory-batch-delete',
-		description: 'Delete multiple memories by their IDs in a single operation',
+		description: 'Delete multiple memories by their IDs in a single operation. Returns the count of delete operations issued (not confirmed deletions).',
 		inputSchema: memorySchemas['memory-batch-delete'],
 		handler: memoryBatchDeleteHandler,
 	},

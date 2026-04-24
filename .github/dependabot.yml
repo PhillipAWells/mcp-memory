@@ -12,10 +12,12 @@ updates:
           - "@typescript-eslint/*"
           - "eslint*"
           - "globals"
+        update-types: ["patch"]
       vitest:
         patterns:
           - "@vitest/*"
           - "vitest"
+        update-types: ["minor", "patch"]
       typescript:
         patterns:
           - "typescript"

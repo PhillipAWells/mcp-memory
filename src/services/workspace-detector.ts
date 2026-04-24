@@ -48,6 +48,7 @@ export class WorkspaceDetectorService {
 	private cachedWorkspace: string | null = null;
 	private cachedSource: WorkspaceDetectionResult['source'] = 'none';
 	private cacheTimestamp: number = 0;
+	private cachePopulated: boolean = false;
 
 	// Workspace name pattern (alphanumeric, underscore, hyphen)
 	private readonly WORKSPACE_PATTERN = /^[a-zA-Z0-9_-]+$/;
@@ -73,13 +74,16 @@ export class WorkspaceDetectorService {
 		// 1. Explicit workspace (highest priority)
 		if (explicitWorkspace !== undefined) {
 			if (explicitWorkspace === null) {
+				this.updateCache(null, 'explicit');
 				return { workspace: null, source: 'explicit' };
 			}
 			if (this.isValidWorkspace(explicitWorkspace)) {
 				logger.debug(`Using explicit workspace: ${explicitWorkspace}`);
+				this.updateCache(explicitWorkspace, 'explicit');
 				return { workspace: explicitWorkspace, source: 'explicit' };
 			}
-			logger.warn(`Invalid explicit workspace: ${explicitWorkspace}`);
+			// Invalid explicit workspace: fall through to auto-detection
+			logger.debug(`Invalid explicit workspace "${explicitWorkspace}", falling through to auto-detection`);
 		}
 
 		// 2. Check cache (only valid when autoDetect is still enabled)
@@ -130,6 +134,7 @@ export class WorkspaceDetectorService {
 		// 6. Fall back to configured default
 		const defaultWorkspace = config.workspace.default ?? null;
 		logger.debug(`Using default workspace: ${defaultWorkspace}`);
+		this.updateCache(defaultWorkspace, defaultWorkspace ? 'default' : 'none');
 		return {
 			workspace: defaultWorkspace,
 			source: defaultWorkspace ? 'default' : 'none',
@@ -259,6 +264,7 @@ export class WorkspaceDetectorService {
 		this.cachedWorkspace = workspace;
 		this.cachedSource = source;
 		this.cacheTimestamp = Date.now();
+		this.cachePopulated = true;
 	}
 
 	/**
@@ -269,17 +275,45 @@ export class WorkspaceDetectorService {
 		this.cachedWorkspace = null;
 		this.cachedSource = 'none';
 		this.cacheTimestamp = 0;
+		this.cachePopulated = false;
 		logger.debug('Workspace cache cleared');
 	}
 
 	/**
    * Return the cached workspace if the TTL has not expired, otherwise `null`.
+   *
+   * Returns `null` in two cases: when the cache has expired (TTL exceeded) or when
+   * no workspace has been cached yet. Callers should not distinguish between these
+   * cases; if a workspace is needed, call {@link detect} instead.
+   *
+   * @returns The cached workspace name, or `null` if cache is expired or empty.
    */
-	public getCached(): string | null {
-		if (Date.now() - this.cacheTimestamp < this.CACHE_TTL) {
-			return this.cachedWorkspace;
+	/**
+	 * Return the cached workspace if the TTL has not expired, otherwise `null`.
+	 *
+	 * Differentiates between cache miss/expiration and never-detected state to support
+	 * better diagnostics.
+	 *
+	 * @returns Object with `workspace` (cached value or null) and `cached` (true if cache was valid).
+	 * @example
+	 * const result = detector.getCached();
+	 * if (result.cached) {
+	 *   console.log('Using cached workspace:', result.workspace);
+	 * } else if (result.workspace === null) {
+	 *   console.log('Never detected');
+	 * } else {
+	 *   console.log('Cache expired');
+	 * }
+	 */
+	public getCached(): { workspace: string | null, cached: boolean } {
+		if (!this.cachePopulated) {
+			return { workspace: null, cached: false };
 		}
-		return null;
+		const isExpired = Date.now() - this.cacheTimestamp >= this.CACHE_TTL;
+		if (!isExpired) {
+			return { workspace: this.cachedWorkspace, cached: true };
+		}
+		return { workspace: this.cachedWorkspace, cached: false };
 	}
 
 	/**

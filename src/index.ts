@@ -52,7 +52,7 @@ async function main(): Promise<void> {
 	logger.info(`Configuration: ${JSON.stringify(sanitizedConfig, null, 2)}`);
 
 	// Initialize rules (copy to Claude directory if enabled)
-	await rulesManager.initialize();
+	rulesManager.initialize();
 
 	// Read server version from package.json
 	const serverVersion = JSON.parse(

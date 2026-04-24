@@ -162,7 +162,6 @@ export class EmbeddingService {
    */
 	public async generateBatchEmbeddings(texts: string[]): Promise<number[][]> {
 		logger.info(`Generating batch embeddings: ${texts.length} texts`);
-		this.totalEmbeddings += texts.length;
 
 		const embeddings: number[][] = [];
 		for (let i = 0; i < texts.length; i += BATCH_SIZE) {
@@ -375,6 +374,12 @@ export class EmbeddingService {
 			? COST_PER_MILLION_TOKENS_LARGE
 			: COST_PER_MILLION_TOKENS_SMALL;
 
+		// Validate embedding before returning
+		const variant = isLarge ? 'large' : 'small';
+		if (!this.validateEmbedding(embedding, variant)) {
+			throw new Error(`Invalid embedding received from OpenAI: expected ${dimensions}d ${variant} embedding`);
+		}
+
 		this.totalTokens += tokens;
 		this.totalCost += (tokens / TOKENS_PER_MILLION) * costPerM;
 
@@ -425,6 +430,9 @@ export class EmbeddingService {
 		if (uncachedIndices.length > 0) {
 			const uncachedTexts = uncachedIndices.map(i => texts[i]);
 			const isLarge = model === this.LARGE_MODEL;
+
+			// Count actual embedding requests (cache misses)
+			this.totalEmbeddings += uncachedIndices.length;
 
 			const response = await withRetry(
 				() => this.client.embeddings.create({ model, input: uncachedTexts, dimensions: dims }),

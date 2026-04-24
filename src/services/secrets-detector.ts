@@ -51,7 +51,6 @@ export type SecretType =
   | 'oauth_token'
   | 'password'
   | 'private_key'
-  | 'ssh_key'
   | 'database_url'
   | 'aws_credentials'
   | 'gcp_credentials'
@@ -197,12 +196,8 @@ const SECRET_PATTERNS: SecretPattern[] = [
 		confidence: 'high',
 		description: 'Private key (PEM format)',
 	},
-	{
-		type: 'ssh_key',
-		regex: /ssh-(rsa|dss|ed25519)\s+[A-Za-z0-9+/=]{100,}/g,
-		confidence: 'high',
-		description: 'SSH public key',
-	},
+	// SSH public keys are intentionally public and safe to store
+	// (removed SSH key pattern - RFC 4716 / OpenSSH format)
 
 	// Database URLs with credentials
 	{

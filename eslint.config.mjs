@@ -250,7 +250,7 @@ export default [
       'prefer-arrow-callback': 'warn',
       'no-param-reassign': ['warn', { props: false }],
       'prefer-rest-params': 'warn',
-      'require-await': 'warn',
+      'require-await': 'error',
 
       // ---- Best practices: error handling ----
       'no-throw-literal': 'error',

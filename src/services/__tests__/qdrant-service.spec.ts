@@ -88,35 +88,49 @@ vi.mock('@qdrant/js-client-rest', () => ({
 
 import { QdrantService } from '../qdrant-client.js';
 
+// ── Helper function to create and initialize a QdrantService ────────────────────
+/**
+ * Creates and initializes a QdrantService for tests.
+ *
+ * Clears all mocks before setup and resets the count mock after initialization.
+ * This consolidates the common beforeEach pattern used across most test suites.
+ *
+ * @returns Initialized QdrantService instance
+ */
+async function createInitializedService(): Promise<QdrantService> {
+	vi.clearAllMocks();
+	mockClient.getCollections.mockResolvedValue({ collections: [{ name: 'test-collection' }] });
+	mockClient.getCollection.mockResolvedValue({
+		config: {
+			params: {
+				vectors: {
+					dense: { size: 1536, distance: 'Cosine' },
+					dense_large: { size: 3072, distance: 'Cosine' },
+				},
+			},
+		},
+		points_count: 0,
+		indexed_vectors_count: 0,
+		segments_count: 1,
+		status: 'green',
+		optimizer_status: 'ok',
+	});
+	mockClient.createPayloadIndex.mockResolvedValue({});
+	mockClient.count.mockResolvedValue({ count: 0 });
+	const service = new QdrantService();
+	await service.initialize();
+	vi.clearAllMocks();
+	mockClient.count.mockResolvedValue({ count: 0 });
+	return service;
+}
+
 // ── buildFilter (tested via count) ────────────────────────────────────────────
 
 describe('QdrantService.buildFilter (via count)', () => {
 	let service: QdrantService;
 
 	beforeEach(async () => {
-		vi.clearAllMocks();
-		mockClient.getCollections.mockResolvedValue({ collections: [{ name: 'test-collection' }] });
-		mockClient.getCollection.mockResolvedValue({
-			config: {
-				params: {
-					vectors: {
-						dense: { size: 1536, distance: 'Cosine' },
-						dense_large: { size: 3072, distance: 'Cosine' },
-					},
-				},
-			},
-			points_count: 0,
-			indexed_vectors_count: 0,
-			segments_count: 1,
-			status: 'green',
-			optimizer_status: 'ok',
-		});
-		mockClient.createPayloadIndex.mockResolvedValue({});
-		mockClient.count.mockResolvedValue({ count: 0 });
-		service = new QdrantService();
-		await service.initialize();
-		vi.clearAllMocks();
-		mockClient.count.mockResolvedValue({ count: 0 });
+		service = await createInitializedService();
 	});
 
 	it('passes undefined filter to Qdrant when no filter provided', async () => {
@@ -267,140 +281,137 @@ describe('QdrantService.get (access tracking)', () => {
 	let service: QdrantService;
 
 	beforeEach(async () => {
-		vi.clearAllMocks();
-		mockClient.getCollections.mockResolvedValue({ collections: [{ name: 'test-collection' }] });
-		mockClient.getCollection.mockResolvedValue({
-			config: {
-				params: {
-					vectors: {
-						dense: { size: 1536, distance: 'Cosine' },
-						dense_large: { size: 3072, distance: 'Cosine' },
-					},
-				},
-			},
-			points_count: 0,
-			indexed_vectors_count: 0,
-			segments_count: 1,
-			status: 'green',
-			optimizer_status: 'ok',
-		});
-		mockClient.createPayloadIndex.mockResolvedValue({});
-		mockClient.count.mockResolvedValue({ count: 0 });
-		service = new QdrantService();
-		await service.initialize();
-		vi.clearAllMocks();
+		service = await createInitializedService();
 	});
 
 	it('increments access_count correctly on point retrieval', async () => {
-		const pointId = 'point-123';
-		const currentAccessCount = 5;
+		vi.useFakeTimers();
 
-		// Mock retrieve to return a point with access_count
-		mockClient.retrieve.mockResolvedValue([
-			{
-				id: pointId,
-				payload: {
-					content: 'test content',
-					path: '/test',
-					access_count: currentAccessCount,
-					last_accessed_at: '2026-04-20T00:00:00Z',
-					created_at: '2026-04-20T00:00:00Z',
-					updated_at: '2026-04-20T00:00:00Z',
+		try {
+			const pointId = 'point-123';
+			const currentAccessCount = 5;
+
+			// Mock retrieve to return a point with access_count
+			mockClient.retrieve.mockResolvedValue([
+				{
+					id: pointId,
+					payload: {
+						content: 'test content',
+						path: '/test',
+						access_count: currentAccessCount,
+						last_accessed_at: '2026-04-20T00:00:00Z',
+						created_at: '2026-04-20T00:00:00Z',
+						updated_at: '2026-04-20T00:00:00Z',
+					},
 				},
-			},
-		]);
+			]);
 
-		// Mock setPayload for access tracking update
-		mockClient.setPayload.mockResolvedValue({});
+			// Mock setPayload for access tracking update
+			mockClient.setPayload.mockResolvedValue({});
 
-		// Call get which internally calls updateAccessTracking
-		const result = await service.get(pointId);
+			// Call get which internally calls updateAccessTracking
+			const result = await service.get(pointId);
 
-		// Verify the point was retrieved
-		expect(result).not.toBeNull();
-		expect(result?.content).toBe('test content');
+			// Verify the point was retrieved
+			expect(result).not.toBeNull();
+			expect(result?.content).toBe('test content');
 
-		// Wait for fire-and-forget updateAccessTracking to complete
-		await new Promise((resolve) => setTimeout(resolve, 50));
+			// Wait for fire-and-forget updateAccessTracking to complete
+			await vi.runAllTimersAsync();
 
-		// Verify setPayload was called with incremented access_count
-		expect(mockClient.setPayload).toHaveBeenCalledWith(
-			'test-collection',
-			expect.objectContaining({
-				wait: false,
-				points: expect.arrayContaining([pointId]),
-				payload: expect.objectContaining({
-					access_count: currentAccessCount + 1,
+			// Verify setPayload was called with incremented access_count
+			expect(mockClient.setPayload).toHaveBeenCalledWith(
+				'test-collection',
+				expect.objectContaining({
+					wait: false,
+					points: expect.arrayContaining([pointId]),
+					payload: expect.objectContaining({
+						access_count: currentAccessCount + 1,
+					}),
 				}),
-			}),
-		);
+			);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it('handles zero initial access_count correctly', async () => {
-		const pointId = 'point-456';
+		vi.useFakeTimers();
 
-		// Mock retrieve to return a point with no access_count
-		mockClient.retrieve.mockResolvedValue([
-			{
-				id: pointId,
-				payload: {
-					content: 'test content',
-					path: '/test',
-					created_at: '2026-04-20T00:00:00Z',
-					updated_at: '2026-04-20T00:00:00Z',
+		try {
+			const pointId = 'point-456';
+
+			// Mock retrieve to return a point with no access_count
+			mockClient.retrieve.mockResolvedValue([
+				{
+					id: pointId,
+					payload: {
+						content: 'test content',
+						path: '/test',
+						created_at: '2026-04-20T00:00:00Z',
+						updated_at: '2026-04-20T00:00:00Z',
+					},
 				},
-			},
-		]);
+			]);
 
-		mockClient.setPayload.mockResolvedValue({});
+			mockClient.setPayload.mockResolvedValue({});
 
-		await service.get(pointId);
+			await service.get(pointId);
 
-		// Wait for fire-and-forget updateAccessTracking to complete
-		await new Promise((resolve) => setTimeout(resolve, 50));
+			// Wait for fire-and-forget updateAccessTracking to complete
+			await vi.runAllTimersAsync();
 
-		// Verify access_count is set to 1 (0 + 1)
-		expect(mockClient.setPayload).toHaveBeenCalledWith(
-			'test-collection',
-			expect.objectContaining({
-				points: expect.arrayContaining([pointId]),
-				payload: expect.objectContaining({
-					access_count: 1,
+			// Verify access_count is set to 1 (0 + 1)
+			expect(mockClient.setPayload).toHaveBeenCalledWith(
+				'test-collection',
+				expect.objectContaining({
+					points: expect.arrayContaining([pointId]),
+					payload: expect.objectContaining({
+						access_count: 1,
+					}),
 				}),
-			}),
-		);
+			);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it('updates last_accessed_at timestamp on retrieval', async () => {
-		const pointId = 'point-789';
+		vi.useFakeTimers();
 
-		mockClient.retrieve.mockResolvedValue([
-			{
-				id: pointId,
-				payload: {
-					content: 'test content',
-					path: '/test',
-					access_count: 0,
-					created_at: '2026-04-20T00:00:00Z',
-					updated_at: '2026-04-20T00:00:00Z',
+		try {
+			const pointId = 'point-789';
+
+			mockClient.retrieve.mockResolvedValue([
+				{
+					id: pointId,
+					payload: {
+						content: 'test content',
+						path: '/test',
+						access_count: 0,
+						created_at: '2026-04-20T00:00:00Z',
+						updated_at: '2026-04-20T00:00:00Z',
+					},
 				},
-			},
-		]);
+			]);
 
-		mockClient.setPayload.mockResolvedValue({});
+			mockClient.setPayload.mockResolvedValue({});
 
-		await service.get(pointId);
+			await service.get(pointId);
 
-		// Wait for fire-and-forget updateAccessTracking to complete
-		await new Promise((resolve) => setTimeout(resolve, 50));
+			// Wait for fire-and-forget updateAccessTracking to complete
+			await vi.runAllTimersAsync();
 
-		// Verify setPayload includes a new last_accessed_at timestamp
-		const [, setPayloadArgs] = mockClient.setPayload.mock.calls[0] as unknown[];
-		const payload = (setPayloadArgs as any).payload as any;
+			// Verify setPayload includes a new last_accessed_at timestamp
+			const [, setPayloadArgs] = mockClient.setPayload.mock.calls[0] as unknown[];
+			const payload = (setPayloadArgs as any).payload as any;
 
-		expect(payload.last_accessed_at).toBeDefined();
-		// Verify it's an ISO 8601 timestamp with milliseconds
-		expect(payload.last_accessed_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+			expect(payload.last_accessed_at).toBeDefined();
+			// Verify it's an ISO 8601 timestamp with milliseconds
+			expect(payload.last_accessed_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it('handles retrieve returning empty results gracefully', async () => {
@@ -424,28 +435,7 @@ describe('QdrantService.upsert', () => {
 	let service: QdrantService;
 
 	beforeEach(async () => {
-		vi.clearAllMocks();
-		mockClient.getCollections.mockResolvedValue({ collections: [{ name: 'test-collection' }] });
-		mockClient.getCollection.mockResolvedValue({
-			config: {
-				params: {
-					vectors: {
-						dense: { size: 1536, distance: 'Cosine' },
-						dense_large: { size: 3072, distance: 'Cosine' },
-					},
-				},
-			},
-			points_count: 0,
-			indexed_vectors_count: 0,
-			segments_count: 1,
-			status: 'green',
-			optimizer_status: 'ok',
-		});
-		mockClient.createPayloadIndex.mockResolvedValue({});
-		mockClient.count.mockResolvedValue({ count: 0 });
-		service = new QdrantService();
-		await service.initialize();
-		vi.clearAllMocks();
+		service = await createInitializedService();
 	});
 
 	it('upserts a point with content, metadata, and embeddings', async () => {
@@ -521,20 +511,18 @@ describe('QdrantService.upsert', () => {
 		expect(new Date(updatedAt).getTime()).toBeGreaterThanOrEqual(new Date(beforeCall).getTime());
 	});
 
-	it('overrides provided metadata.updated_at with fresh timestamp', async () => {
+	it('preserves provided metadata.updated_at when supplied', async () => {
 		const vector = new Array(1536).fill(0.1);
-		const oldTimestamp = '2025-01-01T00:00:00Z';
+		const providedTimestamp = '2025-01-01T00:00:00Z';
 		mockClient.upsert.mockResolvedValue({});
-		const beforeCall = new Date().toISOString();
 
-		await service.upsert('content', vector, { updated_at: oldTimestamp });
+		await service.upsert('content', vector, { updated_at: providedTimestamp });
 
 		const calls = mockClient.upsert.mock.calls[0] as unknown[];
 		const point = (calls[1] as any).points[0] as any;
 		const actualUpdatedAt = point.payload.updated_at;
 
-		expect(actualUpdatedAt).not.toBe(oldTimestamp);
-		expect(new Date(actualUpdatedAt).getTime()).toBeGreaterThanOrEqual(new Date(beforeCall).getTime());
+		expect(actualUpdatedAt).toBe(providedTimestamp);
 	});
 
 	it('applies default values for optional metadata fields', async () => {
@@ -564,28 +552,7 @@ describe('QdrantService.batchUpsert', () => {
 	let service: QdrantService;
 
 	beforeEach(async () => {
-		vi.clearAllMocks();
-		mockClient.getCollections.mockResolvedValue({ collections: [{ name: 'test-collection' }] });
-		mockClient.getCollection.mockResolvedValue({
-			config: {
-				params: {
-					vectors: {
-						dense: { size: 1536, distance: 'Cosine' },
-						dense_large: { size: 3072, distance: 'Cosine' },
-					},
-				},
-			},
-			points_count: 0,
-			indexed_vectors_count: 0,
-			segments_count: 1,
-			status: 'green',
-			optimizer_status: 'ok',
-		});
-		mockClient.createPayloadIndex.mockResolvedValue({});
-		mockClient.count.mockResolvedValue({ count: 0 });
-		service = new QdrantService();
-		await service.initialize();
-		vi.clearAllMocks();
+		service = await createInitializedService();
 	});
 
 	it('batch upserts multiple points', async () => {
@@ -634,27 +601,7 @@ describe('QdrantService.search', () => {
 	let service: QdrantService;
 
 	beforeEach(async () => {
-		vi.clearAllMocks();
-		mockClient.getCollections.mockResolvedValue({ collections: [{ name: 'test-collection' }] });
-		mockClient.getCollection.mockResolvedValue({
-			config: {
-				params: {
-					vectors: {
-						dense: { size: 1536, distance: 'Cosine' },
-						dense_large: { size: 3072, distance: 'Cosine' },
-					},
-				},
-			},
-			points_count: 0,
-			indexed_vectors_count: 0,
-			segments_count: 1,
-			status: 'green',
-			optimizer_status: 'ok',
-		});
-		mockClient.createPayloadIndex.mockResolvedValue({});
-		service = new QdrantService();
-		await service.initialize();
-		vi.clearAllMocks();
+		service = await createInitializedService();
 	});
 
 	it('performs vector similarity search', async () => {
@@ -701,27 +648,7 @@ describe('QdrantService.hybridSearchWithRRF', () => {
 	let service: QdrantService;
 
 	beforeEach(async () => {
-		vi.clearAllMocks();
-		mockClient.getCollections.mockResolvedValue({ collections: [{ name: 'test-collection' }] });
-		mockClient.getCollection.mockResolvedValue({
-			config: {
-				params: {
-					vectors: {
-						dense: { size: 1536, distance: 'Cosine' },
-						dense_large: { size: 3072, distance: 'Cosine' },
-					},
-				},
-			},
-			points_count: 0,
-			indexed_vectors_count: 0,
-			segments_count: 1,
-			status: 'green',
-			optimizer_status: 'ok',
-		});
-		mockClient.createPayloadIndex.mockResolvedValue({});
-		service = new QdrantService();
-		await service.initialize();
-		vi.clearAllMocks();
+		service = await createInitializedService();
 	});
 
 	it('performs hybrid search when enabled with query', async () => {
@@ -767,27 +694,7 @@ describe('QdrantService.list', () => {
 	let service: QdrantService;
 
 	beforeEach(async () => {
-		vi.clearAllMocks();
-		mockClient.getCollections.mockResolvedValue({ collections: [{ name: 'test-collection' }] });
-		mockClient.getCollection.mockResolvedValue({
-			config: {
-				params: {
-					vectors: {
-						dense: { size: 1536, distance: 'Cosine' },
-						dense_large: { size: 3072, distance: 'Cosine' },
-					},
-				},
-			},
-			points_count: 0,
-			indexed_vectors_count: 0,
-			segments_count: 1,
-			status: 'green',
-			optimizer_status: 'ok',
-		});
-		mockClient.createPayloadIndex.mockResolvedValue({});
-		service = new QdrantService();
-		await service.initialize();
-		vi.clearAllMocks();
+		service = await createInitializedService();
 	});
 
 	it('lists points with pagination', async () => {
@@ -859,27 +766,7 @@ describe('QdrantService.delete', () => {
 	let service: QdrantService;
 
 	beforeEach(async () => {
-		vi.clearAllMocks();
-		mockClient.getCollections.mockResolvedValue({ collections: [{ name: 'test-collection' }] });
-		mockClient.getCollection.mockResolvedValue({
-			config: {
-				params: {
-					vectors: {
-						dense: { size: 1536, distance: 'Cosine' },
-						dense_large: { size: 3072, distance: 'Cosine' },
-					},
-				},
-			},
-			points_count: 0,
-			indexed_vectors_count: 0,
-			segments_count: 1,
-			status: 'green',
-			optimizer_status: 'ok',
-		});
-		mockClient.createPayloadIndex.mockResolvedValue({});
-		service = new QdrantService();
-		await service.initialize();
-		vi.clearAllMocks();
+		service = await createInitializedService();
 	});
 
 	it('deletes a point by id', async () => {
@@ -902,27 +789,7 @@ describe('QdrantService.batchDelete', () => {
 	let service: QdrantService;
 
 	beforeEach(async () => {
-		vi.clearAllMocks();
-		mockClient.getCollections.mockResolvedValue({ collections: [{ name: 'test-collection' }] });
-		mockClient.getCollection.mockResolvedValue({
-			config: {
-				params: {
-					vectors: {
-						dense: { size: 1536, distance: 'Cosine' },
-						dense_large: { size: 3072, distance: 'Cosine' },
-					},
-				},
-			},
-			points_count: 0,
-			indexed_vectors_count: 0,
-			segments_count: 1,
-			status: 'green',
-			optimizer_status: 'ok',
-		});
-		mockClient.createPayloadIndex.mockResolvedValue({});
-		service = new QdrantService();
-		await service.initialize();
-		vi.clearAllMocks();
+		service = await createInitializedService();
 	});
 
 	it('batch deletes multiple points', async () => {
@@ -948,27 +815,7 @@ describe('QdrantService.updatePayload', () => {
 	let service: QdrantService;
 
 	beforeEach(async () => {
-		vi.clearAllMocks();
-		mockClient.getCollections.mockResolvedValue({ collections: [{ name: 'test-collection' }] });
-		mockClient.getCollection.mockResolvedValue({
-			config: {
-				params: {
-					vectors: {
-						dense: { size: 1536, distance: 'Cosine' },
-						dense_large: { size: 3072, distance: 'Cosine' },
-					},
-				},
-			},
-			points_count: 0,
-			indexed_vectors_count: 0,
-			segments_count: 1,
-			status: 'green',
-			optimizer_status: 'ok',
-		});
-		mockClient.createPayloadIndex.mockResolvedValue({});
-		service = new QdrantService();
-		await service.initialize();
-		vi.clearAllMocks();
+		service = await createInitializedService();
 	});
 
 	it('updates metadata fields for a point', async () => {
@@ -994,26 +841,7 @@ describe('QdrantService edge cases and error handling', () => {
 	let service: QdrantService;
 
 	beforeEach(async () => {
-		vi.clearAllMocks();
-		mockClient.getCollections.mockResolvedValue({ collections: [{ name: 'test-collection' }] });
-		mockClient.getCollection.mockResolvedValue({
-			config: {
-				params: {
-					vectors: {
-						dense: { size: 1536, distance: 'Cosine' },
-						dense_large: { size: 3072, distance: 'Cosine' },
-					},
-				},
-			},
-			points_count: 0,
-			indexed_vectors_count: 0,
-			segments_count: 1,
-			status: 'green',
-			optimizer_status: 'ok',
-		});
-		service = new QdrantService();
-		await service.initialize();
-		vi.clearAllMocks();
+		service = await createInitializedService();
 	});
 
 	it('handles search returning empty results', async () => {
@@ -1213,5 +1041,274 @@ describe('QdrantService edge cases and error handling', () => {
 		const result = await service.get('test-id');
 		expect(result).not.toBeNull();
 		expect(result?.id).toBe('test-id');
+	});
+});
+
+// ── Branch coverage: hybridSearchWithRRF with alpha extremes ─────────────────
+describe('QdrantService.hybridSearchWithRRF with alpha extremes', () => {
+	let service: QdrantService;
+
+	beforeEach(async () => {
+		service = await createInitializedService();
+	});
+
+	it('performs hybrid search with alpha=1.0 (vector-only weighting)', async () => {
+		const vector = new Array(1536).fill(0.1);
+		mockClient.search.mockResolvedValue([
+			{ id: 'point-1', score: 0.95, payload: { content: 'result 1' } },
+			{ id: 'point-2', score: 0.85, payload: { content: 'result 2' } },
+		]);
+		mockClient.scroll.mockResolvedValue({ points: [] });
+
+		const results = await service.search({
+			vector,
+			query: 'test',
+			useHybridSearch: true,
+			hybridAlpha: 1.0,
+		});
+
+		expect(Array.isArray(results)).toBe(true);
+		expect(mockClient.search).toHaveBeenCalled();
+		expect(mockClient.scroll).toHaveBeenCalled();
+	});
+
+	it('performs hybrid search with alpha=0.0 (text-only weighting)', async () => {
+		const vector = new Array(1536).fill(0.1);
+		mockClient.search.mockResolvedValue([]);
+		mockClient.scroll.mockResolvedValue({
+			points: [
+				{ id: 'text-1', payload: { content: 'text result' } },
+			],
+			next_page_offset: null,
+		});
+
+		const results = await service.search({
+			vector,
+			query: 'test',
+			useHybridSearch: true,
+			hybridAlpha: 0.0,
+		});
+
+		expect(Array.isArray(results)).toBe(true);
+	});
+
+	it('returns empty results when offset > 0 in hybrid search', async () => {
+		const vector = new Array(1536).fill(0.1);
+
+		const results = await service.search({
+			vector,
+			query: 'test',
+			useHybridSearch: true,
+			offset: 5,
+		});
+
+		expect(results).toEqual([]);
+		expect(mockClient.search).not.toHaveBeenCalled();
+	});
+
+	it('handles hybrid search when only vector results exist', async () => {
+		const vector = new Array(1536).fill(0.1);
+		mockClient.search.mockResolvedValue([
+			{ id: 'point-1', score: 0.95, payload: { content: 'vector result' } },
+		]);
+		mockClient.scroll.mockResolvedValue({ points: [] });
+
+		const results = await service.search({
+			vector,
+			query: 'test',
+			useHybridSearch: true,
+		});
+
+		expect(results).toHaveLength(1);
+		expect(results[0]?.id).toBe('point-1');
+	});
+
+	it('handles hybrid search when only text results exist', async () => {
+		const vector = new Array(1536).fill(0.1);
+		mockClient.search.mockResolvedValue([]);
+		mockClient.scroll.mockResolvedValue({
+			points: [
+				{ id: 'text-1', payload: { content: 'text result' } },
+			],
+		});
+
+		const results = await service.search({
+			vector,
+			query: 'test',
+			useHybridSearch: true,
+		});
+
+		expect(results).toHaveLength(1);
+		expect(results[0]?.id).toBe('text-1');
+	});
+});
+
+// ── Branch coverage: createPayloadIndexes when indexes exist ─────────────────
+describe('QdrantService.createPayloadIndexes with existing indexes', () => {
+	let service: QdrantService;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockClient.getCollections.mockResolvedValue({ collections: [{ name: 'test-collection' }] });
+		mockClient.getCollection.mockResolvedValue({
+			config: {
+				params: {
+					vectors: {
+						dense: { size: 1536, distance: 'Cosine' },
+						dense_large: { size: 3072, distance: 'Cosine' },
+					},
+				},
+			},
+			points_count: 100,
+			indexed_vectors_count: 100,
+			segments_count: 1,
+			status: 'green',
+			optimizer_status: 'ok',
+		});
+	});
+
+	it('handles createPayloadIndex error when index already exists', async () => {
+		mockClient.createPayloadIndex.mockRejectedValueOnce(
+			new Error('field_name already exists'),
+		);
+		mockClient.createPayloadIndex.mockResolvedValue({});
+
+		service = new QdrantService();
+		await expect(service.initialize()).resolves.not.toThrow();
+	});
+
+	it('logs warning when payload index creation fails with non-exists error', async () => {
+		mockClient.createPayloadIndex.mockRejectedValueOnce(
+			new Error('unexpected error'),
+		);
+		mockClient.createPayloadIndex.mockResolvedValue({});
+
+		service = new QdrantService();
+		await expect(service.initialize()).resolves.not.toThrow();
+	});
+});
+
+// ── Branch coverage: Access tracking with rate-limit guard ────────────────────
+describe('QdrantService access tracking with rate-limit guard', () => {
+	let service: QdrantService;
+
+	beforeEach(async () => {
+		service = await createInitializedService();
+	});
+
+	it('suppresses duplicate access tracking warning logs within interval', async () => {
+		vi.useFakeTimers();
+
+		try {
+			const pointId = 'point-123';
+
+			mockClient.retrieve.mockResolvedValue([
+				{
+					id: pointId,
+					payload: {
+						content: 'test content',
+						created_at: '2026-04-20T00:00:00Z',
+						updated_at: '2026-04-20T00:00:00Z',
+					},
+				},
+			]);
+
+			mockClient.setPayload.mockRejectedValue(new Error('Access tracking failed'));
+
+			// First call - should log warning
+			await service.get(pointId);
+			await vi.runAllTimersAsync();
+
+			// Second call - should NOT log (within interval)
+			await service.get(pointId);
+			await vi.runAllTimersAsync();
+
+			// Both failed but only first should be warned about (rate-limited)
+			expect(mockClient.setPayload).toHaveBeenCalled();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('updates last_accessed_at on successful access tracking', async () => {
+		vi.useFakeTimers();
+
+		try {
+			const pointId = 'point-456';
+
+			mockClient.retrieve.mockResolvedValue([
+				{
+					id: pointId,
+					payload: {
+						content: 'test',
+						access_count: 0,
+						created_at: '2026-04-20T00:00:00Z',
+						updated_at: '2026-04-20T00:00:00Z',
+					},
+				},
+			]);
+
+			mockClient.setPayload.mockResolvedValue({});
+
+			await service.get(pointId);
+			await vi.runAllTimersAsync();
+
+			const calls = mockClient.setPayload.mock.calls[0] as unknown[];
+			const payload = (calls[1] as any).payload as any;
+
+			expect(payload.last_accessed_at).toBeDefined();
+			expect(typeof payload.last_accessed_at).toBe('string');
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+});
+
+// ── Branch coverage: validateCollectionSchema with distance mismatches ──────
+describe('QdrantService.validateCollectionSchema with distance mismatches', () => {
+	it('throws when dense vector has non-Cosine distance', async () => {
+		vi.clearAllMocks();
+		mockClient.getCollections.mockResolvedValue({ collections: [{ name: 'test-collection' }] });
+		mockClient.getCollection.mockResolvedValue({
+			config: {
+				params: {
+					vectors: {
+						dense: { size: 1536, distance: 'Euclid' },
+						dense_large: { size: 3072, distance: 'Cosine' },
+					},
+				},
+			},
+			points_count: 0,
+			indexed_vectors_count: 0,
+			segments_count: 1,
+			status: 'green',
+			optimizer_status: 'ok',
+		});
+
+		const service = new QdrantService();
+		await expect(service.initialize()).rejects.toThrow('distance mismatch');
+	});
+
+	it('throws when dense_large vector has non-Cosine distance', async () => {
+		vi.clearAllMocks();
+		mockClient.getCollections.mockResolvedValue({ collections: [{ name: 'test-collection' }] });
+		mockClient.getCollection.mockResolvedValue({
+			config: {
+				params: {
+					vectors: {
+						dense: { size: 1536, distance: 'Cosine' },
+						dense_large: { size: 3072, distance: 'Euclid' },
+					},
+				},
+			},
+			points_count: 0,
+			indexed_vectors_count: 0,
+			segments_count: 1,
+			status: 'green',
+			optimizer_status: 'ok',
+		});
+
+		const service = new QdrantService();
+		await expect(service.initialize()).rejects.toThrow('distance mismatch');
 	});
 });

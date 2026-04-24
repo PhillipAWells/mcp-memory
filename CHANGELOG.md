@@ -7,13 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-### Changed
-### Fixed
-### Removed
-### Deprecated
-### Security
-
 ## [1.3.0] - 2026-04-24
 
 ### Added
@@ -25,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Removed async from synchronous RulesManager operations for efficiency
 - Removed @internal annotation from public QdrantService.batchUpsert method
-- Improved mock isolation in test suites (clearAllMocks → resetAllMocks)
+- Comprehensive code review and quality improvements across test suites
 - Simplified QdrantPoint vector type to use only named vectors
 
 ### Fixed

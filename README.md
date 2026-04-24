@@ -21,13 +21,13 @@
 - **Cost Optimization** - LRU caching and usage tracking for embedding API calls
 - **Corporate Proxy Support** — Routes all outbound traffic through HTTP(S) proxies via standard `HTTPS_PROXY` / `HTTP_PROXY` env vars; `NO_PROXY` defaults to `localhost,127.0.0.1,::1` automatically
 
-## Quick Start
-
-### Prerequisites
+## Requirements
 
 - Node.js >= 22.0.0
 - Qdrant vector database (local or cloud)
 - OpenAI API key (**required**)
+
+## Quick Start
 
 ### Installation
 
@@ -137,19 +137,110 @@ Expired memories are automatically excluded from all queries and listings.
 }
 ```
 
-## Available Tools
+## API Reference
 
-| Tool | Description |
-|---|---|
-| `memory-store` | Store a memory with metadata and tags |
-| `memory-query` | Semantic search with optional hybrid search |
-| `memory-list` | List memories with filtering and pagination |
-| `memory-get` | Retrieve a specific memory by ID |
-| `memory-update` | Update memory content or metadata |
-| `memory-delete` | Delete a memory by ID |
-| `memory-batch-delete` | Delete multiple memories at once |
-| `memory-status` | Health check, collection statistics, and embedding usage |
-| `memory-count` | Count memories matching a filter |
+All tools are exposed over the MCP stdio transport and return a `StandardResponse<T>` envelope.
+
+### `memory-store`
+
+Store a memory with metadata and tags.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `content` | `string` | Yes | Text content to embed and store (1–100 000 characters) |
+| `metadata.memory_type` | `'long-term' \| 'episodic' \| 'short-term'` | No | Classification controlling retention policy |
+| `metadata.workspace` | `string` | No | Workspace slug for multi-project isolation |
+| `metadata.confidence` | `number` | No | Reliability score in [0, 1] |
+| `metadata.tags` | `string[]` | No | Up to 20 searchable tags (each 1–50 characters) |
+| `auto_chunk` | `boolean` | No | Split content longer than 1 000 characters into overlapping chunks (default `true`) |
+
+### `memory-query`
+
+Semantic search with optional hybrid search.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `query` | `string` | Yes | Natural-language search query (1–10 000 characters) |
+| `filter.workspace` | `string` | No | Restrict results to a workspace |
+| `filter.memory_type` | `'long-term' \| 'episodic' \| 'short-term'` | No | Restrict results to a memory type |
+| `filter.min_confidence` | `number` | No | Minimum confidence score in [0, 1] |
+| `filter.tags` | `string[]` | No | Restrict results to memories with all specified tags |
+| `limit` | `number` | No | Maximum results to return (1–100, default 10) |
+| `offset` | `number` | No | Results to skip for pagination (default 0) |
+| `score_threshold` | `number` | No | Minimum cosine similarity score in [0, 1] |
+| `hnsw_ef` | `number` | No | HNSW search thoroughness parameter (64–512) |
+| `use_hybrid_search` | `boolean` | No | Combine vector and full-text search via RRF (default `false`) |
+| `hybrid_alpha` | `number` | No | Weight between dense (1.0) and full-text (0.0) scoring in hybrid mode (default 0.5) |
+
+### `memory-list`
+
+List memories with filtering and pagination.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `filter.workspace` | `string` | No | Restrict results to a workspace |
+| `filter.memory_type` | `'long-term' \| 'episodic' \| 'short-term'` | No | Restrict results to a memory type |
+| `filter.min_confidence` | `number` | No | Minimum confidence score in [0, 1] |
+| `filter.tags` | `string[]` | No | Restrict results to memories with all specified tags |
+| `limit` | `number` | No | Memories per page (1–1 000, default 100) |
+| `offset` | `number` | No | Memories to skip for pagination (default 0) |
+| `sort_by` | `'created_at' \| 'updated_at' \| 'access_count' \| 'confidence'` | No | Sort field (default `'created_at'`) |
+| `sort_order` | `'asc' \| 'desc'` | No | Sort direction (default `'desc'`) |
+
+### `memory-get`
+
+Retrieve a specific memory by ID.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `id` | `string` | Yes | UUID of the memory to retrieve |
+
+### `memory-update`
+
+Update memory content or metadata. At least one of `content` or `metadata` must be provided.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `id` | `string` | Yes | UUID of the memory to update |
+| `content` | `string` | No | Replacement content; triggers embedding regeneration (1–100 000 characters) |
+| `metadata` | `object` | No | Metadata fields to merge into the existing payload |
+| `auto_chunk` | `boolean` | No | Split content into overlapping chunks (default `true`) |
+
+### `memory-delete`
+
+Delete a memory by ID.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `id` | `string` | Yes | UUID of the memory to delete |
+
+### `memory-batch-delete`
+
+Delete multiple memories in a single call.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `ids` | `string[]` | Yes | Array of UUIDs to delete (1–100 items) |
+
+### `memory-status`
+
+Health check, collection statistics, and embedding usage.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `workspace` | `string` | No | Include per-workspace point count for the specified workspace |
+| `include_embedding_stats` | `boolean` | No | Include embedding cache and cost statistics (default `true`) |
+
+### `memory-count`
+
+Count memories matching a filter.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `filter.workspace` | `string` | No | Restrict count to a workspace |
+| `filter.memory_type` | `'long-term' \| 'episodic' \| 'short-term'` | No | Restrict count to a memory type |
+| `filter.min_confidence` | `number` | No | Minimum confidence score in [0, 1] |
+| `filter.tags` | `string[]` | No | Restrict count to memories with all specified tags |
 
 ## Architecture
 

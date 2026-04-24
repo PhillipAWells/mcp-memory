@@ -23,37 +23,6 @@ export type MemoryType =
  * All fields are optional.  The index signature (`[key: string]: any`) allows
  * callers to persist custom fields that are forwarded verbatim to Qdrant.
  */
-export interface MemoryMetadata {
-	/** Classification controlling retention and search prioritisation. */
-	memory_type?: MemoryType;
-
-	/** Workspace slug for multi-project isolation. */
-	workspace?: string | null;
-
-	/** Reliability score in [0, 1].  Higher values surface results earlier. */
-	confidence?: number;
-	/** ISO 8601 expiry datetime.  The point is excluded from queries after this time. */
-	expiresAt?: string;
-
-	/** Running total of times this memory has been retrieved. */
-	accessCount?: number;
-	/** ISO 8601 timestamp of the most recent retrieval. */
-	lastAccessedAt?: string;
-
-	/** ISO 8601 creation timestamp. */
-	createdAt?: string;
-	/** ISO 8601 last-modified timestamp. */
-	updatedAt?: string;
-
-	/** Searchable labels for categorisation. */
-	tags?: string[];
-	/** Alternative names or identifiers for this memory. */
-	aliases?: string[];
-
-	/** Custom caller-defined fields, passed through to Qdrant unchanged. */
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Open schemas require dynamic fields
-	[key: string]: any;
-}
 
 /**
  * A single result returned by a vector search or point retrieval operation.
@@ -62,7 +31,7 @@ export interface SearchResult {
 	/** UUID of the Qdrant point. */
 	id: string;
 	/** Optional file-system path associated with the memory (may be empty). */
-	path: string;
+	path?: string;
 	/** The stored text content. */
 	content: string;
 	/** Cosine similarity score in [0, 1]; 1.0 for exact retrievals via `get()`. */
@@ -93,13 +62,6 @@ export interface StandardResponse<T = unknown> {
 	error?: string;
 	/** Categorical error type for programmatic handling. */
 	error_type?: ErrorType;
-	/** Wall-clock duration of the operation. */
-	timing?: {
-		/** Elapsed milliseconds. */
-		duration_ms: number;
-		/** Elapsed seconds (convenience; equals `duration_ms / 1000`). */
-		duration_seconds: number;
-	};
 }
 
 /**
@@ -209,8 +171,8 @@ export interface QdrantPayload {
 	/** ISO 8601 timestamp of the most recent access; `null` if never accessed. */
 	last_accessed_at?: string | null;
 	/** Arbitrary caller-defined fields. */
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Open schemas require dynamic fields
-	[key: string]: any;
+	 
+	[key: string]: unknown;
 }
 
 /**

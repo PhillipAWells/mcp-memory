@@ -112,7 +112,9 @@ interface CollectionStats {
 /**
  * Qdrant Client Service
  *
- * Manages vector database operations with optimized configuration
+ * Manages vector database operations with optimized configuration.
+ * Note: The underlying QdrantClient does not support explicit connection closing;
+ * connections are automatically managed by the HTTP client.
  */
 export class QdrantService {
 	private readonly client: QdrantClient;
@@ -362,7 +364,7 @@ export class QdrantService {
 			access_count: metadata.access_count ?? 0,
 			last_accessed_at: metadata.last_accessed_at ?? null,
 			created_at: metadata.created_at ?? now,
-			updated_at: now,
+			updated_at: metadata.updated_at ?? now,
 		};
 
 		const vectorData = { dense: vector, dense_large: vectorLarge };
@@ -424,7 +426,7 @@ export class QdrantService {
 					access_count: p.metadata?.access_count ?? 0,
 					last_accessed_at: p.metadata?.last_accessed_at ?? null,
 					created_at: p.metadata?.created_at ?? now,
-					updated_at: now,
+					updated_at: p.metadata?.updated_at ?? now,
 				};
 
 				const vectorData = { dense: p.vector, dense_large: p.vectorLarge };
@@ -532,7 +534,7 @@ export class QdrantService {
 			const payload = r.payload as unknown as Record<string, unknown>;
 			return {
 				id: String(r.id),
-				path: typeof payload?.path === 'string' ? payload.path : '',
+				...(typeof payload?.path === 'string' && payload.path ? { path: payload.path } : {}),
 				content: typeof payload?.content === 'string' ? payload.content : '',
 				score: r.score,
 				metadata: payload as unknown as QdrantPayload,
@@ -552,6 +554,12 @@ export class QdrantService {
 		params: SearchParams,
 		filter?: Record<string, unknown>,
 	): Promise<SearchResult[]> {
+		// Pagination is not supported in hybrid search because it requires
+		// fusing two separate result sets; offset makes no sense semantically
+		if ((params.offset ?? 0) > 0) {
+			return [];
+		}
+
 		const k = RRF_K; // RRF constant (typical value)
 		const limit = params.limit ?? DEFAULT_SEARCH_LIMIT;
 		const fetchLimit = limit * RRF_FETCH_MULTIPLIER; // Fetch more results for better RRF
@@ -625,7 +633,7 @@ export class QdrantService {
 				const payload = point.payload as unknown as Record<string, unknown>;
 				return [{
 					id,
-					path: typeof payload?.path === 'string' ? payload.path : '',
+					...(typeof payload?.path === 'string' && payload.path ? { path: payload.path } : {}),
 					content: typeof payload?.content === 'string' ? payload.content : '',
 					score,
 					metadata: payload as unknown as QdrantPayload,
@@ -682,7 +690,7 @@ export class QdrantService {
 		const payload = point.payload as unknown as Record<string, unknown>;
 		return {
 			id: String(point.id),
-			path: typeof payload?.path === 'string' ? payload.path : '',
+			...(typeof payload?.path === 'string' && payload.path ? { path: payload.path } : {}),
 			content: typeof payload?.content === 'string' ? payload.content : '',
 			score: 1.0,
 			metadata: payload as unknown as QdrantPayload,
@@ -741,7 +749,7 @@ export class QdrantService {
 			const payload = p.payload as unknown as Record<string, unknown>;
 			return {
 				id: String(p.id),
-				path: typeof payload?.path === 'string' ? payload.path : '',
+				...(typeof payload?.path === 'string' && payload.path ? { path: payload.path } : {}),
 				content: typeof payload?.content === 'string' ? payload.content : '',
 				score: 1.0,
 				metadata: payload as unknown as QdrantPayload,
@@ -931,16 +939,6 @@ export class QdrantService {
 		if (!this.initialized) {
 			await this.initialize();
 		}
-	}
-
-	/**
-   * Close the client connection
-   */
-	public close(): void {
-		// QdrantClient doesn't have explicit close method
-		// but we can mark as uninitialized
-		this.initialized = false;
-		logger.info('Qdrant client closed');
 	}
 }
 

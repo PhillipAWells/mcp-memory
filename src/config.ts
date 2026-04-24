@@ -192,6 +192,8 @@ export function loadConfig(): Config {
 		return ConfigSchema.parse(rawConfig);
 	} catch (error) {
 		if (error instanceof z.ZodError) {
+			// Chicken-and-egg: logger depends on config being loaded, so we must use
+			// console.error here even though we use structured logging elsewhere.
 			console.error('Configuration validation failed:');
 			error.issues.forEach((issue) => {
 				console.error(`  - ${issue.path.join('.')}: ${issue.message}`);

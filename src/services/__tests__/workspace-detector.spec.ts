@@ -147,24 +147,31 @@ describe('WorkspaceDetectorService cache', () => {
 		detector = makeDetector(); 
 	});
 
-	it('clearCache makes getCached return null', () => {
+	it('clearCache makes getCached return uncached result', () => {
 		// Prime the cache via detect() using an explicit workspace
 		detector.detect('myproject');
+		const result = detector.getCached();
+		expect(result.cached).toBe(true);
 		detector.clearCache();
-		expect(detector.getCached()).toBeNull();
+		const cleared = detector.getCached();
+		expect(cleared.cached).toBe(false);
 	});
 
-	it('getCached returns null before any detection', () => {
-		expect(detector.getCached()).toBeNull();
+	it('getCached returns uncached before any detection', () => {
+		const result = detector.getCached();
+		expect(result.cached).toBe(false);
+		expect(result.workspace).toBeNull();
 	});
 
-	it('clears cache returns null immediately after', () => {
+	it('clears cache returns uncached immediately after', () => {
 		detector.detect(undefined, process.cwd());
 		// Cache should have been populated by auto-detection
-		const _cached = detector.getCached();
+		const cached = detector.getCached();
+		expect(cached.cached).toBe(true);
 		// Cache might be null if TTL expired, but we can test the clear works
 		detector.clearCache();
-		expect(detector.getCached()).toBeNull();
+		const cleared = detector.getCached();
+		expect(cleared.cached).toBe(false);
 	});
 });
 

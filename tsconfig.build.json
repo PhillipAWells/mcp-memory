@@ -3,9 +3,6 @@
 	"compilerOptions": {
 		"outDir": "./build",
 		"rootDir": "./src",
-		"declaration": true,
-		"declarationMap": true,
-		"sourceMap": true,
 		"types": []
 	},
 	"include": [

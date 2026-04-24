@@ -19,8 +19,9 @@ const TAG_MAX_LENGTH = 50;
 const TAGS_MAX_COUNT = 20;
 const CONTENT_MAX_LENGTH = 100_000;
 const QUERY_MAX_LENGTH = 10_000;
+const QUERY_RESULT_LIMIT_MAX = 100;
 const LIST_LIMIT_MAX = 1_000;
-const RESULT_LIMIT_MAX = 100;
+const DEFAULT_LIST_LIMIT = 100;
 const HNSW_EF_MIN = 64;
 const HNSW_EF_MAX = 512;
 const DEFAULT_RESULT_LIMIT = 10;
@@ -100,7 +101,7 @@ export const MemoryQueryInputSchema = z.object({
 		})
 		.optional(),
 	/** Maximum number of results to return (1–100, default 10). */
-	limit: z.number().int().min(1).max(RESULT_LIMIT_MAX).optional().default(DEFAULT_RESULT_LIMIT),
+	limit: z.number().int().min(1).max(QUERY_RESULT_LIMIT_MAX).optional().default(DEFAULT_RESULT_LIMIT),
 	/** Number of results to skip for pagination (default 0). */
 	offset: z.number().int().min(0).optional().default(0),
 	/** Minimum cosine similarity score in [0, 1] required for a result to be included. */
@@ -144,7 +145,7 @@ export const MemoryListInputSchema = z.object({
 		})
 		.optional(),
 	/** Maximum number of memories to return per page (1–1 000, default 100). */
-	limit: z.number().int().min(1).max(LIST_LIMIT_MAX).optional().default(RESULT_LIMIT_MAX),
+	limit: z.number().int().min(1).max(LIST_LIMIT_MAX).optional().default(DEFAULT_LIST_LIMIT),
 	/** Number of memories to skip for pagination (default 0). */
 	offset: z.number().int().min(0).optional().default(0),
 	/** Field to sort results by (default `'created_at'`). */

@@ -143,4 +143,4 @@ Queries use Qdrant's `indexed_only: true` setting to skip segments that are curr
 
 The `memory-list` tool with sorting by `access_count`, `confidence`, or `updated_at` loads up to 10,000 records into memory for sorting. For collections with many memories, this can consume significant memory.
 
-**Workaround**: Use the `filter_by_updated_at` parameter to narrow the result set before sorting. Alternatively, sort by `created_at`, which uses Qdrant's native time-based indexing and does not require loading records into memory.
+**Workaround**: Use the `workspace`, `memory_type`, or `tags` filters to narrow the result set before sorting, as this avoids loading the full collection into memory. Alternatively, sort by `created_at`, which uses Qdrant's native time-based indexing and does not require loading records into memory.
