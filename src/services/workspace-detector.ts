@@ -89,7 +89,7 @@ export class WorkspaceDetectorService {
 		// 2. Check cache (only valid when autoDetect is still enabled)
 		if (
 			config.workspace.autoDetect &&
-      this.cachedWorkspace !== null &&
+      this.cachePopulated &&
       Date.now() - this.cacheTimestamp < this.CACHE_TTL
 		) {
 			logger.debug(`Using cached workspace: ${this.cachedWorkspace}`);
@@ -335,6 +335,7 @@ export class WorkspaceDetectorService {
    * Useful for debugging workspace resolution in complex monorepos.
    *
    * @param currentDir - Directory to run detection from (defaults to `process.cwd()`).
+   * @remarks This method calls `detect()` internally, which may update the workspace cache on first call.
    */
 	public getInfo(currentDir: string = process.cwd()): {
 		detected: WorkspaceDetectionResult;
