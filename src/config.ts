@@ -20,8 +20,11 @@ const DEFAULT_CHUNK_SIZE = 1000;
 const DEFAULT_CHUNK_OVERLAP = 200;
 /** Default workspace cache TTL in milliseconds. */
 const DEFAULT_WORKSPACE_CACHE_TTL_MS = 60000;
-/** OpenAI text-embedding-3-small output dimensions. */
-const OPENAI_SMALL_EMBEDDING_DIMENSIONS = 1536;
+/**
+ * Default output dimensions for OpenAI `text-embedding-3-small`.
+ * Overridden at runtime by the `SMALL_EMBEDDING_DIMENSIONS` environment variable.
+ */
+const DEFAULT_SMALL_EMBEDDING_DIMENSIONS = 1536;
 /** Default output dimensions for OpenAI text-embedding-3-large. */
 const DEFAULT_OPENAI_LARGE_EMBEDDING_DIMENSIONS = 3072;
 /** Minimum length for QDRANT_API_KEY to guard against accidental single-char values. */
@@ -153,7 +156,7 @@ export function loadConfig(): Config {
 	// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
 	const apiKey = process.env.OPENAI_API_KEY || undefined; // || intentional: coerce empty string to undefined
 
-	const smallDimensions = parseIntEnv(process.env.SMALL_EMBEDDING_DIMENSIONS, OPENAI_SMALL_EMBEDDING_DIMENSIONS, 'SMALL_EMBEDDING_DIMENSIONS');
+	const smallDimensions = parseIntEnv(process.env.SMALL_EMBEDDING_DIMENSIONS, DEFAULT_SMALL_EMBEDDING_DIMENSIONS, 'SMALL_EMBEDDING_DIMENSIONS');
 	const largeDimensions = parseIntEnv(process.env.LARGE_EMBEDDING_DIMENSIONS, DEFAULT_OPENAI_LARGE_EMBEDDING_DIMENSIONS, 'LARGE_EMBEDDING_DIMENSIONS');
 
 	const rawConfig = {
