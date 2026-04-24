@@ -818,10 +818,10 @@ export class QdrantService {
 		}
 
 		// Confidence filter (minimum threshold)
-		if (filter.minConfidence !== undefined) {
+		if (filter.min_confidence !== undefined) {
 			conditions.push({
 				key: 'confidence',
-				range: { gte: filter.minConfidence },
+				range: { gte: filter.min_confidence },
 			});
 		}
 

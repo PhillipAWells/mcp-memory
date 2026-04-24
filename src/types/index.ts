@@ -224,7 +224,7 @@ export interface SearchFilters {
 	/** Restrict to a specific memory type. */
 	memory_type?: MemoryType;
 	/** Minimum `confidence` value (inclusive). */
-	minConfidence?: number;
+	min_confidence?: number;
 	/** Restrict to memories that have at least one of these tags. */
 	tags?: string[];
 	/** Match on arbitrary payload fields (exact value match per key). */
