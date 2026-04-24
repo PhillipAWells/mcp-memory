@@ -79,7 +79,7 @@ export interface SearchResult {
  *
  * @template T - Type of the `data` payload on success.
  */
-export interface StandardResponse<T = any> {
+export interface StandardResponse<T = unknown> {
 	/** `true` on success, `false` on any error. */
 	success: boolean;
 	/** Human-readable summary of the outcome. */
@@ -87,7 +87,7 @@ export interface StandardResponse<T = any> {
 	/** Operation result; present only when `success` is `true`. */
 	data?: T;
 	/** Arbitrary key/value bag for supplementary information (e.g. timing). */
-	metadata?: Record<string, any>;
+	metadata?: Record<string, unknown>;
 	/** Detailed error message; present only when `success` is `false`. */
 	error?: string;
 	/** Categorical error type for programmatic handling. */
@@ -147,7 +147,7 @@ export interface MCPTool {
    * Receives the validated (but untyped) `args` object and must return
    * a {@link StandardResponse}.
    */
-	handler: (args: any) => Promise<StandardResponse>;
+	handler: (args: unknown) => Promise<StandardResponse>;
 }
 
 /**

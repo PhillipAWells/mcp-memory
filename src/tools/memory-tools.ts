@@ -78,7 +78,7 @@ function checkContentSecrets(content: string, idContext?: string): StandardRespo
 	return null;
 }
 
-async function memoryStoreHandler(args: any): Promise<StandardResponse> {
+async function memoryStoreHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
 
 	try {
@@ -172,7 +172,7 @@ async function memoryStoreHandler(args: any): Promise<StandardResponse> {
 /**
  * Memory Query Tool
  */
-async function memoryQueryHandler(args: any): Promise<StandardResponse> {
+async function memoryQueryHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
 
 	try {
@@ -225,7 +225,7 @@ async function memoryQueryHandler(args: any): Promise<StandardResponse> {
 /**
  * Memory List Tool
  */
-async function memoryListHandler(args: any): Promise<StandardResponse> {
+async function memoryListHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
 
 	try {
@@ -339,7 +339,7 @@ async function memoryListHandler(args: any): Promise<StandardResponse> {
 /**
  * Memory Get Tool
  */
-async function memoryGetHandler(args: any): Promise<StandardResponse> {
+async function memoryGetHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
 
 	try {
@@ -377,7 +377,7 @@ async function memoryGetHandler(args: any): Promise<StandardResponse> {
 /**
  * Memory Update Tool
  */
-async function memoryUpdateHandler(args: any): Promise<StandardResponse> {
+async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
 
 	try {
@@ -567,7 +567,7 @@ async function memoryUpdateHandler(args: any): Promise<StandardResponse> {
 /**
  * Memory Delete Tool
  */
-async function memoryDeleteHandler(args: any): Promise<StandardResponse> {
+async function memoryDeleteHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
 
 	try {
@@ -605,7 +605,7 @@ async function memoryDeleteHandler(args: any): Promise<StandardResponse> {
 /**
  * Memory Batch Delete Tool
  */
-async function memoryBatchDeleteHandler(args: any): Promise<StandardResponse> {
+async function memoryBatchDeleteHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
 
 	try {
@@ -638,7 +638,7 @@ async function memoryBatchDeleteHandler(args: any): Promise<StandardResponse> {
 /**
  * Memory Status Tool (combines server health + collection statistics)
  */
-async function memoryStatusHandler(args: any): Promise<StandardResponse> {
+async function memoryStatusHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
 
 	try {
@@ -708,7 +708,7 @@ async function memoryStatusHandler(args: any): Promise<StandardResponse> {
 /**
  * Memory Count Tool
  */
-async function memoryCountHandler(args: any): Promise<StandardResponse> {
+async function memoryCountHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
 
 	try {

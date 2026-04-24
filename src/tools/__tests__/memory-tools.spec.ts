@@ -193,7 +193,7 @@ describe('memory-query', () => {
 		]);
 		const result = await getTool('memory-query').handler({ query: 'test query' });
 		expect(result.success).toBe(true);
-		expect(result.data?.count).toBe(1);
+		expect((result.data as any).count).toBe(1);
 	});
 
 	it('returns VALIDATION_ERROR for empty query', async () => {
@@ -204,7 +204,7 @@ describe('memory-query', () => {
 
 	it('includes query text in response', async () => {
 		const result = await getTool('memory-query').handler({ query: 'my query text' });
-		expect(result.data?.query).toBe('my query text');
+		expect((result.data as any).query).toBe('my query text');
 	});
 });
 
@@ -221,13 +221,13 @@ describe('memory-list', () => {
 		]);
 		const result = await getTool('memory-list').handler({});
 		expect(result.success).toBe(true);
-		expect(result.data?.count).toBe(1);
+		expect((result.data as any).count).toBe(1);
 	});
 
 	it('returns empty list when no memories match', async () => {
 		const result = await getTool('memory-list').handler({});
 		expect(result.success).toBe(true);
-		expect(result.data?.memories).toHaveLength(0);
+		expect((result.data as any).memories).toHaveLength(0);
 	});
 
 	it('paginates using limit and offset', async () => {
@@ -254,8 +254,8 @@ describe('memory-list', () => {
 
 		expect(result.success).toBe(true);
 		// Sorted desc: [30(id=2), 20(id=3), 10(id=1)] → offset=1 limit=1 → id=3
-		expect(result.data?.memories).toHaveLength(1);
-		expect(result.data?.memories[0].id).toBe('3');
+		expect((result.data as any).memories).toHaveLength(1);
+		expect((result.data as any).memories[0].id).toBe('3');
 	});
 
 	it('fetches from offset 0 when sorting in memory (not the user offset)', async () => {
@@ -303,7 +303,7 @@ describe('memory-get', () => {
 		});
 		const result = await getTool('memory-get').handler({ id: VALID_UUID });
 		expect(result.success).toBe(true);
-		expect(result.data?.id).toBe(VALID_UUID);
+		expect((result.data as any).id).toBe(VALID_UUID);
 	});
 
 	it('returns NOT_FOUND_ERROR when memory does not exist', async () => {
@@ -409,7 +409,7 @@ describe('memory-update', () => {
 			metadata: { confidence: 0.9 },
 		});
 		expect(result.success).toBe(true);
-		expect(result.data?.siblings_updated).toBe(3);
+		expect((result.data as any).siblings_updated).toBe(3);
 	});
 
 	it('reindexes when content is updated and reindex=true', async () => {
@@ -421,7 +421,7 @@ describe('memory-update', () => {
 		});
 		expect(result.success).toBe(true);
 		expect(mockQdrant.upsert).toHaveBeenCalledTimes(1);
-		expect(result.data?.reindexed).toBe(true);
+		expect((result.data as any).reindexed).toBe(true);
 	});
 
 	it('blocks update if new content contains high-confidence secrets', async () => {
@@ -477,7 +477,7 @@ describe('memory-batch-delete', () => {
 		];
 		const result = await getTool('memory-batch-delete').handler({ ids });
 		expect(result.success).toBe(true);
-		expect(result.data?.count).toBe(2);
+		expect((result.data as any).count).toBe(2);
 		expect(mockQdrant.batchDelete).toHaveBeenCalledWith(ids);
 	});
 
@@ -512,18 +512,18 @@ describe('memory-status', () => {
 	it('returns server health information', async () => {
 		const result = await getTool('memory-status').handler({});
 		expect(result.success).toBe(true);
-		expect(result.data?.server).toBe('mcp-memory');
-		expect(result.data?.collection).toBeDefined();
+		expect((result.data as any).server).toBe('mcp-memory');
+		expect((result.data as any).collection).toBeDefined();
 	});
 
 	it('includes embedding stats when include_embedding_stats is true', async () => {
 		const result = await getTool('memory-status').handler({ include_embedding_stats: true });
-		expect(result.data?.embeddings).toBeDefined();
+		expect((result.data as any).embeddings).toBeDefined();
 	});
 
 	it('does not include embedding stats when false', async () => {
 		const result = await getTool('memory-status').handler({ include_embedding_stats: false });
-		expect(result.data?.embeddings).toBeUndefined();
+		expect((result.data as any).embeddings).toBeUndefined();
 	});
 });
 
@@ -538,7 +538,7 @@ describe('memory-count', () => {
 		mockQdrant.count.mockResolvedValueOnce(42);
 		const result = await getTool('memory-count').handler({});
 		expect(result.success).toBe(true);
-		expect(result.data?.count).toBe(42);
+		expect((result.data as any).count).toBe(42);
 	});
 
 	it('passes filter to count service', async () => {
