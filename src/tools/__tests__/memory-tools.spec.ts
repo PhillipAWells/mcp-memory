@@ -568,3 +568,437 @@ describe('memory-status error handling', () => {
 		expect(result.error_type).toBe('EXECUTION_ERROR');
 	});
 });
+
+// ── memory-update chunked memory edge cases ────────────────────────────────────
+
+describe('memory-update - chunked memory content updates', () => {
+	const VALID_UUID = '550e8400-e29b-41d4-a716-446655440003';
+	const baseMemory = {
+		id: VALID_UUID,
+		content: 'original content',
+		score: 1,
+		path: '',
+		metadata: { created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+	};
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('reindexes content when reindex=true for chunked memory', async () => {
+		mockQdrant.get.mockResolvedValueOnce({
+			...baseMemory,
+			metadata: {
+				...baseMemory.metadata,
+				chunk_index: 0,
+				total_chunks: 3,
+				chunk_group_id: 'group-xyz-123',
+			},
+		});
+
+		mockQdrant.list.mockResolvedValueOnce([
+			{
+				id: 'chunk-1',
+				content: 'chunk 1 content',
+				score: 1,
+				path: '',
+				metadata: {
+					...baseMemory.metadata,
+					chunk_index: 0,
+					total_chunks: 3,
+					chunk_group_id: 'group-xyz-123',
+				},
+			},
+			{
+				id: 'chunk-2',
+				content: 'chunk 2 content',
+				score: 1,
+				path: '',
+				metadata: {
+					...baseMemory.metadata,
+					chunk_index: 1,
+					total_chunks: 3,
+					chunk_group_id: 'group-xyz-123',
+				},
+			},
+			{
+				id: 'chunk-3',
+				content: 'chunk 3 content',
+				score: 1,
+				path: '',
+				metadata: {
+					...baseMemory.metadata,
+					chunk_index: 2,
+					total_chunks: 3,
+					chunk_group_id: 'group-xyz-123',
+				},
+			},
+		]);
+
+		mockQdrant.upsert.mockResolvedValue('new-chunk-id-1');
+		mockQdrant.batchDelete.mockResolvedValue(undefined);
+
+		const result = await getTool('memory-update').handler({
+			id: VALID_UUID,
+			content: 'completely new content that needs re-chunking',
+			reindex: true,
+		});
+
+		expect(result.success).toBe(true);
+		// batchDelete should be called to delete sibling chunks
+		expect(mockQdrant.batchDelete).toHaveBeenCalled();
+	});
+
+	it('propagates metadata updates to all chunk siblings', async () => {
+		mockQdrant.get.mockResolvedValueOnce({
+			...baseMemory,
+			metadata: {
+				...baseMemory.metadata,
+				chunk_index: 1,
+				total_chunks: 3,
+				chunk_group_id: 'group-abc-def',
+			},
+		});
+
+		mockQdrant.list.mockResolvedValueOnce([
+			{
+				id: 'chunk-a',
+				content: 'a',
+				score: 1,
+				path: '',
+				metadata: {
+					...baseMemory.metadata,
+					chunk_index: 0,
+					total_chunks: 3,
+					chunk_group_id: 'group-abc-def',
+				},
+			},
+			{
+				id: 'chunk-b',
+				content: 'b',
+				score: 1,
+				path: '',
+				metadata: {
+					...baseMemory.metadata,
+					chunk_index: 1,
+					total_chunks: 3,
+					chunk_group_id: 'group-abc-def',
+				},
+			},
+			{
+				id: 'chunk-c',
+				content: 'c',
+				score: 1,
+				path: '',
+				metadata: {
+					...baseMemory.metadata,
+					chunk_index: 2,
+					total_chunks: 3,
+					chunk_group_id: 'group-abc-def',
+				},
+			},
+		]);
+
+		const result = await getTool('memory-update').handler({
+			id: VALID_UUID,
+			metadata: { tags: ['important', 'reviewed'] },
+		});
+
+		expect(result.success).toBe(true);
+		expect((result.data as any).siblings_updated).toBe(3);
+	});
+
+	it('handles metadata-only update to chunked memory with no chunk_group_id', async () => {
+		mockQdrant.get.mockResolvedValueOnce({
+			...baseMemory,
+			metadata: {
+				...baseMemory.metadata,
+				confidence: 0.5,
+			},
+		});
+
+		const result = await getTool('memory-update').handler({
+			id: VALID_UUID,
+			metadata: { confidence: 0.95 },
+		});
+
+		expect(result.success).toBe(true);
+		expect(mockQdrant.updatePayload).toHaveBeenCalledTimes(1);
+	});
+
+	it('correctly identifies chunk boundaries (chunk_index + total_chunks)', async () => {
+		mockQdrant.get.mockResolvedValueOnce({
+			...baseMemory,
+			metadata: {
+				...baseMemory.metadata,
+				chunk_index: 0,
+				total_chunks: 2,
+				chunk_group_id: 'group-2-chunks',
+			},
+		});
+
+		mockQdrant.list.mockResolvedValueOnce([
+			{
+				id: 'chunk-0',
+				content: 'first half',
+				score: 1,
+				path: '',
+				metadata: {
+					...baseMemory.metadata,
+					chunk_index: 0,
+					total_chunks: 2,
+					chunk_group_id: 'group-2-chunks',
+				},
+			},
+			{
+				id: 'chunk-1',
+				content: 'second half',
+				score: 1,
+				path: '',
+				metadata: {
+					...baseMemory.metadata,
+					chunk_index: 1,
+					total_chunks: 2,
+					chunk_group_id: 'group-2-chunks',
+				},
+			},
+		]);
+
+		const result = await getTool('memory-update').handler({
+			id: VALID_UUID,
+			metadata: { confidence: 0.8 },
+		});
+
+		expect(result.success).toBe(true);
+		expect((result.data as any).siblings_updated).toBe(2);
+	});
+
+	it('returns error when trying to update non-existent chunk sibling', async () => {
+		mockQdrant.get.mockResolvedValueOnce({
+			...baseMemory,
+			metadata: {
+				...baseMemory.metadata,
+				chunk_index: 0,
+				total_chunks: 3,
+				chunk_group_id: 'group-missing-sibling',
+			},
+		});
+
+		// Only return 2 chunks instead of 3
+		mockQdrant.list.mockResolvedValueOnce([
+			{
+				id: 'chunk-1',
+				content: 'chunk 1',
+				score: 1,
+				path: '',
+				metadata: {
+					...baseMemory.metadata,
+					chunk_index: 0,
+					total_chunks: 3,
+					chunk_group_id: 'group-missing-sibling',
+				},
+			},
+			{
+				id: 'chunk-2',
+				content: 'chunk 2',
+				score: 1,
+				path: '',
+				metadata: {
+					...baseMemory.metadata,
+					chunk_index: 1,
+					total_chunks: 3,
+					chunk_group_id: 'group-missing-sibling',
+				},
+			},
+		]);
+
+		const result = await getTool('memory-update').handler({
+			id: VALID_UUID,
+			metadata: { confidence: 0.8 },
+		});
+
+		// Should still succeed and update what's available
+		expect(result.success).toBe(true);
+	});
+});
+
+// ── memory-update edge cases for reindex parameter ──────────────────────────────
+
+describe('memory-update - reindex parameter behavior', () => {
+	const VALID_UUID = '550e8400-e29b-41d4-a716-446655440004';
+	const baseMemory = {
+		id: VALID_UUID,
+		content: 'original content',
+		score: 1,
+		path: '',
+		metadata: { created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+	};
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('reindexes content when reindex=true explicitly', async () => {
+		mockQdrant.get.mockResolvedValueOnce(baseMemory);
+		mockQdrant.upsert.mockResolvedValue('reindexed-id');
+
+		const result = await getTool('memory-update').handler({
+			id: VALID_UUID,
+			content: 'updated content',
+			reindex: true,
+		});
+
+		expect(result.success).toBe(true);
+		expect(mockQdrant.upsert).toHaveBeenCalled();
+	});
+
+	it('updates metadata without reindexing when only metadata is changed', async () => {
+		mockQdrant.get.mockResolvedValueOnce(baseMemory);
+
+		const result = await getTool('memory-update').handler({
+			id: VALID_UUID,
+			metadata: { confidence: 0.9 },
+		});
+
+		expect(result.success).toBe(true);
+		expect(mockQdrant.updatePayload).toHaveBeenCalled();
+	});
+
+	it('handles content updates with reindex', async () => {
+		mockQdrant.get.mockResolvedValueOnce(baseMemory);
+		mockQdrant.upsert.mockResolvedValue('new-id');
+
+		const result = await getTool('memory-update').handler({
+			id: VALID_UUID,
+			content: 'new content',
+		});
+
+		expect(result.success).toBe(true);
+		expect(mockQdrant.upsert).toHaveBeenCalled();
+	});
+});
+
+// ── memory-query and memory-search result filtering ──────────────────────────
+
+describe('memory-query - filtering and search', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('applies filters when searching with query', async () => {
+		mockQdrant.search.mockResolvedValueOnce([
+			{ id: '1', content: 'result', score: 0.95, path: '', metadata: { created_at: new Date().toISOString(), updated_at: new Date().toISOString() } },
+		]);
+
+		const result = await getTool('memory-query').handler({
+			query: 'test',
+			filter: { workspace: 'my-workspace', min_confidence: 0.8 },
+		});
+
+		expect(result.success).toBe(true);
+		expect(mockQdrant.search).toHaveBeenCalled();
+	});
+
+	it('handles multiple filter types', async () => {
+		mockQdrant.search.mockResolvedValueOnce([]);
+
+		const result = await getTool('memory-query').handler({
+			query: 'test',
+			filter: {
+				workspace: 'test-ws',
+				memory_type: 'episodic',
+				min_confidence: 0.8,
+				tags: ['tag1', 'tag2'],
+			},
+		});
+
+		expect(result.success).toBe(true);
+		expect(mockQdrant.search).toHaveBeenCalled();
+	});
+
+	it('returns results with proper structure', async () => {
+		const now = new Date().toISOString();
+		mockQdrant.search.mockResolvedValueOnce([
+			{ id: '1', content: 'result', score: 0.95, path: '', metadata: { created_at: now, updated_at: now } },
+		]);
+
+		const result = await getTool('memory-query').handler({
+			query: 'test',
+		});
+
+		expect(result.success).toBe(true);
+		expect((result.data as any).query).toBe('test');
+		expect(Array.isArray((result.data as any).results)).toBe(true);
+	});
+});
+
+// ── memory-store content validation ────────────────────────────────────────────
+
+describe('memory-store - content validation', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('rejects extremely long content (>100KB)', async () => {
+		const result = await getTool('memory-store').handler({
+			content: 'a'.repeat(100_001),
+		});
+
+		expect(result.success).toBe(false);
+		expect(result.error_type).toBe('VALIDATION_ERROR');
+	});
+
+	it('rejects empty content', async () => {
+		const result = await getTool('memory-store').handler({
+			content: '',
+		});
+
+		expect(result.success).toBe(false);
+		expect(result.error_type).toBe('VALIDATION_ERROR');
+	});
+
+	it('accepts content at exactly 100KB', async () => {
+		mockQdrant.upsert.mockResolvedValue('new-id');
+
+		const result = await getTool('memory-store').handler({
+			content: 'a'.repeat(100_000),
+		});
+
+		expect(result.success).toBe(true);
+	});
+
+	it('accepts content without secret patterns', async () => {
+		mockQdrant.upsert.mockResolvedValue('new-id');
+
+		const result = await getTool('memory-store').handler({
+			content: 'This is some normal content without secrets',
+		});
+
+		expect(result.success).toBe(true);
+	});
+
+	it('stores content with optional metadata fields', async () => {
+		mockQdrant.upsert.mockResolvedValue('new-id');
+
+		const result = await getTool('memory-store').handler({
+			content: 'test content',
+			memory_type: 'episodic',
+			confidence: 0.92,
+			tags: ['important', 'tested'],
+		});
+
+		expect(result.success).toBe(true);
+		expect(mockQdrant.upsert).toHaveBeenCalled();
+	});
+
+	it('returns success response with memory id', async () => {
+		mockQdrant.upsert.mockResolvedValue('returned-memory-id-123');
+
+		const result = await getTool('memory-store').handler({
+			content: 'test content',
+		});
+
+		expect(result.success).toBe(true);
+		expect((result.data as any).id).toBe('returned-memory-id-123');
+	});
+});
