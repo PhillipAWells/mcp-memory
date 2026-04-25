@@ -58,9 +58,30 @@ const HTTPS_DEFAULT_PORT = 443;
 /**
  * Point structure for Qdrant upsert
  */
+/**
+ * Type guard to check if a value is a valid QdrantPayload.
+ * Validates required fields: content (string), created_at (string), updated_at (string).
+ * Returns true only if the payload matches the expected structure.
+ *
+ * @param p - The value to check
+ * @returns True if p is a valid QdrantPayload, false otherwise
+ */
+function isQdrantPayload(p: unknown): p is QdrantPayload {
+	return (
+		typeof p === 'object' &&
+		p !== null &&
+		'content' in p &&
+		typeof (p as Record<string, unknown>).content === 'string' &&
+		'created_at' in p &&
+		typeof (p as Record<string, unknown>).created_at === 'string' &&
+		'updated_at' in p &&
+		typeof (p as Record<string, unknown>).updated_at === 'string'
+	);
+}
+
 interface QdrantPoint {
 	id: string;
-	vector: number[] | { dense?: number[]; sparse?: number[] };
+	vector: { dense: number[]; dense_large?: number[] };
 	payload: QdrantPayload;
 }
 
@@ -89,7 +110,7 @@ interface SearchParams {
 	// Hybrid search options
 	query?: string; // Text query for hybrid search
 	useHybridSearch?: boolean; // Enable hybrid search with RRF
-	hybridAlpha?: number; // Weight between dense (1.0) and sparse (0.0) search, default 0.5
+	hybridAlpha?: number; // Weight between dense (1.0) and keyword full-text (0.0) search, default 0.5
 	// Dual embedding options
 }
 
@@ -97,13 +118,12 @@ interface SearchParams {
  * Collection statistics
  */
 interface CollectionStats {
-	vectors_count: number;
 	indexed_vectors_count: number;
 	points_count: number;
 	segments_count: number;
 	status: string;
 	optimizer_status: string;
-	config: any;
+	config: unknown;
 	/** Cumulative count of access-tracking update failures since service start. */
 	access_tracking_failures: number;
 }
@@ -111,7 +131,9 @@ interface CollectionStats {
 /**
  * Qdrant Client Service
  *
- * Manages vector database operations with optimized configuration
+ * Manages vector database operations with optimized configuration.
+ * Note: The underlying QdrantClient does not support explicit connection closing;
+ * connections are automatically managed by the HTTP client.
  */
 export class QdrantService {
 	private readonly client: QdrantClient;
@@ -145,8 +167,17 @@ export class QdrantService {
 	}
 
 	/**
-   * Initialize the collection with optimized configuration
-   */
+	 * Initializes the Qdrant collection with optimized configuration.
+	 *
+	 * Creates the collection if it doesn't exist, validates schema for existing collections, and creates payload indexes. Idempotent: subsequent calls are no-ops.
+	 *
+	 * @returns Resolves when initialization completes successfully.
+	 * @throws {Error} If collection validation fails or index creation fails.
+	 * @example
+	 * ```typescript
+	 * await qdrantService.initialize();
+	 * ```
+	 */
 	public async initialize(): Promise<void> {
 		if (this.initialized) {
 			logger.debug('Qdrant service already initialized');
@@ -202,7 +233,7 @@ export class QdrantService {
 			);
 		}
 
-		const namedVectors = vectors as Record<string, { size?: number; distance?: string }>;
+		const namedVectors = vectors as unknown as Record<string, { size?: number; distance?: string }>;
 
 		const { dense, dense_large: denseLarge } = namedVectors;
 
@@ -299,6 +330,7 @@ export class QdrantService {
 			{ field: 'access_count', schema: 'integer' as const },
 			{ field: 'last_accessed_at', schema: 'datetime' as const },
 			{ field: 'tags', schema: 'keyword' as const },
+			{ field: 'chunk_group_id', schema: 'keyword' as const },
 
 			// Text index for full-text search
 			{ field: 'content', schema: 'text' as const },
@@ -336,9 +368,25 @@ export class QdrantService {
 	}
 
 	/**
-   * Upsert a single point
-   * Supports dual embeddings (small + large) when enabled
-   */
+	 * Stores a single point in Qdrant with optional dual embeddings (small and large).
+	 *
+	 * @param content - The text content to embed and store.
+	 * @param vector - The small embedding vector (typically 384 dimensions).
+	 * @param metadata - Optional metadata (id, workspace, memory_type, confidence, tags, etc.). If `id` is not provided, a UUID is generated. Timestamps (`created_at`, `updated_at`) default to the current time unless explicitly provided.
+	 * @param vectorLarge - Optional large embedding vector (typically 3072 dimensions) for dual-embedding support.
+	 * @returns The point ID (UUID).
+	 * @throws {Error} If the Qdrant API returns an error after all retry attempts are exhausted.
+	 * @example
+	 * ```typescript
+	 * const id = await qdrantService.upsert(
+	 *   'Hello world',
+	 *   [0.1, 0.2, ...], // small embedding
+	 *   { memory_type: 'long-term', confidence: 0.9 },
+	 *   [0.15, 0.25, ...] // large embedding (optional)
+	 * );
+	 * ```
+	 */
+
 	public async upsert(
 		content: string,
 		vector: number[],
@@ -351,16 +399,16 @@ export class QdrantService {
 		const now = new Date().toISOString();
 
 		const payload: QdrantPayload = {
+			...metadata,
 			content,
 			workspace: metadata.workspace ?? null,
 			memory_type: metadata.memory_type ?? 'long-term',
 			confidence: metadata.confidence ?? DEFAULT_CONFIDENCE,
 			tags: metadata.tags ?? [],
-			created_at: metadata.created_at ?? now,
-			updated_at: now,
 			access_count: metadata.access_count ?? 0,
 			last_accessed_at: metadata.last_accessed_at ?? null,
-			...metadata,
+			created_at: metadata.created_at ?? now,
+			updated_at: metadata.updated_at ?? now,
 		};
 
 		const vectorData = { dense: vector, dense_large: vectorLarge };
@@ -382,9 +430,23 @@ export class QdrantService {
 	}
 
 	/**
-   * Batch upsert multiple points with error tracking
-   * Supports dual embeddings (small + large) when enabled
-   */
+	 * Stores multiple points in Qdrant in batches (500 per batch by default).
+	 *
+	 * Handles failures gracefully: if a batch fails, the failure is recorded but other batches continue processing.
+	 *
+	 * @param points - Array of points to upsert, each with `content`, `vector`, optional `vectorLarge`, and optional `metadata`.
+	 * @returns Object with `successfulIds` (array of UUIDs), `failedPoints` (array of failures with index, id, and error message), and `totalProcessed` (count).
+	 * @throws {Error} If initialization fails.
+	 * @example
+	 * ```typescript
+	 * const result = await qdrantService.batchUpsert([
+	 *   { content: 'Text 1', vector: [0.1, ...], metadata: { memory_type: 'long-term' } },
+	 *   { content: 'Text 2', vector: [0.2, ...], vectorLarge: [0.2, ...] },
+	 * ]);
+	 * console.log(`${result.successfulIds.length}/${result.totalProcessed} succeeded`);
+	 * ```
+	 */
+
 	public async batchUpsert(
 		points: Array<{
 			content: string;
@@ -409,16 +471,16 @@ export class QdrantService {
 				const id = p.metadata?.id ?? uuidv4();
 
 				const payload: QdrantPayload = {
+					...p.metadata,
 					content: p.content,
 					workspace: p.metadata?.workspace ?? null,
 					memory_type: p.metadata?.memory_type ?? 'long-term',
 					confidence: p.metadata?.confidence ?? DEFAULT_CONFIDENCE,
 					tags: p.metadata?.tags ?? [],
-					created_at: p.metadata?.created_at ?? now,
-					updated_at: now,
 					access_count: p.metadata?.access_count ?? 0,
 					last_accessed_at: p.metadata?.last_accessed_at ?? null,
-					...p.metadata,
+					created_at: p.metadata?.created_at ?? now,
+					updated_at: p.metadata?.updated_at ?? now,
 				};
 
 				const vectorData = { dense: p.vector, dense_large: p.vectorLarge };
@@ -470,8 +532,25 @@ export class QdrantService {
 	}
 
 	/**
-   * Search for similar vectors with optional hybrid search (RRF)
-   */
+	 * Searches for similar vectors using dense similarity and optional hybrid search (RRF).
+	 *
+	 * Optionally combines dense vector similarity with full-text keyword search via Reciprocal Rank Fusion (RRF). Automatically tracks access counts on retrieved results.
+	 *
+	 * @param params - Search parameters including `vector` (required), optional `vectorLarge` for dual-embedding queries, `filter` (workspace, memory_type, confidence, tags), `limit`, `offset`, `scoreThreshold`, and hybrid search options (`useHybridSearch`, `query`, `hybridAlpha`).
+	 * @returns Array of search results, each with `id`, `content`, `score` (similarity score), and `metadata`.
+	 * @throws {Error} If the Qdrant API returns an error after all retry attempts are exhausted.
+	 * @example
+	 * ```typescript
+	 * const results = await qdrantService.search({
+	 *   vector: [0.1, 0.2, ...],
+	 *   filter: { workspace: 'my-project', memory_type: 'long-term' },
+	 *   limit: 10,
+	 *   useHybridSearch: true,
+	 *   query: 'search text',
+	 * });
+	 * ```
+	 */
+
 	public async search(params: SearchParams): Promise<SearchResult[]> {
 		await this.ensureInitialized();
 
@@ -506,29 +585,22 @@ export class QdrantService {
 		}));
 
 		// Update access tracking (fire-and-forget)
-		const resultIds = results.map((r) => String(r.id));
-		if (resultIds.length > 0) {
-			this.updateAccessTracking(resultIds).catch((err) => {
-				this.accessTrackingFailureCount++;
-				// Rate-limit warning logs: only log if at least 10 seconds have passed
-				const now = Date.now();
-				if (now - this.lastTrackingWarningTime >= ACCESS_TRACKING_WARNING_INTERVAL_MS) {
-					this.lastTrackingWarningTime = now;
-					logger.warn(
-						`Failed to update access tracking (${this.accessTrackingFailureCount} total failures):`,
-						err,
-					);
-				}
-			});
-		}
+		this.trackAccess(results.map((r) => String(r.id)));
 
-		return results.map((r) => ({
-			id: String(r.id),
-			path: (r.payload?.path as string) || '',
-			content: (r.payload?.content as string) || '',
-			score: r.score,
-			metadata: r.payload as unknown as QdrantPayload,
-		}));
+		return results.map((r) => {
+			const payload = this.toQdrantPayload(r.payload) ?? {
+				content: '',
+				created_at: new Date().toISOString(),
+				updated_at: new Date().toISOString(),
+			};
+			return {
+				id: String(r.id),
+				...(typeof payload.path === 'string' && payload.path ? { path: payload.path } : {}),
+				content: typeof payload.content === 'string' ? payload.content : '',
+				score: r.score,
+				metadata: payload,
+			};
+		});
 	}
 
 	/**
@@ -541,8 +613,18 @@ export class QdrantService {
    */
 	private async hybridSearchWithRRF(
 		params: SearchParams,
-		filter: any,
+		filter?: Record<string, unknown>,
 	): Promise<SearchResult[]> {
+		// Pagination is not supported in hybrid search because it requires
+		// fusing two separate result sets; offset makes no sense semantically
+		if ((params.offset ?? 0) > 0) {
+			logger.warn(
+				'Hybrid search (RRF) does not support pagination (offset > 0). Returning empty results. ' +
+				'Use standard vector search without useHybridSearch=true to enable offset-based pagination.',
+			);
+			return [];
+		}
+
 		const k = RRF_K; // RRF constant (typical value)
 		const limit = params.limit ?? DEFAULT_SEARCH_LIMIT;
 		const fetchLimit = limit * RRF_FETCH_MULTIPLIER; // Fetch more results for better RRF
@@ -566,7 +648,7 @@ export class QdrantService {
 		const textFilter = {
 			...filter,
 			must: [
-				...(filter?.must ?? []),
+				...(Array.isArray(filter?.must) ? filter.must : []),
 				{
 					key: 'content',
 					match: { text: queryText },
@@ -581,60 +663,55 @@ export class QdrantService {
 			with_vector: false,
 		}));
 
-		// Apply RRF: score = sum(1 / (k + rank))
+		// Apply RRF: score = sum(alpha * 1 / (k + rank) for vector + (1 - alpha) * 1 / (k + rank) for text)
+		// eslint-disable-next-line no-magic-numbers
+		const alpha = params.hybridAlpha ?? 0.5; // Default: equal weighting between dense and text
 		const rrfScores = new Map<string, number>();
-		const pointsById = new Map<string, any>();
+		// Qdrant points have arbitrary payload structure; using Record<string, unknown> for type safety
+		const pointsById = new Map<string, Record<string, unknown>>();
 
-		// Add vector search results
+		// Add vector search results (weighted by alpha)
 		vectorResults.forEach((result, index) => {
 			const id = String(result.id);
 			const rank = index + 1;
-			rrfScores.set(id, (rrfScores.get(id) ?? 0) + 1 / (k + rank));
+			rrfScores.set(id, (rrfScores.get(id) ?? 0) + alpha * (1 / (k + rank)));
 			pointsById.set(id, result);
 		});
 
-		// Add text search results
+		// Add text search results (weighted by 1 - alpha)
 		textResults.points.forEach((result, index) => {
 			const id = String(result.id);
 			const rank = index + 1;
-			rrfScores.set(id, (rrfScores.get(id) ?? 0) + 1 / (k + rank));
+			rrfScores.set(id, (rrfScores.get(id) ?? 0) + (1 - alpha) * (1 / (k + rank)));
 			if (!pointsById.has(id)) {
 				pointsById.set(id, result);
 			}
 		});
 
 		// Sort by RRF score and take top results
+		// offset is always 0 here — values > 0 are rejected above
 		const sortedResults = Array.from(rrfScores.entries())
 			.sort((a, b) => b[1] - a[1])
-			.slice(params.offset ?? 0, (params.offset ?? 0) + limit)
+			.slice(0, limit)
 			.flatMap(([id, score]) => {
 				const point = pointsById.get(id);
 				if (!point) return [];
+				const payload = this.toQdrantPayload(point.payload) ?? {
+					content: '',
+					created_at: new Date().toISOString(),
+					updated_at: new Date().toISOString(),
+				};
 				return [{
 					id,
-					path: (point.payload?.path as string) || '',
-					content: (point.payload?.content as string) || '',
+					...(typeof payload.path === 'string' && payload.path ? { path: payload.path } : {}),
+					content: typeof payload.content === 'string' ? payload.content : '',
 					score,
-					metadata: point.payload as unknown as QdrantPayload,
+					metadata: payload,
 				}];
 			});
 
 		// Update access tracking (fire-and-forget)
-		const resultIds = sortedResults.map((r) => r.id);
-		if (resultIds.length > 0) {
-			this.updateAccessTracking(resultIds).catch((err) => {
-				this.accessTrackingFailureCount++;
-				// Rate-limit warning logs: only log if at least 10 seconds have passed
-				const now = Date.now();
-				if (now - this.lastTrackingWarningTime >= ACCESS_TRACKING_WARNING_INTERVAL_MS) {
-					this.lastTrackingWarningTime = now;
-					logger.warn(
-						`Failed to update access tracking (${this.accessTrackingFailureCount} total failures):`,
-						err,
-					);
-				}
-			});
-		}
+		this.trackAccess(sortedResults.map((r) => r.id));
 
 		logger.debug(
 			`Hybrid search with RRF: ${vectorResults.length} vector + ${textResults.points.length} text results → ${sortedResults.length} final`,
@@ -644,8 +721,21 @@ export class QdrantService {
 	}
 
 	/**
-   * Get a point by ID
-   */
+	 * Retrieves a single point by ID.
+	 *
+	 * Automatically tracks the access count and last-accessed timestamp.
+	 *
+	 * @param id - The UUID of the point to retrieve.
+	 * @returns The search result with full content and metadata, or `null` if the point does not exist.
+	 * @throws {Error} If the Qdrant API returns an error after all retry attempts are exhausted.
+	 * @example
+	 * ```typescript
+	 * const point = await qdrantService.get('550e8400-e29b-41d4-a716-446655440000');
+	 * if (point) {
+	 *   console.log(point.content, point.metadata);
+	 * }
+	 * ```
+	 */
 	public async get(id: string): Promise<SearchResult | null> {
 		await this.ensureInitialized();
 
@@ -662,22 +752,33 @@ export class QdrantService {
 		const [point] = result;
 
 		// Update access tracking (fire-and-forget)
-		this.updateAccessTracking([id]).catch((err) =>
-			logger.warn('Failed to update access tracking:', err),
-		);
+		this.trackAccess([id]);
 
+		const payload = this.toQdrantPayload(point.payload) ?? {
+			content: '',
+			created_at: new Date().toISOString(),
+			updated_at: new Date().toISOString(),
+		};
 		return {
 			id: String(point.id),
-			path: (point.payload?.path as string) || '',
-			content: (point.payload?.content as string) || '',
+			...(typeof payload.path === 'string' && payload.path ? { path: payload.path } : {}),
+			content: typeof payload.content === 'string' ? payload.content : '',
 			score: 1.0,
-			metadata: point.payload as unknown as QdrantPayload,
+			metadata: payload,
 		};
 	}
 
 	/**
-   * Delete a point by ID
-   */
+	 * Deletes a single point by ID.
+	 *
+	 * @param id - The UUID of the point to delete.
+	 * @returns Resolves when the deletion completes successfully.
+	 * @throws {Error} If the Qdrant API returns an error after all retry attempts are exhausted.
+	 * @example
+	 * ```typescript
+	 * await qdrantService.delete('550e8400-e29b-41d4-a716-446655440000');
+	 * ```
+	 */
 	public async delete(id: string): Promise<void> {
 		await this.ensureInitialized();
 
@@ -690,8 +791,16 @@ export class QdrantService {
 	}
 
 	/**
-   * Delete multiple points by IDs
-   */
+	 * Deletes multiple points by IDs in a single Qdrant operation.
+	 *
+	 * @param ids - Array of point UUIDs to delete (max 100 for practical limits).
+	 * @returns Resolves when the batch deletion completes successfully.
+	 * @throws {Error} If the Qdrant API returns an error after all retry attempts are exhausted.
+	 * @example
+	 * ```typescript
+	 * await qdrantService.batchDelete(['id1', 'id2', 'id3']);
+	 * ```
+	 */
 	public async batchDelete(ids: string[]): Promise<void> {
 		await this.ensureInitialized();
 
@@ -704,8 +813,24 @@ export class QdrantService {
 	}
 
 	/**
-   * List all points with optional filtering
-   */
+	 * Lists points with optional filtering, pagination, and sorting.
+	 *
+	 * Uses Qdrant's scroll API to fetch results without payload vectors.
+	 *
+	 * @param filter - Optional filter criteria (workspace, memory_type, confidence, tags, metadata).
+	 * @param limit - Number of results per page (default 100, max 1000).
+	 * @param offset - Pagination offset (0-based).
+	 * @returns Array of search results (one page) with full content and metadata.
+	 * @throws {Error} If the Qdrant API returns an error after all retry attempts are exhausted.
+	 * @example
+	 * ```typescript
+	 * const page = await qdrantService.list(
+	 *   { workspace: 'my-project', memory_type: 'long-term' },
+	 *   100,
+	 *   0
+	 * );
+	 * ```
+	 */
 	public async list(
 		filter?: SearchFilters,
 		limit: number = DEFAULT_LIST_LIMIT,
@@ -723,25 +848,41 @@ export class QdrantService {
 			with_vector: false,
 		}));
 
-		return results.points.map((p) => ({
-			id: String(p.id),
-			path: (p.payload?.path as string) || '',
-			content: (p.payload?.content as string) || '',
-			score: 1.0,
-			metadata: p.payload as unknown as QdrantPayload,
-		}));
+		return results.points.map((p) => {
+			const payload = this.toQdrantPayload(p.payload) ?? {
+				content: '',
+				created_at: new Date().toISOString(),
+				updated_at: new Date().toISOString(),
+			};
+			return {
+				id: String(p.id),
+				...(typeof payload.path === 'string' && payload.path ? { path: payload.path } : {}),
+				content: typeof payload.content === 'string' ? payload.content : '',
+				score: 1.0,
+				metadata: payload,
+			};
+		});
 	}
 
 	/**
-   * Get collection statistics
-   */
+	 * Retrieves collection statistics including point count, indexed vector count, segment count, and optimizer status.
+	 *
+	 * Also includes the cumulative count of access-tracking update failures since service start for diagnostics.
+	 *
+	 * @returns Collection statistics object with point counts, indexing status, and optimizer health.
+	 * @throws {Error} If the Qdrant API returns an error after all retry attempts are exhausted.
+	 * @example
+	 * ```typescript
+	 * const stats = await qdrantService.getStats();
+	 * console.log(`${stats.points_count} points, ${stats.indexed_vectors_count} indexed`);
+	 * ```
+	 */
 	public async getStats(): Promise<CollectionStats> {
 		await this.ensureInitialized();
 
 		const info = await withRetry(() => this.client.getCollection(this.collectionName));
 
 		return {
-			vectors_count: info.points_count ?? 0,
 			indexed_vectors_count: info.indexed_vectors_count ?? 0,
 			points_count: info.points_count ?? 0,
 			segments_count: info.segments_count ?? 0,
@@ -757,8 +898,19 @@ export class QdrantService {
 	}
 
 	/**
-   * Count points matching filter
-   */
+	 * Counts points matching optional filter criteria.
+	 *
+	 * Uses Qdrant's approximate counting mode for performance; exact counts are not guaranteed.
+	 *
+	 * @param filter - Optional filter criteria (workspace, memory_type, confidence, tags, metadata).
+	 * @returns The approximate count of matching points.
+	 * @throws {Error} If the Qdrant API returns an error after all retry attempts are exhausted.
+	 * @example
+	 * ```typescript
+	 * const total = await qdrantService.count({ memory_type: 'long-term' });
+	 * console.log(`${total} long-term memories`);
+	 * ```
+	 */
 	public async count(filter?: SearchFilters): Promise<number> {
 		await this.ensureInitialized();
 
@@ -773,8 +925,22 @@ export class QdrantService {
 	}
 
 	/**
-   * Update point payload (metadata)
-   */
+	 * Updates metadata (payload) for a single point without modifying the embedding.
+	 *
+	 * Automatically updates the `updated_at` timestamp to the current time.
+	 *
+	 * @param id - The UUID of the point to update.
+	 * @param payload - Partial metadata object with fields to update (memory_type, confidence, tags, etc.).
+	 * @returns Resolves when the payload update completes successfully.
+	 * @throws {Error} If the Qdrant API returns an error after all retry attempts are exhausted.
+	 * @example
+	 * ```typescript
+	 * await qdrantService.updatePayload('550e8400-e29b-41d4-a716-446655440000', {
+	 *   confidence: 0.95,
+	 *   tags: ['important', 'verified'],
+	 * });
+	 * ```
+	 */
 	public async updatePayload(
 		id: string,
 		payload: Partial<QdrantPayload>,
@@ -796,17 +962,24 @@ export class QdrantService {
 	/**
    * Build Qdrant filter from SearchFilters
    */
-	private buildFilter(filter?: SearchFilters): any {
+	private buildFilter(filter?: SearchFilters): Record<string, unknown> | undefined {
 		if (!filter) return undefined;
 
-		const conditions: any[] = [];
+		const conditions: Array<Record<string, unknown>> = [];
 
 		// Workspace filter
 		if (filter.workspace !== undefined) {
-			conditions.push({
-				key: 'workspace',
-				match: { value: filter.workspace },
-			});
+			if (filter.workspace === null) {
+				// When workspace is explicitly null, match memories with no workspace
+				conditions.push({
+					is_null: { key: 'workspace' },
+				});
+			} else {
+				conditions.push({
+					key: 'workspace',
+					match: { value: filter.workspace },
+				});
+			}
 		}
 
 		// Memory type filter
@@ -818,10 +991,10 @@ export class QdrantService {
 		}
 
 		// Confidence filter (minimum threshold)
-		if (filter.minConfidence !== undefined) {
+		if (filter.min_confidence !== undefined) {
 			conditions.push({
 				key: 'confidence',
-				range: { gte: filter.minConfidence },
+				range: { gte: filter.min_confidence },
 			});
 		}
 
@@ -856,55 +1029,110 @@ export class QdrantService {
 	}
 
 	/**
-   * Update access tracking for retrieved points.
-   *
-   * Known limitation: this is a read-modify-write sequence (retrieve → increment → setPayload)
-   * with no atomic guarantee. Under concurrent access the count may be undercounted, but
-   * access_count is an analytic field and eventual consistency is acceptable here.
-   */
+	 * Update access tracking for retrieved points.
+	 *
+	 * Implements read-modify-write sequence: fetches current access_count,
+	 * increments it, then updates the point. Under concurrent access, the count
+	 * may be undercounted, but access_count is an analytic field and eventual
+	 * consistency is acceptable.
+	 *
+	 * @param ids - Array of point IDs to update
+	 * @throws {Error} If setPayload fails during update
+	 * @example
+	 * ```typescript
+	 * // Called internally after point retrieval
+	 * await service.updateAccessTracking(['id1', 'id2']);
+	 * ```
+	 */
 	private async updateAccessTracking(ids: string[]): Promise<void> {
 		const now = new Date().toISOString();
 
-		// Get current access counts
-		const points = await this.client.retrieve(this.collectionName, {
-			ids,
-			with_payload: true,
-		});
+		// Read-modify-write: fetch current state, increment, write back
+		// Fetch all points to get their current access_count values
+		const points = await withRetry(() =>
+			this.client.retrieve(this.collectionName, {
+				ids,
+				with_payload: true,
+				with_vector: false,
+			}),
+		);
 
-		// Update each point
-		for (const point of points) {
-			const currentCount = (point.payload?.access_count as number) || 0;
-
-			await this.client.setPayload(this.collectionName, {
-				wait: false, // Don't wait for completion
-				points: [point.id],
-				payload: {
-					access_count: currentCount + 1,
-					last_accessed_at: now,
-				},
-			});
+		if (points.length === 0) {
+			logger.debug(`No points found for access tracking update: ${ids.length} requested`);
+			return;
 		}
 
-		logger.debug(`Updated access tracking for ${ids.length} points`);
+		// Update each point's access_count and last_accessed_at
+		// setPayload merges the provided payload with existing payload
+		await Promise.all(
+			points.map((point) => {
+				// Type guard: extract access_count from payload
+				const currentCount = typeof point.payload?.access_count === 'number'
+					? point.payload.access_count
+					: 0;
+
+				return withRetry(() =>
+					this.client.setPayload(this.collectionName, {
+						wait: false,
+						points: [point.id],
+						payload: {
+							access_count: currentCount + 1,
+							last_accessed_at: now,
+						},
+					}),
+				);
+			}),
+		);
+	}
+	/**
+	 * Convert a Qdrant point payload to the typed QdrantPayload shape.
+	 * Safely narrows from unknown to the expected structure, returning null
+	 * if the payload is missing or invalid.
+	 *
+	 * @param payload - The raw payload from a Qdrant point (may be any type)
+	 * @returns The typed payload, or null if narrowing fails
+	 */
+	private toQdrantPayload(payload: unknown): QdrantPayload | null {
+		if (!isQdrantPayload(payload)) {
+			logger.warn('Invalid payload structure — missing required fields (content, created_at, updated_at)');
+			return null;
+		}
+		return payload;
 	}
 
 	/**
-   * Ensure service is initialized
-   */
+	 * Track access to retrieved points with rate-limited error logging.
+	 *
+	 * Fire-and-forget operation: updates access_count and last_accessed_at
+	 * without blocking the caller. Failures are logged at most once per
+	 * {@link ACCESS_TRACKING_WARNING_INTERVAL_MS} to avoid log spam.
+	 *
+	 * @param ids - Array of point IDs to track
+	 */
+	private trackAccess(ids: string[]): void {
+		if (ids.length === 0) return;
+
+		this.updateAccessTracking(ids).catch((err: unknown) => {
+			this.accessTrackingFailureCount++;
+			// Rate-limit warning logs: only log if at least 10 seconds have passed
+			const now = Date.now();
+			if (now - this.lastTrackingWarningTime >= ACCESS_TRACKING_WARNING_INTERVAL_MS) {
+				this.lastTrackingWarningTime = now;
+				logger.warn(
+					`Failed to update access tracking (${this.accessTrackingFailureCount} total failures):`,
+					err,
+				);
+			}
+		});
+	}
+
+	/**
+	 * Ensure service is initialized
+	 */
 	private async ensureInitialized(): Promise<void> {
 		if (!this.initialized) {
 			await this.initialize();
 		}
-	}
-
-	/**
-   * Close the client connection
-   */
-	public close(): void {
-		// QdrantClient doesn't have explicit close method
-		// but we can mark as uninitialized
-		this.initialized = false;
-		logger.info('Qdrant client closed');
 	}
 }
 

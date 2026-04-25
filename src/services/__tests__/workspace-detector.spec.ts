@@ -132,6 +132,10 @@ describe('WorkspaceDetectorService.equals', () => {
 	it('returns false when one is null', () => {
 		expect(detector.equals('foo', null)).toBe(false);
 	});
+
+	it('returns false when comparing null to a string', () => {
+		expect(detector.equals(null, 'foo')).toBe(false);
+	});
 });
 
 // ── cache ────────────────────────────────────────────────────────────────────
@@ -143,15 +147,31 @@ describe('WorkspaceDetectorService cache', () => {
 		detector = makeDetector(); 
 	});
 
-	it('clearCache makes getCached return null', () => {
+	it('clearCache makes getCached return uncached result', () => {
 		// Prime the cache via detect() using an explicit workspace
 		detector.detect('myproject');
+		const result = detector.getCached();
+		expect(result.cached).toBe(true);
 		detector.clearCache();
-		expect(detector.getCached()).toBeNull();
+		const cleared = detector.getCached();
+		expect(cleared.cached).toBe(false);
 	});
 
-	it('getCached returns null before any detection', () => {
-		expect(detector.getCached()).toBeNull();
+	it('getCached returns uncached before any detection', () => {
+		const result = detector.getCached();
+		expect(result.cached).toBe(false);
+		expect(result.workspace).toBeNull();
+	});
+
+	it('clears cache returns uncached immediately after', () => {
+		detector.detect(undefined, process.cwd());
+		// Cache should have been populated by auto-detection
+		const cached = detector.getCached();
+		expect(cached.cached).toBe(true);
+		// Cache might be null if TTL expired, but we can test the clear works
+		detector.clearCache();
+		const cleared = detector.getCached();
+		expect(cleared.cached).toBe(false);
 	});
 });
 
@@ -263,5 +283,18 @@ describe('WorkspaceDetectorService.detect — malformed package.json recovery', 
 
 	it('does not throw when package.json is unparseable', () => {
 		expect(() => detector.detect(undefined, tmpDir)).not.toThrow();
+	});
+
+	it('falls back to default when package.json has no name field', () => {
+		const tmpDir2 = mkdtempSync(join(tmpdir(), 'mcp-test-no-name-'));
+		writeFileSync(join(tmpDir2, 'package.json'), JSON.stringify({}));
+		try {
+			const detector2 = makeDetector();
+			const result = detector2.detect(undefined, tmpDir2);
+			// Falls through to directory name or default
+			expect(result.source).toBe('directory');
+		} finally {
+			rmSync(tmpDir2, { recursive: true, force: true });
+		}
 	});
 });

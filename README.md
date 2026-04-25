@@ -6,7 +6,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/PhillipAWells?style=social)](https://github.com/sponsors/PhillipAWells)
 
-Model Context Protocol (MCP) server for persistent memory and knowledge management using Qdrant vector database and OpenAI embeddings.
+## Description
+
+`@pawells/mcp-memory` is a Model Context Protocol (MCP) server that provides persistent semantic memory and knowledge management for Claude Code and other AI agents. It combines OpenAI embeddings with Qdrant vector database to enable hybrid search (dense vectors + keyword indexing) with automatic memory expiry, workspace isolation, and comprehensive secrets detection to prevent accidental storage of sensitive credentials.
 
 ## Features
 
@@ -16,17 +18,16 @@ Model Context Protocol (MCP) server for persistent memory and knowledge manageme
 - **Workspace Isolation** - Multi-workspace support for organization-wide deployments
 - **Secrets Detection** - Blocks storage of API keys, tokens, passwords, and other sensitive data
 - **Dual Embeddings** - Small and large embedding vectors per memory for precision/recall trade-offs
-- **Local Embeddings** - Runs fully offline via HuggingFace/ONNX — no API key required
 - **Cost Optimization** - LRU caching and usage tracking for embedding API calls
 - **Corporate Proxy Support** — Routes all outbound traffic through HTTP(S) proxies via standard `HTTPS_PROXY` / `HTTP_PROXY` env vars; `NO_PROXY` defaults to `localhost,127.0.0.1,::1` automatically
 
-## Quick Start
-
-### Prerequisites
+## Requirements
 
 - Node.js >= 22.0.0
 - Qdrant vector database (local or cloud)
-- OpenAI API key *(optional — only needed for OpenAI embeddings; local embeddings work without one)*
+- OpenAI API key (**required**)
+
+## Quick Start
 
 ### Installation
 
@@ -38,7 +39,7 @@ Then configure:
 
 ```bash
 cp .env.example .env
-# Edit .env with your QDRANT_URL (and optionally OPENAI_API_KEY)
+# Edit .env with your QDRANT_URL and OPENAI_API_KEY
 ```
 
 ### Running Qdrant Locally
@@ -64,12 +65,8 @@ yarn test           # Run tests
 
 | Variable | Default | Description |
 |---|---|---|
-| `OPENAI_API_KEY` | *(optional)* | OpenAI API key — required only when `EMBEDDING_PROVIDER=openai` |
-| `EMBEDDING_PROVIDER` | auto-detected | `openai` or `local`; defaults to `openai` if `OPENAI_API_KEY` is set, `local` otherwise |
+| `OPENAI_API_KEY` | *(required)* | OpenAI API key |
 | `LARGE_EMBEDDING_DIMENSIONS` | `3072` | Output dimensions for OpenAI `text-embedding-3-large` |
-| `LOCAL_EMBEDDING_MODEL` | `Xenova/all-MiniLM-L6-v2` | HuggingFace model ID for local embeddings |
-| `LOCAL_EMBEDDING_DIMENSIONS` | `384` | Output dimensions of the local model (must match model) |
-| `LOCAL_EMBEDDING_CACHE_DIR` | `~/.cache/mcp-memory/models` | Cache directory for downloaded local models |
 
 ### Qdrant
 
@@ -104,7 +101,7 @@ yarn test           # Run tests
 
 ### Proxy
 
-For environments behind a corporate firewall, set the standard proxy environment variables. All outbound traffic — OpenAI API calls, Qdrant requests, and HuggingFace model downloads — is automatically routed through the configured proxy.
+For environments behind a corporate firewall, set the standard proxy environment variables. All outbound traffic — OpenAI API calls and Qdrant requests — is automatically routed through the configured proxy.
 
 | Variable | Default | Description |
 |---|---|---|
@@ -115,22 +112,6 @@ For environments behind a corporate firewall, set the standard proxy environment
 > Lowercase variants (`https_proxy`, `http_proxy`, `no_proxy`) are also accepted. Uppercase takes priority.
 >
 > `NO_PROXY` is **only auto-defaulted when a proxy is active** — if no proxy is configured, `NO_PROXY` is left untouched.
-
-## Local Embeddings (No API Key)
-
-When `OPENAI_API_KEY` is not set, the server automatically uses the HuggingFace `Xenova/all-MiniLM-L6-v2` model via ONNX for CPU inference. The model (~22 MB) is downloaded on first use and cached at `~/.cache/mcp-memory/models`.
-
-Alternative local models:
-
-| Model | Dimensions | Size | Notes |
-|---|---|---|---|
-| `Xenova/all-MiniLM-L6-v2` | 384 | ~22 MB | Default, fast |
-| `Xenova/bge-small-en-v1.5` | 384 | ~22 MB | Slightly better quality |
-| `Xenova/bge-base-en-v1.5` | 768 | ~110 MB | Higher quality |
-
-To switch models, set `LOCAL_EMBEDDING_MODEL` and `LOCAL_EMBEDDING_DIMENSIONS` to match.
-
-> **Note:** Local and OpenAI embeddings are incompatible — switching providers after a collection is created requires re-indexing.
 
 ## Memory Types
 
@@ -156,19 +137,110 @@ Expired memories are automatically excluded from all queries and listings.
 }
 ```
 
-## Available Tools
+## API Reference
 
-| Tool | Description |
-|---|---|
-| `memory-store` | Store a memory with metadata and tags |
-| `memory-query` | Semantic search with optional hybrid search |
-| `memory-list` | List memories with filtering and pagination |
-| `memory-get` | Retrieve a specific memory by ID |
-| `memory-update` | Update memory content or metadata |
-| `memory-delete` | Delete a memory by ID |
-| `memory-batch-delete` | Delete multiple memories at once |
-| `memory-status` | Health check, collection statistics, and embedding usage |
-| `memory-count` | Count memories matching a filter |
+All tools are exposed over the MCP stdio transport and return a `StandardResponse<T>` envelope.
+
+### `memory-store`
+
+Store a memory with metadata and tags.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `content` | `string` | Yes | Text content to embed and store (1–100 000 characters) |
+| `metadata.memory_type` | `'long-term' \| 'episodic' \| 'short-term'` | No | Classification controlling retention policy |
+| `metadata.workspace` | `string` | No | Workspace slug for multi-project isolation |
+| `metadata.confidence` | `number` | No | Reliability score in [0, 1] |
+| `metadata.tags` | `string[]` | No | Up to 20 searchable tags (each 1–50 characters) |
+| `auto_chunk` | `boolean` | No | Split content longer than 1 000 characters into overlapping chunks (default `true`) |
+
+### `memory-query`
+
+Semantic search with optional hybrid search.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `query` | `string` | Yes | Natural-language search query (1–10 000 characters) |
+| `filter.workspace` | `string` | No | Restrict results to a workspace |
+| `filter.memory_type` | `'long-term' \| 'episodic' \| 'short-term'` | No | Restrict results to a memory type |
+| `filter.min_confidence` | `number` | No | Minimum confidence score in [0, 1] |
+| `filter.tags` | `string[]` | No | Restrict results to memories with all specified tags |
+| `limit` | `number` | No | Maximum results to return (1–100, default 10) |
+| `offset` | `number` | No | Results to skip for pagination (default 0) |
+| `score_threshold` | `number` | No | Minimum cosine similarity score in [0, 1] |
+| `hnsw_ef` | `number` | No | HNSW search thoroughness parameter (64–512) |
+| `use_hybrid_search` | `boolean` | No | Combine vector and full-text search via RRF (default `false`) |
+| `hybrid_alpha` | `number` | No | Weight between dense (1.0) and full-text (0.0) scoring in hybrid mode (default 0.5) |
+
+### `memory-list`
+
+List memories with filtering and pagination.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `filter.workspace` | `string` | No | Restrict results to a workspace |
+| `filter.memory_type` | `'long-term' \| 'episodic' \| 'short-term'` | No | Restrict results to a memory type |
+| `filter.min_confidence` | `number` | No | Minimum confidence score in [0, 1] |
+| `filter.tags` | `string[]` | No | Restrict results to memories with all specified tags |
+| `limit` | `number` | No | Memories per page (1–1 000, default 100) |
+| `offset` | `number` | No | Memories to skip for pagination (default 0) |
+| `sort_by` | `'created_at' \| 'updated_at' \| 'access_count' \| 'confidence'` | No | Sort field (default `'created_at'`) |
+| `sort_order` | `'asc' \| 'desc'` | No | Sort direction (default `'desc'`) |
+
+### `memory-get`
+
+Retrieve a specific memory by ID.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `id` | `string` | Yes | UUID of the memory to retrieve |
+
+### `memory-update`
+
+Update memory content or metadata. At least one of `content` or `metadata` must be provided.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `id` | `string` | Yes | UUID of the memory to update |
+| `content` | `string` | No | Replacement content; triggers embedding regeneration (1–100 000 characters) |
+| `metadata` | `object` | No | Metadata fields to merge into the existing payload |
+| `auto_chunk` | `boolean` | No | Split content into overlapping chunks (default `true`) |
+
+### `memory-delete`
+
+Delete a memory by ID.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `id` | `string` | Yes | UUID of the memory to delete |
+
+### `memory-batch-delete`
+
+Delete multiple memories in a single call.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `ids` | `string[]` | Yes | Array of UUIDs to delete (1–100 items) |
+
+### `memory-status`
+
+Health check, collection statistics, and embedding usage.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `workspace` | `string` | No | Include per-workspace point count for the specified workspace |
+| `include_embedding_stats` | `boolean` | No | Include embedding cache and cost statistics (default `true`) |
+
+### `memory-count`
+
+Count memories matching a filter.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `filter.workspace` | `string` | No | Restrict count to a workspace |
+| `filter.memory_type` | `'long-term' \| 'episodic' \| 'short-term'` | No | Restrict count to a memory type |
+| `filter.min_confidence` | `number` | No | Minimum confidence score in [0, 1] |
+| `filter.tags` | `string[]` | No | Restrict count to memories with all specified tags |
 
 ## Architecture
 
@@ -180,7 +252,7 @@ MCP Server (src/index.ts)
 Tool Handlers (src/tools/memory-tools.ts)
        ↓
 Services:
-  ├── EmbeddingService  — OpenAI or local HuggingFace embeddings with LRU cache
+  ├── EmbeddingService  — OpenAI embeddings (small + large) with LRU cache
   ├── QdrantService     — Vector DB operations, hybrid search
   ├── SecretsDetector   — Blocks sensitive data at store time
   ├── WorkspaceDetector — Derives workspace from env var → package.json → directory name
@@ -189,7 +261,9 @@ Services:
 
 ### Hybrid Search
 
-When `use_hybrid_search: true`, results from dense vector search and sparse BM25 text search are merged using Reciprocal Rank Fusion (RRF) before applying the result limit. This improves recall for queries that mix exact terms with conceptual meaning.
+When `use_hybrid_search: true`, results from dense HNSW vector similarity search and Qdrant keyword full-text index search are merged using Reciprocal Rank Fusion (RRF) before applying the result limit. This improves recall for queries that mix exact terms with conceptual meaning.
+
+> **Note:** The text component uses Qdrant's keyword tokenizer for word-level full-text matching, not statistical BM25 scoring.
 
 ## Agent Integration
 

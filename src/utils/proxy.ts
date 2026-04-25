@@ -6,10 +6,9 @@
  * https_proxy, http_proxy).
  *
  * This module must be imported before any HTTP client is constructed, because it
- * patches the undici global dispatcher — affecting all three HTTP clients:
+ * patches the undici global dispatcher — affecting all HTTP clients:
  *   - OpenAI SDK (uses globalThis.fetch internally)
- *   - Qdrant JS client (uses native fetch; exposes no proxy hook)
- *   - HuggingFace Transformers.js (uses globalThis.fetch for model downloads)
+ *   - Qdrant JS client (passes its own undici Agent per-request; see fetch patch below)
  *
  * No new npm production dependencies are introduced. undici is a bundled
  * dependency of Node.js 22+ and is already present in node_modules.
@@ -76,8 +75,30 @@ if (_proxyUrl !== null) {
 	}
 
 	const agent = new EnvHttpProxyAgent();
-	setGlobalDispatcher(agent);
-	activeProxyAgent = agent;
+	setGlobalDispatcher(agent as unknown as Parameters<typeof setGlobalDispatcher>[0]);
+	activeProxyAgent = agent as unknown as Dispatcher;
+
+	// The Qdrant JS client passes its own undici Agent instance as `dispatcher`
+	// on every fetch call, which silently overrides the global dispatcher above.
+	// Wrapping globalThis.fetch here intercepts those per-request dispatchers and
+	// replaces them with our proxy-aware agent, so Qdrant traffic also goes through
+	// the proxy.
+	const _originalFetch = globalThis.fetch;
+
+	// Override globalThis.fetch to intercept dispatcher arguments from Qdrant client.
+	// The Qdrant JS client passes an undici Agent instance as `dispatcher` on every
+	// fetch call, which overrides the global dispatcher. We intercept those requests
+	// and replace the dispatcher with our proxy-aware agent.
+	globalThis.fetch = ((
+		input: Parameters<typeof fetch>[0],
+		init?: Record<string, unknown> & { dispatcher?: Dispatcher },
+	): ReturnType<typeof fetch> => {
+		// init may contain dispatcher from Qdrant client; replace it with our proxy-aware agent
+		if (init !== undefined && typeof init === 'object' && 'dispatcher' in init) {
+			return _originalFetch(input, { ...init, dispatcher: agent });
+		}
+		return _originalFetch(input, init);
+	}) as unknown as typeof globalThis.fetch;
 }
 
 /**
@@ -102,8 +123,10 @@ export function initProxy(log: { info: (msg: string) => void; warn: (msg: string
 		log.info(
 			`Proxy: NO_PROXY defaulted to "${noProxy}" — set NO_PROXY explicitly to override`,
 		);
-	} else {
+	} else if (noProxy) {
 		log.info(`Proxy: NO_PROXY exclusions: ${noProxy}`);
+	} else {
+		log.info('Proxy: NO_PROXY not set (all domains will be proxied)');
 	}
 }
 

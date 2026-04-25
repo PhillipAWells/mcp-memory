@@ -6,7 +6,7 @@
  * by hand and cannot accidentally omit required fields.
  */
 
-import { StandardResponse, ErrorType } from '../types/index.js';
+import type { StandardResponse, ErrorType } from '../types/index.js';
 
 /**
  * Build a successful {@link StandardResponse}.
@@ -19,7 +19,7 @@ import { StandardResponse, ErrorType } from '../types/index.js';
 export function successResponse<T>(
 	message: string,
 	data?: T,
-	metadata?: Record<string, any>,
+	metadata?: Record<string, unknown>,
 ): StandardResponse<T> {
 	return {
 		success: true,
@@ -42,7 +42,7 @@ export function errorResponse(
 	message: string,
 	errorType: ErrorType = 'UNKNOWN_ERROR',
 	error?: string,
-	metadata?: Record<string, any>,
+	metadata?: Record<string, unknown>,
 ): StandardResponse {
 	return {
 		success: false,
@@ -60,7 +60,7 @@ export function errorResponse(
  * @param details - Structured details (e.g. Zod error array) attached under `validation_details`.
  * @returns A `StandardResponse` with `error_type: 'VALIDATION_ERROR'`.
  */
-export function validationError(message: string, details?: any): StandardResponse {
+export function validationError(message: string, details?: unknown): StandardResponse {
 	return errorResponse(
 		message,
 		'VALIDATION_ERROR',

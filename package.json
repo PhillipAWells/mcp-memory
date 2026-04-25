@@ -1,11 +1,17 @@
 {
 	"name": "@pawells/mcp-memory",
 	"displayName": "MCP Memory",
-	"version": "1.3.0",
+	"version": "1.4.0",
 	"description": "Model Context Protocol server for semantic memory and knowledge management with Claude Code",
 	"type": "module",
 	"main": "./build/index.js",
 	"bin": "./build/index.js",
+	"exports": {
+		".": {
+			"types": "./build/index.d.ts",
+			"default": "./build/index.js"
+		}
+	},
 	"scripts": {
 		"build": "tsc --project tsconfig.build.json",
 		"start": "node build/index.js",
@@ -16,41 +22,37 @@
 		"lint:fix": "eslint src/ --fix",
 		"test": "vitest run",
 		"test:ui": "vitest --ui",
-		"test:coverage": "vitest --coverage",
-		"pipeline": "yarn typecheck && yarn lint && yarn test && yarn build",
-		"prepublishOnly": "npm run build",
+		"test:coverage": "vitest run --coverage",
+		"pipeline": "yarn typecheck && yarn lint && yarn test:coverage && yarn build",
+		"prepublishOnly": "yarn build",
 		"prepare": "husky"
 	},
 	"dependencies": {
-		"@huggingface/transformers": "^4.0.0",
-		"@modelcontextprotocol/sdk": "^1.28.0",
-		"@pawells/logger": "1.2.2",
+		"@modelcontextprotocol/sdk": "^1.29.0",
+		"@pawells/logger": "^1.2.2",
 		"@qdrant/js-client-rest": "^1.17.0",
-		"chokidar": "^5.0.0",
-		"dotenv": "^17.3.1",
-		"gray-matter": "^4.0.3",
-		"ignore": "^7.0.5",
-		"openai": "^6.33.0",
-		"uuid": "^13.0.0",
-		"zod": "^4.3.6",
-		"zod-to-json-schema": "^3.25.2"
+		"dotenv": "^16.0.0",
+		"openai": "^6.34.0",
+		"undici": "^6.0.0",
+		"uuid": "^14.0.0",
+		"zod": "^4.3.6"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
 		"@stylistic/eslint-plugin": "^5.10.0",
-		"@types/node": "^25.5.0",
-		"@typescript-eslint/eslint-plugin": "^8.57.2",
-		"@typescript-eslint/parser": "^8.57.2",
-		"@vitest/coverage-v8": "^4.1.2",
-		"@vitest/ui": "^4.1.2",
-		"eslint": "^10.1.0",
+		"@types/node": "^22.0.0",
+		"@typescript-eslint/eslint-plugin": "^8.59.0",
+		"@typescript-eslint/parser": "^8.59.0",
+		"@vitest/coverage-v8": "^4.1.5",
+		"@vitest/ui": "^4.1.5",
+		"eslint": "^10.2.1",
 		"eslint-import-resolver-typescript": "^4.4.4",
 		"eslint-plugin-import": "^2.32.0",
 		"eslint-plugin-unused-imports": "^4.4.1",
-		"globals": "^17.4.0",
+		"globals": "^17.5.0",
 		"husky": "^9.1.7",
-		"typescript": "^6.0.2",
-		"vitest": "^4.1.2"
+		"typescript": "~6.0.0",
+		"vitest": "^4.1.5"
 	},
 	"keywords": [
 		"mcp",
@@ -81,11 +83,9 @@
 	},
 	"packageManager": "yarn@4.12.0",
 	"files": [
-		"build/",
-		"rules/",
-		"README.md",
-		"LICENSE",
-		".env.example"
+		"build",
+		"rules",
+		"README.md"
 	],
 	"publishConfig": {
 		"access": "public"

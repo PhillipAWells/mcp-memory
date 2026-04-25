@@ -1,3 +1,6 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
 # Reject non-semver dependency versions — all versions must be valid semver ranges
 node --input-type=module << 'EOF'
 import { readFileSync } from 'fs';
@@ -17,4 +20,4 @@ if (invalid.length) {
 }
 EOF
 
-yarn typecheck && yarn lint && yarn test && yarn build
+yarn lint && yarn typecheck

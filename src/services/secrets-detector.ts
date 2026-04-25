@@ -5,12 +5,28 @@
  * accidental storage in semantic memory.
  */
 
+/**
+ * Result of secret detection in content.
+ *
+ * @property found - Whether any secrets were detected.
+ * @property secrets - Array of detected secret instances.
+ * @property sanitized - Optional sanitized version of content with secrets replaced by placeholders.
+ */
 export interface SecretDetection {
 	found: boolean;
 	secrets: DetectedSecret[];
 	sanitized?: string;
 }
 
+/**
+ * A single detected secret instance in content.
+ *
+ * @property type - The type of secret detected.
+ * @property pattern - Human-readable description of the detection pattern.
+ * @property location - Character indices of the detected secret in the original content.
+ * @property context - Surrounding context with the secret redacted.
+ * @property confidence - Confidence level: high/medium/low.
+ */
 export interface DetectedSecret {
 	type: SecretType;
 	pattern: string;
@@ -22,6 +38,12 @@ export interface DetectedSecret {
 	confidence: 'high' | 'medium' | 'low';
 }
 
+/**
+ * Enumeration of detectable secret types.
+ *
+ * Includes API keys, tokens (JWT, OAuth, Bearer), credentials (AWS, GCP, Azure),
+ * database URLs, private keys, and PII (email, phone, SSN, credit cards).
+ */
 export type SecretType =
   | 'api_key'
   | 'bearer_token'
@@ -29,7 +51,6 @@ export type SecretType =
   | 'oauth_token'
   | 'password'
   | 'private_key'
-  | 'ssh_key'
   | 'database_url'
   | 'aws_credentials'
   | 'gcp_credentials'
@@ -66,9 +87,9 @@ const SECRET_CONTEXT_CHARS = 10;
 /**
  * Number of distinct medium-confidence detections required to block storage.
  *
- * Set to 5 (rather than 3) to reduce false positives from legitimate content
- * that contains multiple low-risk signals such as email addresses, phone
- * numbers, or generic config key names without actual secret values.
+ * Set to 3 to balance blocking genuine credential clusters while
+ * allowing individual low-risk signals such as email addresses or
+ * phone numbers to pass without blocking.
  */
 const MEDIUM_CONFIDENCE_BLOCK_THRESHOLD = 3;
 /** Confidence ordering for deduplication. */
@@ -99,7 +120,7 @@ const SECRET_PATTERNS: SecretPattern[] = [
 	// API Keys - Specific providers
 	{
 		type: 'openai_key',
-		regex: /sk-[a-zA-Z0-9]{48}/g,
+		regex: /\bsk-[a-zA-Z0-9_-]{20,}\b/g,
 		confidence: 'high',
 		description: 'OpenAI API key',
 	},
@@ -175,12 +196,8 @@ const SECRET_PATTERNS: SecretPattern[] = [
 		confidence: 'high',
 		description: 'Private key (PEM format)',
 	},
-	{
-		type: 'ssh_key',
-		regex: /ssh-(rsa|dss|ed25519)\s+[A-Za-z0-9+/=]{100,}/g,
-		confidence: 'high',
-		description: 'SSH public key',
-	},
+	// SSH public keys are intentionally public and safe to store
+	// (removed SSH key pattern - RFC 4716 / OpenSSH format)
 
 	// Database URLs with credentials
 	{
@@ -281,7 +298,21 @@ function applySanitization(content: string, secrets: DetectedSecret[]): string {
 }
 
 /**
- * Detect secrets and sensitive information in content
+ * Detect secrets and sensitive information in content.
+ *
+ * Scans content against 18+ secret patterns (API keys, tokens, credentials, PII).
+ * High-confidence patterns are prioritized; overlapping detections are deduplicated
+ * by keeping the highest-confidence match. Credit card numbers are validated with
+ * Luhn algorithm to reduce false positives.
+ *
+ * @param content - The text to scan for secrets.
+ * @returns Detection result with found flag, list of secrets, and sanitized content.
+ * @example
+ * const detection = detectSecrets('API key: sk-abc123');
+ * if (detection.found) {
+ *   console.log('Secrets detected:', detection.secrets.length);
+ *   console.log('Sanitized:', detection.sanitized);
+ * }
  */
 export function detectSecrets(content: string): SecretDetection {
 	const secrets: DetectedSecret[] = [];
@@ -328,10 +359,15 @@ export function detectSecrets(content: string): SecretDetection {
 	for (const secret of secrets) {
 		const overlapping = deduplicated.find(
 			(existing) =>
+				// new starts inside existing
 				(secret.location.start >= existing.location.start &&
-          secret.location.start <= existing.location.end) ||
-        (secret.location.end >= existing.location.start &&
-          secret.location.end <= existing.location.end),
+					secret.location.start <= existing.location.end) ||
+				// new ends inside existing
+				(secret.location.end >= existing.location.start &&
+					secret.location.end <= existing.location.end) ||
+				// new completely contains existing
+				(secret.location.start <= existing.location.start &&
+					secret.location.end >= existing.location.end),
 		);
 
 		if (!overlapping) {
@@ -361,7 +397,17 @@ export function detectSecrets(content: string): SecretDetection {
 }
 
 /**
- * Sanitize content by replacing detected secrets with placeholders
+ * Sanitize content by replacing detected secrets with placeholders.
+ *
+ * Runs secret detection and returns content with all detected secrets replaced
+ * by `[REDACTED_<type>]` placeholders. If no secrets are found, returns
+ * the original content unchanged.
+ *
+ * @param content - The text to sanitize.
+ * @returns Sanitized content with secrets replaced by placeholders.
+ * @example
+ * const sanitized = sanitizeContent('password: secret123');
+ * // Returns: 'password: [REDACTED_PASSWORD]'
  */
 export function sanitizeContent(content: string): string {
 	const detection = detectSecrets(content);
@@ -369,17 +415,31 @@ export function sanitizeContent(content: string): string {
 }
 
 /**
- * Check if content is safe to store (no high-confidence secrets)
+ * Check if content is safe to store in semantic memory.
+ *
+ * Returns `safe: true` if the content contains no high-confidence secrets
+ * and fewer than 3 distinct medium-confidence detections. Includes metadata
+ * on why storage may be unsafe and the raw detection result for logging.
+ *
+ * @param content - The text to validate for storage.
+ * @returns Object with safe flag, optional reason, detected secrets, and full detection result.
+ * @throws {never} Does not throw; always returns a result object.
+ * @example
+ * const result = isSafeToStore('Database URL: postgres://user:pass@host/db');
+ * if (!result.safe) {
+ *   console.error('Cannot store:', result.reason);
+ * }
  */
 export function isSafeToStore(content: string): {
 	safe: boolean;
 	reason?: string;
 	secrets?: DetectedSecret[];
+	detection: SecretDetection;
 } {
 	const detection = detectSecrets(content);
 
 	if (!detection.found) {
-		return { safe: true };
+		return { safe: true, detection };
 	}
 
 	// Check for high-confidence secrets
@@ -392,6 +452,7 @@ export function isSafeToStore(content: string): {
 			safe: false,
 			reason: `Found ${highConfidence.length} high-confidence secret(s): ${highConfidence.map((s) => s.pattern).join(', ')}`,
 			secrets: highConfidence,
+			detection,
 		};
 	}
 
@@ -405,6 +466,7 @@ export function isSafeToStore(content: string): {
 			safe: false,
 			reason: `Found ${mediumConfidence.length} medium-confidence secret(s): ${mediumConfidence.map((s) => s.pattern).join(', ')}`,
 			secrets: mediumConfidence,
+			detection,
 		};
 	}
 
@@ -413,11 +475,22 @@ export function isSafeToStore(content: string): {
 		safe: true,
 		reason: `Found ${detection.secrets.length} potential secret(s) with low/medium confidence`,
 		secrets: detection.secrets,
+		detection,
 	};
 }
 
 /**
- * Get a user-friendly summary of detected secrets
+ * Get a user-friendly summary of detected secrets.
+ *
+ * Aggregates detected secrets by type and counts high-confidence matches
+ * to produce a readable summary for logging or error messages.
+ *
+ * @param detection - The result from detectSecrets().
+ * @returns Human-readable summary string (e.g., "Detected: 2 api_key(s), 1 jwt_token(s) (1 high confidence)").
+ * @example
+ * const detection = detectSecrets(content);
+ * console.log(getSecretsSummary(detection));
+ * // Output: "No secrets detected" or "Detected: 1 api_key(s) (1 high confidence)"
  */
 export function getSecretsSummary(detection: SecretDetection): string {
 	if (!detection.found) {

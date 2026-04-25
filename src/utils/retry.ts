@@ -127,22 +127,19 @@ export async function withRetry<T>(
  * @param options - Resolved retry configuration.
  * @returns `true` if the operation should be retried.
  */
-function isRetryableError(error: any, options: Required<RetryOptions>): boolean {
-	// Check HTTP status codes
-	if (error.status && options.retryableStatusCodes.includes(error.status)) {
+function isRetryableError(error: unknown, options: Required<RetryOptions>): boolean {
+	if (typeof error !== 'object' || error === null) return false;
+	const err = error as Record<string, unknown>;
+
+	if (typeof err.status === 'number' && options.retryableStatusCodes.includes(err.status)) {
 		return true;
 	}
-
-	// Check error codes
-	if (error.code && options.retryableErrors.includes(error.code)) {
+	if (typeof err.code === 'string' && options.retryableErrors.includes(err.code)) {
 		return true;
 	}
-
-	// Check error name
-	if (error.name && options.retryableErrors.includes(error.name)) {
+	if (typeof err.name === 'string' && options.retryableErrors.includes(err.name)) {
 		return true;
 	}
-
 	return false;
 }
 

@@ -4,6 +4,7 @@ node_modules/
 # Build output
 build/
 dist/
+dist-temp/
 
 # Coverage
 coverage/
@@ -16,7 +17,6 @@ tmp/
 .env
 .env.local
 .env.*.local
-.npmrc
 
 # TypeScript
 *.tsbuildinfo

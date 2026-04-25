@@ -8,13 +8,13 @@
 
 /**
  * Memory classification type controlling retention policy and search behaviour.
- * - `episodic`   — specific experiences or events; auto-expires after 90 days.
  * - `short-term` — volatile working context; auto-expires after 7 days.
+ * - `episodic`   — specific experiences or events; auto-expires after 90 days.
  * - `long-term`  — persistent facts, concepts, and workflows; no expiry.
  */
 export type MemoryType =
-  | 'episodic'      // Specific experiences, events
   | 'short-term'    // Volatile working memory
+  | 'episodic'      // Specific experiences, events
   | 'long-term';    // Persistent knowledge (facts, concepts, workflows)
 
 /**
@@ -23,36 +23,6 @@ export type MemoryType =
  * All fields are optional.  The index signature (`[key: string]: any`) allows
  * callers to persist custom fields that are forwarded verbatim to Qdrant.
  */
-export interface MemoryMetadata {
-	/** Classification controlling retention and search prioritisation. */
-	memory_type?: MemoryType;
-
-	/** Workspace slug for multi-project isolation. */
-	workspace?: string | null;
-
-	/** Reliability score in [0, 1].  Higher values surface results earlier. */
-	confidence?: number;
-	/** ISO 8601 expiry datetime.  The point is excluded from queries after this time. */
-	expiresAt?: string;
-
-	/** Running total of times this memory has been retrieved. */
-	accessCount?: number;
-	/** ISO 8601 timestamp of the most recent retrieval. */
-	lastAccessedAt?: string;
-
-	/** ISO 8601 creation timestamp. */
-	createdAt?: string;
-	/** ISO 8601 last-modified timestamp. */
-	updatedAt?: string;
-
-	/** Searchable labels for categorisation. */
-	tags?: string[];
-	/** Alternative names or identifiers for this memory. */
-	aliases?: string[];
-
-	/** Custom caller-defined fields, passed through to Qdrant unchanged. */
-	[key: string]: any;
-}
 
 /**
  * A single result returned by a vector search or point retrieval operation.
@@ -61,7 +31,7 @@ export interface SearchResult {
 	/** UUID of the Qdrant point. */
 	id: string;
 	/** Optional file-system path associated with the memory (may be empty). */
-	path: string;
+	path?: string;
 	/** The stored text content. */
 	content: string;
 	/** Cosine similarity score in [0, 1]; 1.0 for exact retrievals via `get()`. */
@@ -79,7 +49,7 @@ export interface SearchResult {
  *
  * @template T - Type of the `data` payload on success.
  */
-export interface StandardResponse<T = any> {
+export interface StandardResponse<T = unknown> {
 	/** `true` on success, `false` on any error. */
 	success: boolean;
 	/** Human-readable summary of the outcome. */
@@ -87,18 +57,11 @@ export interface StandardResponse<T = any> {
 	/** Operation result; present only when `success` is `true`. */
 	data?: T;
 	/** Arbitrary key/value bag for supplementary information (e.g. timing). */
-	metadata?: Record<string, any>;
+	metadata?: Record<string, unknown>;
 	/** Detailed error message; present only when `success` is `false`. */
 	error?: string;
 	/** Categorical error type for programmatic handling. */
 	error_type?: ErrorType;
-	/** Wall-clock duration of the operation. */
-	timing?: {
-		/** Elapsed milliseconds. */
-		duration_ms: number;
-		/** Elapsed seconds (convenience; equals `duration_ms / 1000`). */
-		duration_seconds: number;
-	};
 }
 
 /**
@@ -147,7 +110,7 @@ export interface MCPTool {
    * Receives the validated (but untyped) `args` object and must return
    * a {@link StandardResponse}.
    */
-	handler: (args: any) => Promise<StandardResponse>;
+	handler: (args: unknown) => Promise<StandardResponse>;
 }
 
 /**
@@ -208,7 +171,7 @@ export interface QdrantPayload {
 	/** ISO 8601 timestamp of the most recent access; `null` if never accessed. */
 	last_accessed_at?: string | null;
 	/** Arbitrary caller-defined fields. */
-	[key: string]: any;
+	[key: string]: unknown;
 }
 
 /**
@@ -224,9 +187,9 @@ export interface SearchFilters {
 	/** Restrict to a specific memory type. */
 	memory_type?: MemoryType;
 	/** Minimum `confidence` value (inclusive). */
-	minConfidence?: number;
+	min_confidence?: number;
 	/** Restrict to memories that have at least one of these tags. */
 	tags?: string[];
 	/** Match on arbitrary payload fields (exact value match per key). */
-	metadata?: Record<string, any>;
+	metadata?: Record<string, unknown>;
 }

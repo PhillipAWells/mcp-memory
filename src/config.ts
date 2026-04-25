@@ -20,10 +20,11 @@ const DEFAULT_CHUNK_SIZE = 1000;
 const DEFAULT_CHUNK_OVERLAP = 200;
 /** Default workspace cache TTL in milliseconds. */
 const DEFAULT_WORKSPACE_CACHE_TTL_MS = 60000;
-/** OpenAI text-embedding-3-small output dimensions. */
-const OPENAI_SMALL_EMBEDDING_DIMENSIONS = 1536;
-/** Default output dimensions for the local HuggingFace embedding model. */
-const DEFAULT_LOCAL_EMBEDDING_DIMENSIONS = 384;
+/**
+ * Default output dimensions for OpenAI `text-embedding-3-small`.
+ * Overridden at runtime by the `SMALL_EMBEDDING_DIMENSIONS` environment variable.
+ */
+const DEFAULT_SMALL_EMBEDDING_DIMENSIONS = 1536;
 /** Default output dimensions for OpenAI text-embedding-3-large. */
 const DEFAULT_OPENAI_LARGE_EMBEDDING_DIMENSIONS = 3072;
 /** Minimum length for QDRANT_API_KEY to guard against accidental single-char values. */
@@ -36,9 +37,15 @@ const MIN_QDRANT_API_KEY_LENGTH = 8;
  *
  * @param raw      - Raw string from the environment (or undefined).
  * @param fallback - Default value used when `raw` is undefined.
+ * @returns The parsed boolean value.
+ * @example
+ * parseBoolEnv('true', false) // true
+ * parseBoolEnv('false', true) // false
+ * parseBoolEnv(undefined, true) // true
  */
-function parseBoolEnv(raw: string | undefined, fallback: boolean): boolean {
+export function parseBoolEnv(raw: string | undefined, fallback: boolean): boolean {
 	if (raw === undefined) return fallback;
+	if (raw.trim().length === 0) return fallback;
 	const lower = raw.toLowerCase();
 	return lower !== 'false' && lower !== '0' && lower !== 'no' && lower !== 'off';
 }
@@ -47,11 +54,17 @@ function parseBoolEnv(raw: string | undefined, fallback: boolean): boolean {
  * Parse an integer from an environment variable string.
  * Throws a descriptive error if the value is not a valid integer.
  *
- * @param raw   - Raw string from the environment (or undefined).
+ * @param raw      - Raw string from the environment (or undefined).
  * @param fallback - Default value used when `raw` is undefined.
- * @param name  - Variable name used in error messages.
+ * @param name     - Variable name used in error messages.
+ * @returns The parsed integer value or the fallback.
+ * @throws {Error} If the value is not a valid integer.
+ * @example
+ * parseIntEnv('123', 10, 'MY_VAR') // 123
+ * parseIntEnv(undefined, 10, 'MY_VAR') // 10
+ * parseIntEnv('abc', 10, 'MY_VAR') // throws Error
  */
-function parseIntEnv(raw: string | undefined, fallback: number, name: string): number {
+export function parseIntEnv(raw: string | undefined, fallback: number, name: string): number {
 	if (raw === undefined) return fallback;
 	const parsed = parseInt(raw, 10);
 	if (isNaN(parsed) || !isFinite(parsed)) {
@@ -71,17 +84,13 @@ function parseIntEnv(raw: string | undefined, fallback: number, name: string): n
  * field is missing or invalid.
  */
 const ConfigSchema = z.object({
-	// OpenAI API (optional — only required when provider is 'openai')
+	// OpenAI API
 	openai: z.object({
-		apiKey: z.string().optional(),
+		apiKey: z.string().min(1, 'OPENAI_API_KEY is required — set it in .env or the environment'),
 	}),
 
 	// Embedding provider
 	embedding: z.object({
-		// 'openai' uses OpenAI API; 'local' uses @huggingface/transformers (free, no API key)
-		provider: z.enum(['openai', 'local']),
-		// HuggingFace model id used when provider is 'local'
-		localModel: z.string(),
 		// Vector dimensions for the primary (small/dense) embedding
 		smallDimensions: z.number().int().positive(),
 		// Vector dimensions for the secondary (large) embedding
@@ -139,42 +148,23 @@ export type Config = z.infer<typeof ConfigSchema>;
  * 3. The assembled object is parsed by Zod — any schema violation throws.
  *
  * @returns Validated, immutable configuration object.
- * @throws If `EMBEDDING_PROVIDER=openai` is set without `OPENAI_API_KEY`,
- *   or if any value fails Zod validation.
+ * @throws {Error} If `OPENAI_API_KEY` is not set, or if any value fails Zod validation.
+ * @example
+ * // In production, set OPENAI_API_KEY and QDRANT_URL in .env or environment
+ * const config = loadConfig();
  */
-function loadConfig(): Config {
+export function loadConfig(): Config {
 	// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
 	const apiKey = process.env.OPENAI_API_KEY || undefined; // || intentional: coerce empty string to undefined
 
-	// Determine embedding provider:
-	//   - explicit EMBEDDING_PROVIDER env var overrides everything
-	//   - otherwise: 'openai' if OPENAI_API_KEY is set, 'local' if not
-	const explicitProvider = process.env.EMBEDDING_PROVIDER as 'openai' | 'local' | undefined;
-	const provider: 'openai' | 'local' = explicitProvider ?? (apiKey ? 'openai' : 'local');
-
-	// Fail early with a clear message if openai provider is requested but the key is absent
-	if (provider === 'openai' && !apiKey) {
-		throw new Error(
-			'OPENAI_API_KEY is required when EMBEDDING_PROVIDER=openai. ' +
-      'Either set OPENAI_API_KEY or remove EMBEDDING_PROVIDER to use local embeddings.',
-		);
-	}
-
-	const localModel = process.env.LOCAL_EMBEDDING_MODEL ?? 'Xenova/all-MiniLM-L6-v2';
-	const localDimensions = parseIntEnv(process.env.LOCAL_EMBEDDING_DIMENSIONS, DEFAULT_LOCAL_EMBEDDING_DIMENSIONS, 'LOCAL_EMBEDDING_DIMENSIONS');
-	const openaiLargeDimensions = parseIntEnv(process.env.LARGE_EMBEDDING_DIMENSIONS, DEFAULT_OPENAI_LARGE_EMBEDDING_DIMENSIONS, 'LARGE_EMBEDDING_DIMENSIONS');
-
-	// Derive vector dimensions from the chosen provider
-	const smallDimensions = provider === 'openai' ? OPENAI_SMALL_EMBEDDING_DIMENSIONS : localDimensions;
-	const largeDimensions = provider === 'openai' ? openaiLargeDimensions : localDimensions;
+	const smallDimensions = parseIntEnv(process.env.SMALL_EMBEDDING_DIMENSIONS, DEFAULT_SMALL_EMBEDDING_DIMENSIONS, 'SMALL_EMBEDDING_DIMENSIONS');
+	const largeDimensions = parseIntEnv(process.env.LARGE_EMBEDDING_DIMENSIONS, DEFAULT_OPENAI_LARGE_EMBEDDING_DIMENSIONS, 'LARGE_EMBEDDING_DIMENSIONS');
 
 	const rawConfig = {
 		openai: {
 			apiKey,
 		},
 		embedding: {
-			provider,
-			localModel,
 			smallDimensions,
 			largeDimensions,
 		},
@@ -187,7 +177,7 @@ function loadConfig(): Config {
 			timeout: parseIntEnv(process.env.QDRANT_TIMEOUT, DEFAULT_QDRANT_TIMEOUT_MS, 'QDRANT_TIMEOUT'),
 		},
 		server: {
-			logLevel: (process.env.LOG_LEVEL ?? 'info') as 'debug' | 'info' | 'warn' | 'error' | 'silent',
+			logLevel: process.env.LOG_LEVEL ?? 'info',
 		},
 		memory: {
 			chunkSize: parseIntEnv(process.env.MEMORY_CHUNK_SIZE, DEFAULT_CHUNK_SIZE, 'MEMORY_CHUNK_SIZE'),
@@ -207,6 +197,8 @@ function loadConfig(): Config {
 		return ConfigSchema.parse(rawConfig);
 	} catch (error) {
 		if (error instanceof z.ZodError) {
+			// Chicken-and-egg: logger depends on config being loaded, so we must use
+			// console.error here even though we use structured logging elsewhere.
 			console.error('Configuration validation failed:');
 			error.issues.forEach((issue) => {
 				console.error(`  - ${issue.path.join('.')}: ${issue.message}`);

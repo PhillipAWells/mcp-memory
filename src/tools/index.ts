@@ -4,7 +4,7 @@
  * Central export for all available tools
  */
 
-import { MCPTool } from '../types/index.js';
+import type { MCPTool } from '../types/index.js';
 import { memoryTools } from './memory-tools.js';
 
 /**

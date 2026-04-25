@@ -4,9 +4,9 @@
  * MCP Memory Server
  *
  * Model Context Protocol server for persistent semantic memory and knowledge
- * management. Uses OpenAI embeddings (or a local HuggingFace/ONNX model) with
- * Qdrant vector database to store, search, and manage memories with automatic
- * classification, secrets detection, and workspace isolation.
+ * management. Uses OpenAI embeddings with Qdrant vector database to store,
+ * search, and manage memories with automatic classification, secrets detection,
+ * and workspace isolation.
  */
 
 // Proxy MUST be the first import — sets the global fetch dispatcher before any HTTP client module initialises.
@@ -18,12 +18,14 @@ import {
 	CallToolRequestSchema,
 	ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
 import { config } from './config.js';
 import { logger } from './utils/logger.js';
 import { tools } from './tools/index.js';
 import { rulesManager } from './services/rules-manager.js';
-import { preloadLocalPipeline } from './services/local-embedding-provider.js';
 import { extractErrorMessage } from './utils/errors.js';
 
 /**
@@ -50,13 +52,20 @@ async function main(): Promise<void> {
 	logger.info(`Configuration: ${JSON.stringify(sanitizedConfig, null, 2)}`);
 
 	// Initialize rules (copy to Claude directory if enabled)
-	await rulesManager.initialize();
+	rulesManager.initialize();
 
-	// Preload local embedding model in the background so it is ready before the
-	// first request arrives.  Only triggered when using the local provider.
-	if (config.embedding.provider === 'local') {
-		preloadLocalPipeline().catch((err) =>
-			logger.warn('Local embedding model preload failed (will retry on first request):', err),
+	// Read server version from package.json
+	let serverVersion = 'unknown';
+	try {
+		const packageJson = JSON.parse(
+			readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../package.json'), 'utf-8'),
+		) as { version?: string };
+		if (packageJson.version !== undefined) {
+			serverVersion = packageJson.version;
+		}
+	} catch (cause) {
+		logger.warn(
+			`Failed to read package.json version: ${extractErrorMessage(cause)}. Using default version.`,
 		);
 	}
 
@@ -64,7 +73,7 @@ async function main(): Promise<void> {
 	const server = new Server(
 		{
 			name: 'mcp-memory',
-			version: '1.0.0',
+			version: serverVersion,
 		},
 		{
 			capabilities: {

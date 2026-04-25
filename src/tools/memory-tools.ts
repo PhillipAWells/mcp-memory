@@ -5,28 +5,16 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-
-/** Expiry in days for episodic memories. */
-const EPISODIC_EXPIRY_DAYS = 90;
-/** Expiry in days for short-term memories. */
-const SHORT_TERM_EXPIRY_DAYS = 7;
-/** Character limit for content preview in list responses. */
-const CONTENT_PREVIEW_LENGTH = 200;
-/** Character threshold above which content is chunked. */
-const CHUNK_THRESHOLD_LENGTH = 1000;
-/** Max characters of query shown in debug logs. */
-const QUERY_LOG_LENGTH = 50;
-/** Max records to sort in memory (beyond this, warn and cap). */
-const MAX_IN_MEMORY_SORT_COUNT = 10000;
 import { z } from 'zod';
-import { MCPTool, StandardResponse, SearchResult } from '../types/index.js';
+import type { MCPTool, StandardResponse, SearchResult } from '../types/index.js';
 import { successResponse, errorResponse, validationError, notFoundError } from '../utils/response.js';
+import { config } from '../config.js';
 import { extractErrorMessage } from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
 import { qdrantService } from '../services/qdrant-client.js';
 import { embeddingService } from '../services/embedding-service.js';
 import { workspaceDetector } from '../services/workspace-detector.js';
-import { isSafeToStore, getSecretsSummary, detectSecrets } from '../services/secrets-detector.js';
+import { isSafeToStore, getSecretsSummary } from '../services/secrets-detector.js';
 import {
 	MemoryStoreInputSchema,
 	MemoryQueryInputSchema,
@@ -40,10 +28,85 @@ import {
 	memorySchemas,
 } from '../schemas/memory-schemas.js';
 
+/** Expiry in days for episodic memories. */
+const EPISODIC_EXPIRY_DAYS = 90;
+/** Expiry in days for short-term memories. */
+const SHORT_TERM_EXPIRY_DAYS = 7;
+/** Character limit for content preview in list responses. */
+const CONTENT_PREVIEW_LENGTH = 200;
+
+/** Max characters of query shown in debug logs. */
+const QUERY_LOG_LENGTH = 50;
+/** Max records to sort in memory (beyond this, warn and cap). */
+const MAX_IN_MEMORY_SORT_COUNT = 10000;
+
 /**
  * Memory Store Tool
  */
-async function memoryStoreHandler(args: any): Promise<StandardResponse> {
+
+/**
+ * Checks content for secrets and sensitive information before storage.
+ *
+ * Uses a two-path logic: high-confidence detections (API keys, private keys, etc.) block storage
+ * immediately; low/medium-confidence patterns (passwords, tokens) block only if 3+ distinct matches
+ * are found. Medium-confidence matches without a block threshold log warnings for transparency.
+ *
+ * @param content - The content string to check for sensitive patterns.
+ * @param idContext - Optional memory ID for error reporting context.
+ * @returns An error StandardResponse if unsafe content is detected (safe=false), null if storage is permitted.
+ * @example
+ * ```typescript
+ * const error = checkContentSecrets('API key: sk-abc123...');
+ * if (error) {
+ *   logger.warn('Storage blocked:', error.message);
+ * }
+ * ```
+ */
+function checkContentSecrets(content: string, idContext?: string): StandardResponse | null {
+	const safetyCheck = isSafeToStore(content);
+	if (!safetyCheck.safe) {
+		logger.warn(`Blocked memory operation: ${safetyCheck.reason}`);
+		const secretsList = safetyCheck.secrets?.map(s => ({
+			type: s.type,
+			pattern: s.pattern,
+			confidence: s.confidence,
+			context: s.context,
+		})) ?? [];
+		return errorResponse(
+			'Cannot store content containing sensitive information',
+			'VALIDATION_ERROR',
+			safetyCheck.reason,
+			{
+				...(idContext ? { id: idContext } : {}),
+				error_code: 'SECRETS_DETECTED',
+				secrets_detected: secretsList,
+				summary: getSecretsSummary(safetyCheck.detection),
+				suggestion: 'Remove sensitive data before storing. Use placeholders like [API_KEY] or [PASSWORD] instead.',
+			},
+		);
+	}
+	if (safetyCheck.reason && safetyCheck.secrets) {
+		logger.warn(`Storing with warning: ${safetyCheck.reason}`);
+	}
+	return null;
+}
+
+/**
+ * Handles the memory-store MCP tool — embeds and stores a memory, with automatic chunking for large content.
+ *
+ * Validates input, checks for secrets, auto-detects workspace, applies expiry based on memory_type,
+ * and either stores as a single point or chunks long content (>1000 chars) across multiple embeddings.
+ *
+ * @param args - Validated MemoryStoreInput containing content, optional metadata, and auto_chunk flag.
+ * @returns Promise resolving to a StandardResponse with stored memory ID(s) and metadata, or error.
+ * @throws Never throws; returns errorResponse() on validation failure, secrets detection, or storage failure.
+ * @example
+ * ```typescript
+ * const result = await memoryStoreHandler({ content: 'TypeScript uses structural typing.' });
+ * // Returns: { success: true, data: { id: 'uuid', memory_type: 'long-term', workspace: 'default' } }
+ * ```
+ */
+async function memoryStoreHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
 
 	try {
@@ -51,42 +114,16 @@ async function memoryStoreHandler(args: any): Promise<StandardResponse> {
 		logger.info('Storing memory...');
 
 		// Check for secrets and sensitive information
-		const safetyCheck = isSafeToStore(input.content);
-		if (!safetyCheck.safe) {
-			logger.warn(`Blocked memory storage: ${safetyCheck.reason}`);
-
-			const detection = detectSecrets(input.content);
-			const secretsList = safetyCheck.secrets?.map(s => ({
-				type: s.type,
-				pattern: s.pattern,
-				confidence: s.confidence,
-				context: s.context,
-			})) ?? [];
-
-			return errorResponse(
-				'Cannot store content containing sensitive information',
-				'VALIDATION_ERROR',
-				safetyCheck.reason,
-				{
-					error_code: 'SECRETS_DETECTED',
-					secrets_detected: secretsList,
-					summary: getSecretsSummary(detection),
-					suggestion: 'Remove sensitive data before storing. Use placeholders like [API_KEY] or [PASSWORD] instead.',
-					sanitized_preview: detection.sanitized?.slice(0, CONTENT_PREVIEW_LENGTH) + '...',
-				},
-			);
-		}
-
-		// Warn if low/medium confidence secrets detected
-		if (safetyCheck.reason && safetyCheck.secrets) {
-			logger.warn(`Storing with warning: ${safetyCheck.reason}`);
-		}
+		const secretsError = checkContentSecrets(input.content);
+		if (secretsError) return secretsError;
 
 		// Build a new metadata object (do not mutate input.metadata)
 		const inputMeta = input.metadata ?? {};
 		let expiresAt = inputMeta.expires_at;
 
-		// Auto-set expires_at based on memory type (if not already provided)
+		// Auto-set expires_at based on memory type (if not already provided).
+		// Note: null from the caller means "explicitly no expiry" (skip auto-expiry logic);
+		// undefined means "not provided" (apply auto-expiry by type).
 		if (expiresAt === undefined) {
 			const memoryType = inputMeta.memory_type;
 			if (memoryType === 'episodic') {
@@ -116,23 +153,34 @@ async function memoryStoreHandler(args: any): Promise<StandardResponse> {
 		const metadata = { ...inputMeta, ...(expiresAt !== undefined ? { expires_at: expiresAt } : {}), workspace };
 
 		// Handle chunking for long content
-		if (input.auto_chunk && input.content.length > CHUNK_THRESHOLD_LENGTH) {
+		if (input.auto_chunk && input.content.length > config.memory.chunkSize) {
 			const chunked = await embeddingService.generateChunkedEmbeddings(input.content);
 
 			// All chunks share a common group ID so siblings can be found and managed together
 			const chunkGroupId = uuidv4();
 
-			const ids: string[] = [];
-			for (const { chunk, embedding, index, total } of chunked) {
-				const largeEmbedding = await embeddingService.generateLargeEmbedding(chunk);
-				const id = await qdrantService.upsert(
-					chunk,
-					embedding,
-					{ ...metadata, chunk_index: index, total_chunks: total, chunk_group_id: chunkGroupId },
-					largeEmbedding,
+			// Parallelize large embedding generation across all chunks
+			const largeEmbeddings = await Promise.all(
+				chunked.map(({ chunk }) => embeddingService.generateLargeEmbedding(chunk)),
+			);
+
+			// Batch upsert all chunks in a single operation
+			const points = chunked.map(({ chunk, embedding, index, total }) => ({
+				content: chunk,
+				vector: embedding,
+				vectorLarge: largeEmbeddings[index],
+				metadata: { ...metadata, chunk_index: index, total_chunks: total, chunk_group_id: chunkGroupId },
+			}));
+
+			const batchResult = await qdrantService.batchUpsert(points);
+			if (batchResult.failedPoints.length > 0) {
+				return errorResponse(
+					`Failed to store ${batchResult.failedPoints.length} chunks`,
+					'EXECUTION_ERROR',
+					`Failed point IDs: ${batchResult.failedPoints.join(', ')}`,
 				);
-				ids.push(id);
 			}
+			const ids = batchResult.successfulIds;
 
 			logger.info(`Memory stored: ${ids.length} chunks`);
 
@@ -163,14 +211,47 @@ async function memoryStoreHandler(args: any): Promise<StandardResponse> {
 }
 
 /**
- * Memory Query Tool
+ * Handles the memory-query MCP tool — searches memories by natural-language semantic similarity.
+ *
+ * Generates dual embeddings (small+large), searches via vector similarity with optional hybrid search
+ * (RRF fusion of dense vectors and full-text index), and auto-injects workspace filter to match store behavior.
+ *
+ * @param args - Validated MemoryQueryInput with query string, optional filters, and search options.
+ * @returns Promise resolving to StandardResponse with ranked results array (id, content, score, metadata).
+ * @throws Never throws; returns errorResponse() on invalid input or search failure; rejects hybrid search with pagination.
+ * @example
+ * ```typescript
+ * const result = await memoryQueryHandler({ query: 'how to use async/await', limit: 10 });
+ * // Returns: { success: true, data: { results: [...], count: 3, query: '...' } }
+ * ```
  */
-async function memoryQueryHandler(args: any): Promise<StandardResponse> {
+async function memoryQueryHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
 
 	try {
 		const input = MemoryQueryInputSchema.parse(args);
-		logger.info(`Querying memory: "${input.query.slice(0, QUERY_LOG_LENGTH)}..."`);
+		const queryPreview = input.query.slice(0, QUERY_LOG_LENGTH);
+		const truncationSuffix = input.query.length > QUERY_LOG_LENGTH ? '...' : '';
+		logger.info(`Querying memory: "${queryPreview}${truncationSuffix}"`);
+
+		// Hybrid search does not support pagination
+		if (input.use_hybrid_search && input.offset !== undefined && input.offset > 0) {
+			return errorResponse(
+				'Hybrid search does not support pagination. Use standard search for pagination.',
+				'VALIDATION_ERROR',
+			);
+		}
+
+		// Auto-inject workspace to filter if not explicitly provided (match store behavior)
+		const { filter } = input;
+		const detected = workspaceDetector.detect();
+		if (filter?.workspace === undefined) {
+			if (detected.workspace !== null && detected.workspace !== undefined) {
+				logger.debug(`Auto-injecting workspace filter: ${detected.workspace}`);
+			} else {
+				logger.warn('No workspace detected; query will be limited to memories with null workspace');
+			}
+		}
 
 		const dual = await embeddingService.generateDualEmbeddings(input.query);
 
@@ -178,7 +259,12 @@ async function memoryQueryHandler(args: any): Promise<StandardResponse> {
 		const results = await qdrantService.search({
 			vector: dual.small,
 			vectorLarge: dual.large,
-			filter: input.filter,
+			filter: {
+				...filter,
+				...(filter?.workspace === undefined
+					? { workspace: detected.workspace }
+					: {}),
+			},
 			limit: input.limit,
 			offset: input.offset,
 			scoreThreshold: input.score_threshold,
@@ -216,57 +302,47 @@ async function memoryQueryHandler(args: any): Promise<StandardResponse> {
 }
 
 /**
- * Memory List Tool
+ * Handles the memory-list MCP tool — browses memories with pagination, filtering, and sorting.
+ *
+ * Fetches matching records from Qdrant with optional filtering by workspace/memory_type/tags,
+ * sorts in-memory by requested field (created_at/updated_at/access_count/confidence),
+ * and returns paginated results with content previews. Large result sets (>10,000 records) are
+ * truncated with a warning; use filters to narrow results.
+ *
+ * @param args - Validated MemoryListInput with filter, sort_by, sort_order, limit, and offset.
+ * @returns Promise resolving to StandardResponse with memories array (truncated content), total_count, and pagination metadata.
+ * @throws Never throws; returns errorResponse() on invalid input or query failure.
+ * @example
+ * ```typescript
+ * const result = await memoryListHandler({ limit: 20, offset: 0, sort_by: 'created_at', sort_order: 'desc' });
+ * // Returns: { success: true, data: { memories: [...], count: 20, total_count: 150, limit: 20, offset: 0 } }
+ * ```
  */
-async function memoryListHandler(args: any): Promise<StandardResponse> {
+async function memoryListHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
 
 	try {
 		const input = MemoryListInputSchema.parse(args);
 		logger.info('Listing memories...');
 
-		// Warn if sorting large result sets
-		if (input.sort_by && input.sort_by !== 'created_at') {
-			const estimatedCount = await qdrantService.count(input.filter);
-			if (estimatedCount > MAX_IN_MEMORY_SORT_COUNT) {
-				logger.warn(
-					`Sorting ${estimatedCount} records in memory may be slow. ` +
-          'Consider using filters to reduce result set size.',
-				);
-			}
-		}
-
 		// Determine fetch strategy based on sorting needs
 		let results: SearchResult[];
+		// NOTE: We fetch the total count upfront to:
+		// 1) Determine the memory load for sort operations (MAX_IN_MEMORY_SORT_COUNT cap)
+		// 2) Return total_count in the response to clients (pagination metadata)
+		// This is necessary for the current API contract, but could be optimized by:
+		// - Deferring count() until needed (only if sorting is requested)
+		// - Implementing streaming pagination to avoid loading large result sets
+		const totalCount = await qdrantService.count(input.filter);
 
 		if (!input.sort_by || input.sort_by === 'created_at') {
-			// Qdrant scroll returns results roughly in creation order
-			// Fetch only what we need with pagination
-			results = await qdrantService.list(
-				input.filter,
-				input.limit,
-				input.offset,
-			);
-
-			// Apply sort order if specified
-			if (input.sort_order === 'asc') {
-				results.sort((a, b) => {
-					const aTime = new Date(a.metadata?.created_at ?? 0).getTime();
-					const bTime = new Date(b.metadata?.created_at ?? 0).getTime();
-					return aTime - bTime;
-				});
-			}
-			// Default DESC order from Qdrant is already correct
-		} else {
-			// For other sort fields, we must fetch all matching records and sort in memory.
-			// Fetching only limit+offset would produce incorrect results because Qdrant's
-			// scroll order is internal — not the requested sort order.
-			const totalCount = await qdrantService.count(input.filter);
+			// Qdrant scroll returns results in internal order, not guaranteed to be sorted
+			// For created_at, we must fetch all and sort in memory to ensure correct order
 			const fetchLimit = Math.min(totalCount, MAX_IN_MEMORY_SORT_COUNT);
 			if (totalCount > MAX_IN_MEMORY_SORT_COUNT) {
 				logger.warn(
-					`Sorting ${totalCount} records: only the first ${MAX_IN_MEMORY_SORT_COUNT} are loaded for performance. ` +
-          'Results beyond this cap may be missing. Use filters to narrow the result set.',
+					`Sorting ${totalCount} records by created_at: only the first ${MAX_IN_MEMORY_SORT_COUNT} are loaded for performance. ` +
+					'Results beyond this cap may be missing. Use filters to narrow the result set.',
 				);
 			}
 			const allResults = await qdrantService.list(
@@ -275,10 +351,40 @@ async function memoryListHandler(args: any): Promise<StandardResponse> {
 				0,
 			);
 
+			// Sort by created_at with requested order
+			const sortedResults = allResults.sort((a, b) => {
+				const aTime = new Date(a.metadata?.created_at ?? 0).getTime();
+				const bTime = new Date(b.metadata?.created_at ?? 0).getTime();
+				if (input.sort_order === 'asc') {
+					return aTime - bTime;
+				} else {
+					return bTime - aTime;
+				}
+			});
+
+			// Apply offset and limit after sorting
+			results = sortedResults.slice(input.offset, input.offset + input.limit);
+		} else {
+			// For other sort fields, we must fetch all matching records and sort in memory.
+			// Fetching only limit+offset would produce incorrect results because Qdrant's
+			// scroll order is internal — not the requested sort order.
+			if (totalCount > MAX_IN_MEMORY_SORT_COUNT) {
+				logger.warn(
+					`Sorting ${totalCount} records: only the first ${MAX_IN_MEMORY_SORT_COUNT} are loaded for performance. ` +
+					'Results beyond this cap may be missing. Use filters to narrow the result set.',
+				);
+			}
+			const fetchLimit = Math.min(totalCount, MAX_IN_MEMORY_SORT_COUNT);
+			const allResults = await qdrantService.list(
+				input.filter,
+				fetchLimit,
+				0,
+			);
+
 			// Sort by requested field
 			const sortedResults = allResults.sort((a, b) => {
-				let aValue: any;
-				let bValue: any;
+				let aValue: number | string;
+				let bValue: number | string;
 
 				switch (input.sort_by) {
 					case 'updated_at':
@@ -324,6 +430,7 @@ async function memoryListHandler(args: any): Promise<StandardResponse> {
 					metadata: r.metadata,
 				})),
 				count: results.length,
+				total_count: totalCount,
 				limit: input.limit,
 				offset: input.offset,
 			},
@@ -341,9 +448,20 @@ async function memoryListHandler(args: any): Promise<StandardResponse> {
 }
 
 /**
- * Memory Get Tool
+ * Handles the memory-get MCP tool — retrieves a single memory by UUID with full content.
+ *
+ * Looks up the memory point by ID in Qdrant and returns complete content and metadata.
+ *
+ * @param args - Validated MemoryGetInput containing the memory UUID.
+ * @returns Promise resolving to StandardResponse with id, full content, and metadata if found.
+ * @throws Never throws; returns notFoundError() if memory ID does not exist.
+ * @example
+ * ```typescript
+ * const result = await memoryGetHandler({ id: '550e8400-e29b-41d4-a716-446655440000' });
+ * // Returns: { success: true, data: { id: '550e8400...', content: '...', metadata: {...} } }
+ * ```
  */
-async function memoryGetHandler(args: any): Promise<StandardResponse> {
+async function memoryGetHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
 
 	try {
@@ -379,47 +497,39 @@ async function memoryGetHandler(args: any): Promise<StandardResponse> {
 }
 
 /**
- * Memory Update Tool
+ * Handles the memory-update MCP tool — updates memory content and/or metadata with automatic re-chunking.
+ *
+ * Validates that at least one of content or metadata is provided, checks for secrets in new content,
+ * and handles transparent re-chunking of chunked memories. Content updates trigger re-embedding and
+ * re-indexing; metadata-only updates are atomic. Chunked memories (from store) are re-chunked as a unit
+ * and sibling chunks are synchronized.
+ *
+ * @param args - Validated MemoryUpdateInput with id (required), optional new content and/or metadata.
+ * @returns Promise resolving to StandardResponse with updated memory id, reindex status, and (if rechunked) chunk counts.
+ * @throws Never throws; returns notFoundError() if memory does not exist, errorResponse() on validation or update failure.
+ * @example
+ * ```typescript
+ * const result = await memoryUpdateHandler({ id: 'uuid', content: 'Updated content' });
+ * // Returns: { success: true, data: { id: 'uuid', reindexed: true } }
+ * ```
  */
-async function memoryUpdateHandler(args: any): Promise<StandardResponse> {
+async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
 
 	try {
 		const input = MemoryUpdateInputSchema.parse(args);
 		logger.info(`Updating memory: ${input.id}`);
 
+		// Validation: at least one of content or metadata must be provided
+		const hasMetadata = input.metadata && Object.keys(input.metadata).length > 0;
+		if (!input.content && !hasMetadata) {
+			return validationError('metadata must contain at least one field, or provide new content');
+		}
+
 		// Check for secrets if content is being updated
 		if (input.content) {
-			const safetyCheck = isSafeToStore(input.content);
-			if (!safetyCheck.safe) {
-				logger.warn(`Blocked memory update: ${safetyCheck.reason}`);
-
-				const detection = detectSecrets(input.content);
-				const secretsList = safetyCheck.secrets?.map(s => ({
-					type: s.type,
-					pattern: s.pattern,
-					confidence: s.confidence,
-					context: s.context,
-				})) ?? [];
-
-				return errorResponse(
-					'Cannot update content with sensitive information',
-					'VALIDATION_ERROR',
-					safetyCheck.reason,
-					{
-						id: input.id,
-						error_code: 'SECRETS_DETECTED',
-						secrets_detected: secretsList,
-						summary: getSecretsSummary(detection),
-						suggestion: 'Remove sensitive data before updating. Use placeholders like [API_KEY] or [PASSWORD] instead.',
-					},
-				);
-			}
-
-			// Warn if low/medium confidence secrets detected
-			if (safetyCheck.reason && safetyCheck.secrets) {
-				logger.warn(`Updating with warning: ${safetyCheck.reason}`);
-			}
+			const secretsError = checkContentSecrets(input.content, input.id);
+			if (secretsError) return secretsError;
 		}
 
 		// Get existing memory
@@ -455,22 +565,38 @@ async function memoryUpdateHandler(args: any): Promise<StandardResponse> {
 
 				const mergedMetadata = { ...baseMetadata, ...input.metadata };
 
+				// Normalize workspace to lowercase for consistent storage
+				if (mergedMetadata.workspace !== null && mergedMetadata.workspace !== undefined) {
+					mergedMetadata.workspace = workspaceDetector.normalize(mergedMetadata.workspace);
+				}
+
 				// Decide: chunk the new content or store as single?
-				if (input.auto_chunk && input.content.length > CHUNK_THRESHOLD_LENGTH) {
+				if (input.auto_chunk && input.content.length > config.memory.chunkSize) {
 					const chunked = await embeddingService.generateChunkedEmbeddings(input.content);
 					const newChunkGroupId = uuidv4();
 
-					const newIds: string[] = [];
-					for (const { chunk, embedding, index, total } of chunked) {
-						const largeEmbedding = await embeddingService.generateLargeEmbedding(chunk);
-						const id = await qdrantService.upsert(
-							chunk,
-							embedding,
-							{ ...mergedMetadata, chunk_index: index, total_chunks: total, chunk_group_id: newChunkGroupId },
-							largeEmbedding,
+					// Parallelize large embedding generation across all chunks
+					const largeEmbeddings = await Promise.all(
+						chunked.map(({ chunk }) => embeddingService.generateLargeEmbedding(chunk)),
+					);
+
+					// Batch upsert all chunks in a single operation
+					const points = chunked.map(({ chunk, embedding, index, total }) => ({
+						content: chunk,
+						vector: embedding,
+						vectorLarge: largeEmbeddings[index],
+						metadata: { ...mergedMetadata, chunk_index: index, total_chunks: total, chunk_group_id: newChunkGroupId },
+					}));
+
+					const batchResult = await qdrantService.batchUpsert(points);
+					if (batchResult.failedPoints.length > 0) {
+						return errorResponse(
+							`Failed to update ${batchResult.failedPoints.length} chunks`,
+							'EXECUTION_ERROR',
+							`Failed point IDs: ${batchResult.failedPoints.join(', ')}`,
 						);
-						newIds.push(id);
 					}
+					const newIds = batchResult.successfulIds;
 
 					logger.info(`Chunked memory updated: re-stored ${newIds.length} chunks (deleted ${siblingIds.length} old chunks)`);
 
@@ -510,9 +636,9 @@ async function memoryUpdateHandler(args: any): Promise<StandardResponse> {
 			if (chunkGroupId) {
 				const siblings = await qdrantService.list({ metadata: { chunk_group_id: chunkGroupId } });
 
-				for (const sibling of siblings) {
-					await qdrantService.updatePayload(sibling.id, input.metadata ?? {});
-				}
+				await Promise.all(
+					siblings.map(sibling => qdrantService.updatePayload(sibling.id, input.metadata ?? {})),
+				);
 
 				logger.info(`Updated metadata across ${siblings.length} chunk siblings`);
 
@@ -544,8 +670,8 @@ async function memoryUpdateHandler(args: any): Promise<StandardResponse> {
 			}
 		}
 
-		// If content is being updated and reindex is requested
-		if (input.content && input.reindex) {
+		// Content update: always reindex
+		if (input.content) {
 			logger.debug('Re-generating dual embeddings for updated content');
 			const dual = await embeddingService.generateDualEmbeddings(input.content);
 
@@ -566,7 +692,7 @@ async function memoryUpdateHandler(args: any): Promise<StandardResponse> {
 
 			logger.info(`Memory updated and reindexed: ${input.id}`);
 		} else {
-			// Just update metadata
+			// Metadata-only update
 			await qdrantService.updatePayload(input.id, input.metadata ?? {});
 			logger.info(`Memory metadata updated: ${input.id}`);
 		}
@@ -575,7 +701,7 @@ async function memoryUpdateHandler(args: any): Promise<StandardResponse> {
 			'Memory updated successfully',
 			{
 				id: input.id,
-				reindexed: input.reindex && !!input.content,
+				reindexed: !!input.content,
 			},
 			{
 				duration_ms: Date.now() - startTime,
@@ -591,9 +717,20 @@ async function memoryUpdateHandler(args: any): Promise<StandardResponse> {
 }
 
 /**
- * Memory Delete Tool
+ * Handles the memory-delete MCP tool — deletes a single memory by UUID.
+ *
+ * Verifies the memory exists before deletion, then removes it from the Qdrant collection.
+ *
+ * @param args - Validated MemoryDeleteInput containing the memory UUID.
+ * @returns Promise resolving to StandardResponse with deleted memory id.
+ * @throws Never throws; returns notFoundError() if memory ID does not exist.
+ * @example
+ * ```typescript
+ * const result = await memoryDeleteHandler({ id: '550e8400-e29b-41d4-a716-446655440000' });
+ * // Returns: { success: true, data: { id: '550e8400...' } }
+ * ```
  */
-async function memoryDeleteHandler(args: any): Promise<StandardResponse> {
+async function memoryDeleteHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
 
 	try {
@@ -629,9 +766,22 @@ async function memoryDeleteHandler(args: any): Promise<StandardResponse> {
 }
 
 /**
- * Memory Batch Delete Tool
+ * Handles the memory-batch-delete MCP tool — deletes up to 100 memories in a single operation.
+ *
+ * Unlike memory-delete, silently succeeds for non-existent IDs. The returned `count` reflects
+ * the number of delete operations issued, not confirmed deletions (Qdrant returns success
+ * for non-existent point deletions).
+ *
+ * @param args - Validated MemoryBatchDeleteInput with ids array (1–100 UUIDs).
+ * @returns Promise resolving to StandardResponse with operation count and ids list.
+ * @throws Never throws; returns errorResponse() only on invalid input or Qdrant connection failure.
+ * @example
+ * ```typescript
+ * const result = await memoryBatchDeleteHandler({ ids: ['uuid1', 'uuid2'] });
+ * // Returns: { success: true, data: { count: 2, ids: ['uuid1', 'uuid2'] } }
+ * ```
  */
-async function memoryBatchDeleteHandler(args: any): Promise<StandardResponse> {
+async function memoryBatchDeleteHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
 
 	try {
@@ -662,9 +812,22 @@ async function memoryBatchDeleteHandler(args: any): Promise<StandardResponse> {
 }
 
 /**
- * Memory Status Tool (combines server health + collection statistics)
+ * Handles the memory-status MCP tool — returns server health, collection statistics, and optional embedding cost data.
+ *
+ * Retrieves Qdrant collection stats (points count, segments, indexing status), counts memories
+ * by type (episodic/short-term/long-term), optionally workspace-scoped, and includes embedding API
+ * statistics (calls, tokens, costs, cache hit rate) when requested.
+ *
+ * @param args - Validated MemoryStatusInput with optional workspace filter and embedding stats flag.
+ * @returns Promise resolving to StandardResponse with server name, timestamp, collection health, type counts, and optional embedding stats.
+ * @throws Never throws; returns errorResponse() on invalid input or Qdrant connection failure.
+ * @example
+ * ```typescript
+ * const result = await memoryStatusHandler({ include_embedding_stats: true });
+ * // Returns: { success: true, data: { server: 'mcp-memory', collection: {...}, by_type: {...}, embeddings: {...} } }
+ * ```
  */
-async function memoryStatusHandler(args: any): Promise<StandardResponse> {
+async function memoryStatusHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
 
 	try {
@@ -674,19 +837,21 @@ async function memoryStatusHandler(args: any): Promise<StandardResponse> {
 		// Get Qdrant stats
 		const qdrantStats = await qdrantService.getStats();
 
-		// Count by workspace if specified
-		let workspaceCount: number | undefined;
-		if (input.workspace !== undefined) {
-			workspaceCount = await qdrantService.count({
-				workspace: input.workspace,
-			});
-		}
+		// Count by memory type (scoped to workspace if provided)
+		const typeFilter = input.workspace !== undefined ? { workspace: input.workspace } : {};
 
-		// Count by memory type
+		// Parallelize count operations (workspace count + type counts)
+		const [workspaceCount, episodic, shortTerm, longTerm] = await Promise.all([
+			input.workspace !== undefined ? qdrantService.count({ workspace: input.workspace }) : Promise.resolve(undefined),
+			qdrantService.count({ memory_type: 'episodic', ...typeFilter }),
+			qdrantService.count({ memory_type: 'short-term', ...typeFilter }),
+			qdrantService.count({ memory_type: 'long-term', ...typeFilter }),
+		]);
+
 		const typeCounts = {
-			episodic: await qdrantService.count({ memory_type: 'episodic' }),
-			short_term: await qdrantService.count({ memory_type: 'short-term' }),
-			long_term: await qdrantService.count({ memory_type: 'long-term' }),
+			episodic,
+			short_term: shortTerm,
+			long_term: longTerm,
 		};
 
 		// Get embedding stats if requested
@@ -708,6 +873,7 @@ async function memoryStatusHandler(args: any): Promise<StandardResponse> {
 					segments_count: qdrantStats.segments_count,
 					status: qdrantStats.status,
 					optimizer_status: qdrantStats.optimizer_status,
+					access_tracking_failures: qdrantStats.access_tracking_failures,
 				},
 				workspace: input.workspace
 					? {
@@ -732,9 +898,21 @@ async function memoryStatusHandler(args: any): Promise<StandardResponse> {
 }
 
 /**
- * Memory Count Tool
+ * Handles the memory-count MCP tool — counts memories matching optional filter criteria.
+ *
+ * Returns the total count of memories in the collection, optionally filtered by workspace,
+ * memory_type, confidence threshold, or tags. Useful for checking capacity without loading records.
+ *
+ * @param args - Validated MemoryCountInput with optional filter (workspace, memory_type, min_confidence, tags).
+ * @returns Promise resolving to StandardResponse with count and filter summary.
+ * @throws Never throws; returns errorResponse() on invalid input or query failure.
+ * @example
+ * ```typescript
+ * const result = await memoryCountHandler({ filter: { memory_type: 'long-term', workspace: 'default' } });
+ * // Returns: { success: true, data: { count: 42, filter: {...} } }
+ * ```
  */
-async function memoryCountHandler(args: any): Promise<StandardResponse> {
+async function memoryCountHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
 
 	try {
@@ -798,7 +976,7 @@ export const memoryTools: MCPTool[] = [
 	{
 		name: 'memory-update',
 		description:
-      'Update memory content or metadata. Can optionally reindex content with new embeddings',
+      'Update memory content or metadata. Content updates automatically trigger reindexing with new embeddings',
 		inputSchema: memorySchemas['memory-update'],
 		handler: memoryUpdateHandler,
 	},
@@ -810,7 +988,7 @@ export const memoryTools: MCPTool[] = [
 	},
 	{
 		name: 'memory-batch-delete',
-		description: 'Delete multiple memories by their IDs in a single operation',
+		description: 'Delete multiple memories by their IDs in a single operation. Returns the count of delete operations issued (not confirmed deletions).',
 		inputSchema: memorySchemas['memory-batch-delete'],
 		handler: memoryBatchDeleteHandler,
 	},

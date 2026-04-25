@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'development/**']
     tags-ignore: ['v*']
   pull_request:
     branches: [main]
@@ -25,13 +25,15 @@ jobs:
       - name: Enable corepack
         run: corepack enable
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: 'yarn'
 
       - name: Install dependencies
         run: yarn install --immutable
+        env:
+          HUSKY: '0'
 
       - name: Type check
         run: yarn typecheck
@@ -41,6 +43,7 @@ jobs:
 
   test:
     name: Test (Node ${{ matrix.node-version }})
+    needs: [validate]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -51,16 +54,21 @@ jobs:
       - name: Enable corepack
         run: corepack enable
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'yarn'
 
       - name: Install dependencies
         run: yarn install --immutable
+        env:
+          HUSKY: '0'
 
       - name: Test
-        run: yarn test
+        run: yarn test:coverage
+        env:
+          HUSKY: '0'
+          OPENAI_API_KEY: 'test-ci-key'
 
   build:
     name: Build
@@ -72,13 +80,15 @@ jobs:
       - name: Enable corepack
         run: corepack enable
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: 'yarn'
 
       - name: Install dependencies
         run: yarn install --immutable
+        env:
+          HUSKY: '0'
 
       - name: Build
         run: yarn build

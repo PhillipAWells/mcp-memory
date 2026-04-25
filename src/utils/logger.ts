@@ -9,7 +9,20 @@
 import { Logger, LogLevel, StderrTransport } from '@pawells/logger';
 import { config } from '../config.js';
 
-const level = (config.server.logLevel as LogLevel) || LogLevel.INFO;
+/**
+ * Map configuration log level string to LogLevel enum value.
+ * Configuration is validated by Zod, so the config.server.logLevel is guaranteed
+ * to be one of these values. This mapping ensures type safety without unsafe casts.
+ */
+const levelMap: Record<string, LogLevel> = {
+	debug: LogLevel.DEBUG,
+	info: LogLevel.INFO,
+	warn: LogLevel.WARN,
+	error: LogLevel.ERROR,
+	silent: LogLevel.SILENT,
+};
+
+const level = levelMap[config.server.logLevel] ?? LogLevel.INFO;
 
 /**
  * Singleton logger instance, configured from environment variables.

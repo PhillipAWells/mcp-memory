@@ -113,8 +113,12 @@ export default [
           overrides: { constructors: 'no-public' },
         },
       ],
-      '@typescript-eslint/no-explicit-any': 'off',       // codebase uses `any` intentionally
+      '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-inferrable-types': 'off',   // verbose but harmless
+      '@typescript-eslint/consistent-type-imports': [
+        'error',
+        { fixStyle: 'separate-type-imports' },
+      ],
 
       // ---- TypeScript: type-checked rules (require parserOptions.project) ----
       '@typescript-eslint/prefer-nullish-coalescing': 'warn',
@@ -246,7 +250,7 @@ export default [
       'prefer-arrow-callback': 'warn',
       'no-param-reassign': ['warn', { props: false }],
       'prefer-rest-params': 'warn',
-      'require-await': 'warn',
+      'require-await': 'error',
 
       // ---- Best practices: error handling ----
       'no-throw-literal': 'error',
@@ -311,6 +315,14 @@ export default [
       '@stylistic/max-len': 'off',
     },
   },
+
+  // ============================================
+  // VITEST FILES
+  // ============================================
+  // TODO: eslint-plugin-vitest is currently incompatible with @typescript-eslint v8+.
+  // When a compatible version is released, add the plugin and enable Vitest-specific rules
+  // (e.g., no-disabled-tests, no-focused-tests, valid-expect).
+  // See comments in eslint.config.mjs for integration steps.
 
   // ============================================
   // TEST FILES — relaxed rules

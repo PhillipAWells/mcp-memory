@@ -19,8 +19,9 @@ const TAG_MAX_LENGTH = 50;
 const TAGS_MAX_COUNT = 20;
 const CONTENT_MAX_LENGTH = 100_000;
 const QUERY_MAX_LENGTH = 10_000;
+const QUERY_RESULT_LIMIT_MAX = 100;
 const LIST_LIMIT_MAX = 1_000;
-const RESULT_LIMIT_MAX = 100;
+const DEFAULT_LIST_LIMIT = 100;
 const HNSW_EF_MIN = 64;
 const HNSW_EF_MAX = 512;
 const DEFAULT_RESULT_LIMIT = 10;
@@ -28,13 +29,13 @@ const BATCH_DELETE_MAX = 100;
 
 /**
  * Zod enum for the three supported memory classification types.
- * - `episodic`   — session-specific experiences (auto-expires in 90 days)
  * - `short-term` — volatile working context (auto-expires in 7 days)
+ * - `episodic`   — session-specific experiences (auto-expires in 90 days)
  * - `long-term`  — persistent facts, concepts, and workflows (no expiry)
  */
 const MemoryTypeSchema = z.enum([
-	'episodic',
 	'short-term',
+	'episodic',
 	'long-term',
 ]);
 
@@ -100,7 +101,7 @@ export const MemoryQueryInputSchema = z.object({
 		})
 		.optional(),
 	/** Maximum number of results to return (1–100, default 10). */
-	limit: z.number().int().min(1).max(RESULT_LIMIT_MAX).optional().default(DEFAULT_RESULT_LIMIT),
+	limit: z.number().int().min(1).max(QUERY_RESULT_LIMIT_MAX).optional().default(DEFAULT_RESULT_LIMIT),
 	/** Number of results to skip for pagination (default 0). */
 	offset: z.number().int().min(0).optional().default(0),
 	/** Minimum cosine similarity score in [0, 1] required for a result to be included. */
@@ -144,7 +145,7 @@ export const MemoryListInputSchema = z.object({
 		})
 		.optional(),
 	/** Maximum number of memories to return per page (1–1 000, default 100). */
-	limit: z.number().int().min(1).max(LIST_LIMIT_MAX).optional().default(RESULT_LIMIT_MAX),
+	limit: z.number().int().min(1).max(LIST_LIMIT_MAX).optional().default(DEFAULT_LIST_LIMIT),
 	/** Number of memories to skip for pagination (default 0). */
 	offset: z.number().int().min(0).optional().default(0),
 	/** Field to sort results by (default `'created_at'`). */
@@ -175,26 +176,21 @@ export type MemoryGetInput = z.infer<typeof MemoryGetInputSchema>;
  * Input schema for the `memory-update` tool.
  *
  * At least one of `content` or `metadata` must be provided (enforced by
- * the handler, not the schema).  Setting `reindex: true` regenerates
- * embeddings for the new content and overwrites the point atomically.
+ * the handler, not the schema). When content is provided, embeddings are
+ * automatically regenerated and the point is overwritten atomically.
  */
 export const MemoryUpdateInputSchema = z.object({
 	/** UUID of the memory to update. */
 	id: z.string().uuid(),
-	/** Replacement content (1–100 000 characters). Required when `reindex` is `true`. */
+	/** Replacement content (1–100 000 characters). When provided, embeddings are regenerated. */
 	content: z.string().min(1).max(CONTENT_MAX_LENGTH).optional(),
 	/** Metadata fields to merge into the existing payload. */
 	metadata: MetadataInputSchema.optional(),
 	/**
-   * When `true`, regenerate embeddings from `content` and overwrite the
-   * existing Qdrant point (upsert-first, no delete risk).  Default `false`.
-   */
-	reindex: z.boolean().optional().default(false),
-	/**
-	   * When `true` (default), content longer than 1 000 characters is split into
-	   * overlapping chunks, each stored as a separate point that shares a
-	   * `chunk_group_id`.
-	   */
+	 * When `true` (default), content longer than 1 000 characters is split into
+	 * overlapping chunks, each stored as a separate point that shares a
+	 * `chunk_group_id`.
+	 */
 	auto_chunk: z.boolean().optional().default(true),
 });
 
@@ -235,8 +231,8 @@ export const MemoryStatusInputSchema = z.object({
    * Use `null` to query memories with no workspace.
    */
 	workspace: workspaceFieldSchema,
-	/** When `true` (default), include embedding cache and cost statistics. */
-	include_embedding_stats: z.boolean().optional().default(true),
+	/** When `true`, include embedding cache and cost statistics (default `false`). */
+	include_embedding_stats: z.boolean().optional().default(false),
 });
 
 /** Type-safe input for the `memory-status` tool, inferred from {@link MemoryStatusInputSchema}. */
