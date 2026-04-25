@@ -45,8 +45,22 @@ const MAX_IN_MEMORY_SORT_COUNT = 10000;
  */
 
 /**
- * Check content for secrets. Returns an error StandardResponse if unsafe, null if safe.
- * Logs a warning for low/medium-confidence detections that don't block storage.
+ * Checks content for secrets and sensitive information before storage.
+ *
+ * Uses a two-path logic: high-confidence detections (API keys, private keys, etc.) block storage
+ * immediately; low/medium-confidence patterns (passwords, tokens) block only if 3+ distinct matches
+ * are found. Medium-confidence matches without a block threshold log warnings for transparency.
+ *
+ * @param content - The content string to check for sensitive patterns.
+ * @param idContext - Optional memory ID for error reporting context.
+ * @returns An error StandardResponse if unsafe content is detected (safe=false), null if storage is permitted.
+ * @example
+ * ```typescript
+ * const error = checkContentSecrets('API key: sk-abc123...');
+ * if (error) {
+ *   logger.warn('Storage blocked:', error.message);
+ * }
+ * ```
  */
 function checkContentSecrets(content: string, idContext?: string): StandardResponse | null {
 	const safetyCheck = isSafeToStore(content);
@@ -77,6 +91,21 @@ function checkContentSecrets(content: string, idContext?: string): StandardRespo
 	return null;
 }
 
+/**
+ * Handles the memory-store MCP tool — embeds and stores a memory, with automatic chunking for large content.
+ *
+ * Validates input, checks for secrets, auto-detects workspace, applies expiry based on memory_type,
+ * and either stores as a single point or chunks long content (>1000 chars) across multiple embeddings.
+ *
+ * @param args - Validated MemoryStoreInput containing content, optional metadata, and auto_chunk flag.
+ * @returns Promise resolving to a StandardResponse with stored memory ID(s) and metadata, or error.
+ * @throws Never throws; returns errorResponse() on validation failure, secrets detection, or storage failure.
+ * @example
+ * ```typescript
+ * const result = await memoryStoreHandler({ content: 'TypeScript uses structural typing.' });
+ * // Returns: { success: true, data: { id: 'uuid', memory_type: 'long-term', workspace: 'default' } }
+ * ```
+ */
 async function memoryStoreHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
 
@@ -144,6 +173,13 @@ async function memoryStoreHandler(args: unknown): Promise<StandardResponse> {
 			}));
 
 			const batchResult = await qdrantService.batchUpsert(points);
+			if (batchResult.failedPoints.length > 0) {
+				return errorResponse(
+					`Failed to store ${batchResult.failedPoints.length} chunks`,
+					'EXECUTION_ERROR',
+					`Failed point IDs: ${batchResult.failedPoints.join(', ')}`,
+				);
+			}
 			const ids = batchResult.successfulIds;
 
 			logger.info(`Memory stored: ${ids.length} chunks`);
@@ -175,7 +211,19 @@ async function memoryStoreHandler(args: unknown): Promise<StandardResponse> {
 }
 
 /**
- * Memory Query Tool
+ * Handles the memory-query MCP tool — searches memories by natural-language semantic similarity.
+ *
+ * Generates dual embeddings (small+large), searches via vector similarity with optional hybrid search
+ * (RRF fusion of dense vectors and full-text index), and auto-injects workspace filter to match store behavior.
+ *
+ * @param args - Validated MemoryQueryInput with query string, optional filters, and search options.
+ * @returns Promise resolving to StandardResponse with ranked results array (id, content, score, metadata).
+ * @throws Never throws; returns errorResponse() on invalid input or search failure; rejects hybrid search with pagination.
+ * @example
+ * ```typescript
+ * const result = await memoryQueryHandler({ query: 'how to use async/await', limit: 10 });
+ * // Returns: { success: true, data: { results: [...], count: 3, query: '...' } }
+ * ```
  */
 async function memoryQueryHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
@@ -200,6 +248,8 @@ async function memoryQueryHandler(args: unknown): Promise<StandardResponse> {
 		if (filter === undefined || filter.workspace === undefined) {
 			if (detected.workspace !== null && detected.workspace !== undefined) {
 				logger.debug(`Auto-injecting workspace filter: ${detected.workspace}`);
+			} else {
+				logger.warn('No workspace detected; query will be limited to memories with null workspace');
 			}
 		}
 
@@ -252,7 +302,21 @@ async function memoryQueryHandler(args: unknown): Promise<StandardResponse> {
 }
 
 /**
- * Memory List Tool
+ * Handles the memory-list MCP tool — browses memories with pagination, filtering, and sorting.
+ *
+ * Fetches matching records from Qdrant with optional filtering by workspace/memory_type/tags,
+ * sorts in-memory by requested field (created_at/updated_at/access_count/confidence),
+ * and returns paginated results with content previews. Large result sets (>10,000 records) are
+ * truncated with a warning; use filters to narrow results.
+ *
+ * @param args - Validated MemoryListInput with filter, sort_by, sort_order, limit, and offset.
+ * @returns Promise resolving to StandardResponse with memories array (truncated content), total_count, and pagination metadata.
+ * @throws Never throws; returns errorResponse() on invalid input or query failure.
+ * @example
+ * ```typescript
+ * const result = await memoryListHandler({ limit: 20, offset: 0, sort_by: 'created_at', sort_order: 'desc' });
+ * // Returns: { success: true, data: { memories: [...], count: 20, total_count: 150, limit: 20, offset: 0 } }
+ * ```
  */
 async function memoryListHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
@@ -384,7 +448,18 @@ async function memoryListHandler(args: unknown): Promise<StandardResponse> {
 }
 
 /**
- * Memory Get Tool
+ * Handles the memory-get MCP tool — retrieves a single memory by UUID with full content.
+ *
+ * Looks up the memory point by ID in Qdrant and returns complete content and metadata.
+ *
+ * @param args - Validated MemoryGetInput containing the memory UUID.
+ * @returns Promise resolving to StandardResponse with id, full content, and metadata if found.
+ * @throws Never throws; returns notFoundError() if memory ID does not exist.
+ * @example
+ * ```typescript
+ * const result = await memoryGetHandler({ id: '550e8400-e29b-41d4-a716-446655440000' });
+ * // Returns: { success: true, data: { id: '550e8400...', content: '...', metadata: {...} } }
+ * ```
  */
 async function memoryGetHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
@@ -422,7 +497,21 @@ async function memoryGetHandler(args: unknown): Promise<StandardResponse> {
 }
 
 /**
- * Memory Update Tool
+ * Handles the memory-update MCP tool — updates memory content and/or metadata with automatic re-chunking.
+ *
+ * Validates that at least one of content or metadata is provided, checks for secrets in new content,
+ * and handles transparent re-chunking of chunked memories. Content updates trigger re-embedding and
+ * re-indexing; metadata-only updates are atomic. Chunked memories (from store) are re-chunked as a unit
+ * and sibling chunks are synchronized.
+ *
+ * @param args - Validated MemoryUpdateInput with id (required), optional new content and/or metadata.
+ * @returns Promise resolving to StandardResponse with updated memory id, reindex status, and (if rechunked) chunk counts.
+ * @throws Never throws; returns notFoundError() if memory does not exist, errorResponse() on validation or update failure.
+ * @example
+ * ```typescript
+ * const result = await memoryUpdateHandler({ id: 'uuid', content: 'Updated content' });
+ * // Returns: { success: true, data: { id: 'uuid', reindexed: true } }
+ * ```
  */
 async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
@@ -476,6 +565,11 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 
 				const mergedMetadata = { ...baseMetadata, ...input.metadata };
 
+				// Normalize workspace to lowercase for consistent storage
+				if (mergedMetadata.workspace !== null && mergedMetadata.workspace !== undefined) {
+					mergedMetadata.workspace = workspaceDetector.normalize(mergedMetadata.workspace);
+				}
+
 				// Decide: chunk the new content or store as single?
 				if (input.auto_chunk && input.content.length > config.memory.chunkSize) {
 					const chunked = await embeddingService.generateChunkedEmbeddings(input.content);
@@ -495,6 +589,13 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 					}));
 
 					const batchResult = await qdrantService.batchUpsert(points);
+					if (batchResult.failedPoints.length > 0) {
+						return errorResponse(
+							`Failed to update ${batchResult.failedPoints.length} chunks`,
+							'EXECUTION_ERROR',
+							`Failed point IDs: ${batchResult.failedPoints.join(', ')}`,
+						);
+					}
 					const newIds = batchResult.successfulIds;
 
 					logger.info(`Chunked memory updated: re-stored ${newIds.length} chunks (deleted ${siblingIds.length} old chunks)`);
@@ -535,9 +636,9 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 			if (chunkGroupId) {
 				const siblings = await qdrantService.list({ metadata: { chunk_group_id: chunkGroupId } });
 
-				for (const sibling of siblings) {
-					await qdrantService.updatePayload(sibling.id, input.metadata ?? {});
-				}
+				await Promise.all(
+					siblings.map(sibling => qdrantService.updatePayload(sibling.id, input.metadata ?? {})),
+				);
 
 				logger.info(`Updated metadata across ${siblings.length} chunk siblings`);
 
@@ -616,7 +717,18 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 }
 
 /**
- * Memory Delete Tool
+ * Handles the memory-delete MCP tool — deletes a single memory by UUID.
+ *
+ * Verifies the memory exists before deletion, then removes it from the Qdrant collection.
+ *
+ * @param args - Validated MemoryDeleteInput containing the memory UUID.
+ * @returns Promise resolving to StandardResponse with deleted memory id.
+ * @throws Never throws; returns notFoundError() if memory ID does not exist.
+ * @example
+ * ```typescript
+ * const result = await memoryDeleteHandler({ id: '550e8400-e29b-41d4-a716-446655440000' });
+ * // Returns: { success: true, data: { id: '550e8400...' } }
+ * ```
  */
 async function memoryDeleteHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
@@ -654,12 +766,20 @@ async function memoryDeleteHandler(args: unknown): Promise<StandardResponse> {
 }
 
 /**
- * Batch delete memories by ID.
+ * Handles the memory-batch-delete MCP tool — deletes up to 100 memories in a single operation.
  *
- * Unlike `memory-delete`, this tool silently succeeds for non-existent IDs.
- * The returned `count` reflects the number of delete operations issued,
- * not the number of memories actually deleted (Qdrant returns success
+ * Unlike memory-delete, silently succeeds for non-existent IDs. The returned `count` reflects
+ * the number of delete operations issued, not confirmed deletions (Qdrant returns success
  * for non-existent point deletions).
+ *
+ * @param args - Validated MemoryBatchDeleteInput with ids array (1–100 UUIDs).
+ * @returns Promise resolving to StandardResponse with operation count and ids list.
+ * @throws Never throws; returns errorResponse() only on invalid input or Qdrant connection failure.
+ * @example
+ * ```typescript
+ * const result = await memoryBatchDeleteHandler({ ids: ['uuid1', 'uuid2'] });
+ * // Returns: { success: true, data: { count: 2, ids: ['uuid1', 'uuid2'] } }
+ * ```
  */
 async function memoryBatchDeleteHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
@@ -692,7 +812,20 @@ async function memoryBatchDeleteHandler(args: unknown): Promise<StandardResponse
 }
 
 /**
- * Memory Status Tool (combines server health + collection statistics)
+ * Handles the memory-status MCP tool — returns server health, collection statistics, and optional embedding cost data.
+ *
+ * Retrieves Qdrant collection stats (points count, segments, indexing status), counts memories
+ * by type (episodic/short-term/long-term), optionally workspace-scoped, and includes embedding API
+ * statistics (calls, tokens, costs, cache hit rate) when requested.
+ *
+ * @param args - Validated MemoryStatusInput with optional workspace filter and embedding stats flag.
+ * @returns Promise resolving to StandardResponse with server name, timestamp, collection health, type counts, and optional embedding stats.
+ * @throws Never throws; returns errorResponse() on invalid input or Qdrant connection failure.
+ * @example
+ * ```typescript
+ * const result = await memoryStatusHandler({ include_embedding_stats: true });
+ * // Returns: { success: true, data: { server: 'mcp-memory', collection: {...}, by_type: {...}, embeddings: {...} } }
+ * ```
  */
 async function memoryStatusHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();
@@ -765,7 +898,19 @@ async function memoryStatusHandler(args: unknown): Promise<StandardResponse> {
 }
 
 /**
- * Memory Count Tool
+ * Handles the memory-count MCP tool — counts memories matching optional filter criteria.
+ *
+ * Returns the total count of memories in the collection, optionally filtered by workspace,
+ * memory_type, confidence threshold, or tags. Useful for checking capacity without loading records.
+ *
+ * @param args - Validated MemoryCountInput with optional filter (workspace, memory_type, min_confidence, tags).
+ * @returns Promise resolving to StandardResponse with count and filter summary.
+ * @throws Never throws; returns errorResponse() on invalid input or query failure.
+ * @example
+ * ```typescript
+ * const result = await memoryCountHandler({ filter: { memory_type: 'long-term', workspace: 'default' } });
+ * // Returns: { success: true, data: { count: 42, filter: {...} } }
+ * ```
  */
 async function memoryCountHandler(args: unknown): Promise<StandardResponse> {
 	const startTime = Date.now();

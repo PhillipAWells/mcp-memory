@@ -1654,6 +1654,7 @@ describe('memory-update - validation', () => {
 
 		expect(result.success).toBe(false);
 		expect(result.metadata?.error_code).toBe('SECRETS_DETECTED');
+		expect(mockQdrant.get).not.toHaveBeenCalled();
 	});
 
 	it('does not call get when secrets detected', async () => {

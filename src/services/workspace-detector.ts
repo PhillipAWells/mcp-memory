@@ -318,7 +318,7 @@ export class WorkspaceDetectorService {
 			return null;
 		}
 
-		return workspace.toLowerCase();
+		return workspace.toLowerCase().trim();
 	}
 
 	/**
