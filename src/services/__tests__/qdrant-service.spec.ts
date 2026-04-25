@@ -144,7 +144,9 @@ describe('QdrantService.buildFilter (via count)', () => {
 	it('includes workspace condition when workspace filter is set', async () => {
 		await service.count({ workspace: 'my-ws' });
 		const [, args] = mockClient.count.mock.calls[0] as unknown[];
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const conditions = (args as any).filter.must;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const workspaceCond = conditions.find((c: any) => c.key === 'workspace');
 		expect(workspaceCond).toBeDefined();
 		expect(workspaceCond.match.value).toBe('my-ws');
@@ -153,7 +155,9 @@ describe('QdrantService.buildFilter (via count)', () => {
 	it('includes memory_type condition when filter is set', async () => {
 		await service.count({ memory_type: 'episodic' });
 		const [, args] = mockClient.count.mock.calls[0] as unknown[];
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const conditions = (args as any).filter.must;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const typeCond = conditions.find((c: any) => c.key === 'memory_type');
 		expect(typeCond?.match.value).toBe('episodic');
 	});
@@ -161,7 +165,9 @@ describe('QdrantService.buildFilter (via count)', () => {
 	it('includes min_confidence range condition', async () => {
 		await service.count({ min_confidence: 0.8 });
 		const [, args] = mockClient.count.mock.calls[0] as unknown[];
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const conditions = (args as any).filter.must;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const confCond = conditions.find((c: any) => c.key === 'confidence');
 		expect(confCond?.range.gte).toBe(0.8);
 	});
@@ -169,7 +175,9 @@ describe('QdrantService.buildFilter (via count)', () => {
 	it('includes tags any-match condition', async () => {
 		await service.count({ tags: ['foo', 'bar'] });
 		const [, args] = mockClient.count.mock.calls[0] as unknown[];
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const conditions = (args as any).filter.must;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const tagCond = conditions.find((c: any) => c.key === 'tags');
 		expect(tagCond?.match.any).toEqual(['foo', 'bar']);
 	});
@@ -177,7 +185,9 @@ describe('QdrantService.buildFilter (via count)', () => {
 	it('always adds expires_at exclusion condition', async () => {
 		await service.count({});
 		const [, args] = mockClient.count.mock.calls[0] as unknown[];
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const conditions = (args as any).filter.must;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const expiryCond = conditions.find((c: any) => 'should' in c);
 		expect(expiryCond).toBeDefined();
 		expect(expiryCond.should).toHaveLength(2);
@@ -186,7 +196,9 @@ describe('QdrantService.buildFilter (via count)', () => {
 	it('includes custom metadata key-value conditions', async () => {
 		await service.count({ metadata: { chunk_group_id: 'abc-123' } });
 		const [, args] = mockClient.count.mock.calls[0] as unknown[];
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const conditions = (args as any).filter.must;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const metaCond = conditions.find((c: any) => c.key === 'chunk_group_id');
 		expect(metaCond?.match.value).toBe('abc-123');
 	});
@@ -404,6 +416,7 @@ describe('QdrantService.get (access tracking)', () => {
 
 			// Verify setPayload includes a new last_accessed_at timestamp
 			const [, setPayloadArgs] = mockClient.setPayload.mock.calls[0] as unknown[];
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			const payload = (setPayloadArgs as any).payload as any;
 
 			expect(payload.last_accessed_at).toBeDefined();
@@ -503,6 +516,7 @@ describe('QdrantService.upsert', () => {
 
 		const _afterCall = new Date().toISOString();
 		const calls = mockClient.upsert.mock.calls[0] as unknown[];
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const point = (calls[1] as any).points[0] as any;
 		const createdAt = point.payload.created_at;
 		const updatedAt = point.payload.updated_at;
@@ -519,6 +533,7 @@ describe('QdrantService.upsert', () => {
 		await service.upsert('content', vector, { updated_at: providedTimestamp });
 
 		const calls = mockClient.upsert.mock.calls[0] as unknown[];
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const point = (calls[1] as any).points[0] as any;
 		const actualUpdatedAt = point.payload.updated_at;
 
@@ -532,6 +547,7 @@ describe('QdrantService.upsert', () => {
 		await service.upsert('content', vector, {});
 
 		const calls = mockClient.upsert.mock.calls[0] as unknown[];
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const point = (calls[1] as any).points[0] as any;
 
 		expect(point.payload.memory_type).toBe('long-term');
@@ -1254,6 +1270,7 @@ describe('QdrantService access tracking with rate-limit guard', () => {
 			await vi.runAllTimersAsync();
 
 			const calls = mockClient.setPayload.mock.calls[0] as unknown[];
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			const payload = (calls[1] as any).payload as any;
 
 			expect(payload.last_accessed_at).toBeDefined();

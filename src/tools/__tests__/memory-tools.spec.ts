@@ -3,6 +3,7 @@
  *
  * Services (qdrant, embedding, workspace) are mocked so no network calls are made.
  */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
@@ -1035,7 +1036,7 @@ describe('memory-store - memory_type and expires_at', () => {
 
 		expect(result.success).toBe(true);
 		const calls = mockQdrant.upsert.mock.calls as unknown as [string, unknown, Record<string, unknown>][];
-		const metadata = calls[0][2];
+		const [[, , metadata]] = calls;
 		expect(metadata?.expires_at).toBeDefined();
 	});
 
@@ -1049,7 +1050,7 @@ describe('memory-store - memory_type and expires_at', () => {
 
 		expect(result.success).toBe(true);
 		const calls = mockQdrant.upsert.mock.calls as unknown as [string, unknown, Record<string, unknown>][];
-		const metadata = calls[0][2];
+		const [[, , metadata]] = calls;
 		expect(metadata?.expires_at).toBeDefined();
 	});
 
@@ -1063,7 +1064,7 @@ describe('memory-store - memory_type and expires_at', () => {
 
 		expect(result.success).toBe(true);
 		const calls = mockQdrant.upsert.mock.calls as unknown as [string, unknown, Record<string, unknown>][];
-		const metadata = calls[0][2];
+		const [[, , metadata]] = calls;
 		expect(metadata?.expires_at).toBeUndefined();
 	});
 
@@ -1079,7 +1080,7 @@ describe('memory-store - memory_type and expires_at', () => {
 
 		expect(result.success).toBe(true);
 		const calls = mockQdrant.upsert.mock.calls as unknown as [string, unknown, Record<string, unknown>][];
-		const metadata = calls[0][2];
+		const [[, , metadata]] = calls;
 		expect(metadata?.expires_at).toBe(customExpiry);
 	});
 
@@ -1620,7 +1621,7 @@ describe('memory-update - validation', () => {
 		});
 
 		const calls = mockQdrant.upsert.mock.calls as unknown as [string, unknown, Record<string, unknown>][];
-		const metadata = calls[0][2];
+		const [[, , metadata]] = calls;
 		expect(metadata?.confidence).toBe(0.8);
 		expect(metadata?.tags).toEqual(['old-tag']);
 	});
@@ -1642,7 +1643,7 @@ describe('memory-update - validation', () => {
 		});
 
 		const calls = mockQdrant.upsert.mock.calls as unknown as [string, unknown, Record<string, unknown>][];
-		const metadata = calls[0][2];
+		const [[, , metadata]] = calls;
 		expect(metadata?.confidence).toBe(0.95);
 	});
 
@@ -2457,7 +2458,7 @@ describe('memory-list - sorting edge cases', () => {
 	});
 
 	it('applies pagination without in-memory sort for created_at', async () => {
-		const now = new Date().toISOString();
+		const _now = new Date().toISOString();
 		const memories = Array.from({ length: 15 }, (_, i) => ({
 			id: `mem-${i}`,
 			content: `memory ${i}`,
@@ -2670,7 +2671,7 @@ describe('memory-update - non-chunked content update', () => {
 		});
 
 		const calls = mockQdrant.upsert.mock.calls as unknown as [string, unknown[], Record<string, unknown>][];
-		const metadata = calls[0][2];
+		const [[, , metadata]] = calls;
 		expect(metadata?.confidence).toBe(0.9); // New value overrides
 		expect(metadata?.tags).toEqual(['old']); // Old value preserved
 	});
@@ -2688,7 +2689,7 @@ describe('memory-update - non-chunked content update', () => {
 		});
 
 		const calls = mockQdrant.upsert.mock.calls as unknown as [string, unknown[], Record<string, unknown>][];
-		const metadata = calls[0][2];
+		const [[, , metadata]] = calls;
 		expect(metadata?.id).toBe(VALID_UUID);
 	});
 
@@ -3147,7 +3148,7 @@ describe('memory-query - result structure validation', () => {
 
 		expect(result.success).toBe(true);
 		expect((result.data as any).results).toHaveLength(1);
-		const item = (result.data as any).results[0];
+		const [item] = (result.data as any).results;
 		expect(item.id).toBe('test-id');
 		expect(item.content).toBe('test content');
 		expect(item.score).toBe(0.95);
@@ -3303,7 +3304,7 @@ describe('memory-store - metadata passthrough', () => {
 		});
 
 		const calls = mockQdrant.upsert.mock.calls as unknown as [string, unknown, Record<string, unknown>][];
-		const metadata = calls[0][2];
+		const [[, , metadata]] = calls;
 		expect(metadata?.custom_field).toBe('custom_value');
 	});
 
@@ -3804,7 +3805,7 @@ describe('memory-store - expires_at handling', () => {
 		});
 
 		const calls = mockQdrant.upsert.mock.calls as unknown as [string, unknown, Record<string, unknown>][];
-		const metadata = calls[0][2];
+		const [[, , metadata]] = calls;
 		expect(metadata?.expires_at).toBe(customExpiry);
 	});
 
@@ -3819,7 +3820,7 @@ describe('memory-store - expires_at handling', () => {
 		});
 
 		const calls = mockQdrant.upsert.mock.calls as unknown as [string, unknown, Record<string, unknown>][];
-		const metadata = calls[0][2];
+		const [[, , metadata]] = calls;
 		expect(metadata?.expires_at).toBeUndefined();
 	});
 });
@@ -3983,7 +3984,7 @@ describe('final coverage push', () => {
 		});
 
 		const calls = mockQdrant.upsert.mock.calls as unknown as [string, unknown, Record<string, unknown>][];
-		const metadata = calls[0][2];
+		const [[, , metadata]] = calls;
 		expect(metadata?.confidence).toBe(0.9); // New value takes precedence
 	});
 });
@@ -4368,7 +4369,7 @@ describe('coverage push - handler boundary behaviors', () => {
 		const result = await getTool('memory-list').handler({});
 
 		expect(result.success).toBe(true);
-		const memory = (result.data as any).memories[0];
+		const [memory] = (result.data as any).memories;
 		expect(memory.id).toBe('1');
 		expect(memory.content).toBeDefined();
 		expect(memory.metadata).toBeDefined();

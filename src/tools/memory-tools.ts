@@ -243,9 +243,9 @@ async function memoryQueryHandler(args: unknown): Promise<StandardResponse> {
 		}
 
 		// Auto-inject workspace to filter if not explicitly provided (match store behavior)
-		const filter = input.filter;
+		const { filter } = input;
 		const detected = workspaceDetector.detect();
-		if (filter === undefined || filter.workspace === undefined) {
+		if (filter?.workspace === undefined) {
 			if (detected.workspace !== null && detected.workspace !== undefined) {
 				logger.debug(`Auto-injecting workspace filter: ${detected.workspace}`);
 			} else {
@@ -261,7 +261,7 @@ async function memoryQueryHandler(args: unknown): Promise<StandardResponse> {
 			vectorLarge: dual.large,
 			filter: {
 				...filter,
-				...(filter === undefined || filter.workspace === undefined
+				...(filter?.workspace === undefined
 					? { workspace: detected.workspace }
 					: {}),
 			},
