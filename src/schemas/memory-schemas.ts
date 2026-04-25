@@ -231,8 +231,8 @@ export const MemoryStatusInputSchema = z.object({
    * Use `null` to query memories with no workspace.
    */
 	workspace: workspaceFieldSchema,
-	/** When `true` (default), include embedding cache and cost statistics. */
-	include_embedding_stats: z.boolean().optional().default(true),
+	/** When `true`, include embedding cache and cost statistics (default `false`). */
+	include_embedding_stats: z.boolean().optional().default(false),
 });
 
 /** Type-safe input for the `memory-status` tool, inferred from {@link MemoryStatusInputSchema}. */
