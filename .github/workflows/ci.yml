@@ -43,6 +43,7 @@ jobs:
 
   test:
     name: Test (Node ${{ matrix.node-version }})
+    needs: [validate]
     runs-on: ubuntu-latest
     strategy:
       matrix:
