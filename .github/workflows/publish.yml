@@ -2,7 +2,20 @@ name: Publish
 
 on:
   push:
+    branches: ['development/[0-9]*.[0-9]*']
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      prerelease_type:
+        description: 'Pre-release type'
+        required: false
+        type: choice
+        options:
+          - stable
+          - dev
+          - alpha
+          - beta
+          - rc
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -24,14 +37,14 @@ jobs:
       contents: write
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Enable corepack
         run: corepack enable
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: '24'
+          node-version: '22'
           registry-url: 'https://registry.npmjs.org'
           cache: 'yarn'
 
@@ -45,12 +58,51 @@ jobs:
         env:
           HUSKY: '0'
 
+      - name: Determine version and tag
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/tags/v* ]]; then
+            TAG="${{ github.ref_name }}"
+            VERSION="${TAG#v}"
+            if [[ "$VERSION" =~ - ]]; then
+              DIST_TAG="${VERSION##*-}"
+              DIST_TAG="${DIST_TAG%%.*}"
+              IS_PRERELEASE=true
+            else
+              DIST_TAG="latest"
+              IS_PRERELEASE=false
+            fi
+          elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/heads/development/* ]]; then
+            BRANCH="${{ github.ref_name }}"
+            VERSION="${BRANCH#development/}"
+            SHA="${{ github.sha }}"
+            SHORT_SHA="${SHA:0:7}"
+            VERSION="${VERSION}.0-dev.${SHORT_SHA}"
+            DIST_TAG="dev"
+            IS_PRERELEASE=true
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            PRERELEASE="${{ inputs.prerelease_type }}"
+            if [[ "$PRERELEASE" == "stable" ]]; then
+              VERSION="$(node -e "console.log(require('./package.json').version)")"
+              DIST_TAG="latest"
+              IS_PRERELEASE=false
+            else
+              VERSION="$(node -e "console.log(require('./package.json').version)")-${PRERELEASE}.$(date +%s)"
+              DIST_TAG="$PRERELEASE"
+              IS_PRERELEASE=true
+            fi
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "dist_tag=$DIST_TAG" >> $GITHUB_OUTPUT
+          echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+
       - name: Publish to npm
-        run: yarn npm publish --provenance --access public
+        run: yarn npm publish --provenance --access public --tag "${{ steps.version.outputs.dist_tag }}"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release
+        if: ${{ steps.version.outputs.is_prerelease == 'false' }}
         uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
