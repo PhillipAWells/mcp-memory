@@ -122,7 +122,7 @@ The MCP server exposes 9 tools to clients. All tools return `StandardResponse<T>
 
 3. **memory-list** — Browse memories with filtering, sorting, and pagination.
    - Key params: `filter` (workspace, memory_type, tags), `sort_by` (created_at | updated_at | access_count | confidence), `sort_order` (asc | desc), `limit` (default 100, max 1,000), `offset`.
-   - Returns: `{ memories: [{ id, content (preview), metadata }], count, limit, offset }`.
+   - Returns: `{ memories: [{ id, content (preview), metadata }], count, total_count, limit, offset }` where `count` is the page size and `total_count` is the total matching records.
 
 4. **memory-get** — Retrieve a single memory by its UUID.
    - Key params: `id` (required UUID).

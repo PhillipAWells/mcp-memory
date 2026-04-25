@@ -92,7 +92,9 @@ async function memoryStoreHandler(args: unknown): Promise<StandardResponse> {
 		const inputMeta = input.metadata ?? {};
 		let expiresAt = inputMeta.expires_at;
 
-		// Auto-set expires_at based on memory type (if not already provided)
+		// Auto-set expires_at based on memory type (if not already provided).
+		// Note: null from the caller means "explicitly no expiry" (skip auto-expiry logic);
+		// undefined means "not provided" (apply auto-expiry by type).
 		if (expiresAt === undefined) {
 			const memoryType = inputMeta.memory_type;
 			if (memoryType === 'episodic') {
@@ -181,8 +183,8 @@ async function memoryQueryHandler(args: unknown): Promise<StandardResponse> {
 	try {
 		const input = MemoryQueryInputSchema.parse(args);
 		const queryPreview = input.query.slice(0, QUERY_LOG_LENGTH);
-		const isTruncated = input.query.length > QUERY_LOG_LENGTH ? '...' : '';
-		logger.info(`Querying memory: "${queryPreview}${isTruncated}"`);
+		const truncationSuffix = input.query.length > QUERY_LOG_LENGTH ? '...' : '';
+		logger.info(`Querying memory: "${queryPreview}${truncationSuffix}"`);
 
 		// Hybrid search does not support pagination
 		if (input.use_hybrid_search && input.offset !== undefined && input.offset > 0) {
@@ -194,8 +196,8 @@ async function memoryQueryHandler(args: unknown): Promise<StandardResponse> {
 
 		// Auto-inject workspace to filter if not explicitly provided (match store behavior)
 		const filter = input.filter;
+		const detected = workspaceDetector.detect();
 		if (filter === undefined || filter.workspace === undefined) {
-			const detected = workspaceDetector.detect();
 			if (detected.workspace !== null && detected.workspace !== undefined) {
 				logger.debug(`Auto-injecting workspace filter: ${detected.workspace}`);
 			}
@@ -210,7 +212,7 @@ async function memoryQueryHandler(args: unknown): Promise<StandardResponse> {
 			filter: {
 				...filter,
 				...(filter === undefined || filter.workspace === undefined
-					? { workspace: workspaceDetector.detect().workspace }
+					? { workspace: detected.workspace }
 					: {}),
 			},
 			limit: input.limit,
@@ -364,6 +366,7 @@ async function memoryListHandler(args: unknown): Promise<StandardResponse> {
 					metadata: r.metadata,
 				})),
 				count: results.length,
+				total_count: totalCount,
 				limit: input.limit,
 				offset: input.offset,
 			},
@@ -431,7 +434,7 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 		// Validation: at least one of content or metadata must be provided
 		const hasMetadata = input.metadata && Object.keys(input.metadata).length > 0;
 		if (!input.content && !hasMetadata) {
-			return validationError('At least one of content or metadata must be provided');
+			return validationError('metadata must contain at least one field, or provide new content');
 		}
 
 		// Check for secrets if content is being updated
@@ -701,20 +704,21 @@ async function memoryStatusHandler(args: unknown): Promise<StandardResponse> {
 		// Get Qdrant stats
 		const qdrantStats = await qdrantService.getStats();
 
-		// Count by workspace if specified
-		let workspaceCount: number | undefined;
-		if (input.workspace !== undefined) {
-			workspaceCount = await qdrantService.count({
-				workspace: input.workspace,
-			});
-		}
-
 		// Count by memory type (scoped to workspace if provided)
 		const typeFilter = input.workspace !== undefined ? { workspace: input.workspace } : {};
+
+		// Parallelize count operations (workspace count + type counts)
+		const [workspaceCount, episodic, shortTerm, longTerm] = await Promise.all([
+			input.workspace !== undefined ? qdrantService.count({ workspace: input.workspace }) : Promise.resolve(undefined),
+			qdrantService.count({ memory_type: 'episodic', ...typeFilter }),
+			qdrantService.count({ memory_type: 'short-term', ...typeFilter }),
+			qdrantService.count({ memory_type: 'long-term', ...typeFilter }),
+		]);
+
 		const typeCounts = {
-			episodic: await qdrantService.count({ memory_type: 'episodic', ...typeFilter }),
-			short_term: await qdrantService.count({ memory_type: 'short-term', ...typeFilter }),
-			long_term: await qdrantService.count({ memory_type: 'long-term', ...typeFilter }),
+			episodic,
+			short_term: shortTerm,
+			long_term: longTerm,
 		};
 
 		// Get embedding stats if requested
