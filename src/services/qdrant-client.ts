@@ -97,14 +97,12 @@ interface SearchParams {
  * Collection statistics
  */
 interface CollectionStats {
-	vectors_count: number;
 	indexed_vectors_count: number;
 	points_count: number;
 	segments_count: number;
 	status: string;
 	optimizer_status: string;
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Qdrant API response contains arbitrary config
-	config: any;
+	config: unknown;
 	/** Cumulative count of access-tracking update failures since service start. */
 	access_tracking_failures: number;
 }
@@ -514,30 +512,20 @@ export class QdrantService {
 		}));
 
 		// Update access tracking (fire-and-forget)
-		const resultIds = results.map((r) => String(r.id));
-		if (resultIds.length > 0) {
-			this.updateAccessTracking(resultIds).catch((err: unknown) => {
-				this.accessTrackingFailureCount++;
-				// Rate-limit warning logs: only log if at least 10 seconds have passed
-				const now = Date.now();
-				if (now - this.lastTrackingWarningTime >= ACCESS_TRACKING_WARNING_INTERVAL_MS) {
-					this.lastTrackingWarningTime = now;
-					logger.warn(
-						`Failed to update access tracking (${this.accessTrackingFailureCount} total failures):`,
-						err,
-					);
-				}
-			});
-		}
+		this.trackAccess(results.map((r) => String(r.id)));
 
 		return results.map((r) => {
-			const payload = r.payload as unknown as Record<string, unknown>;
+			const payload = this.toQdrantPayload(r.payload) ?? {
+				content: '',
+				created_at: new Date().toISOString(),
+				updated_at: new Date().toISOString(),
+			};
 			return {
 				id: String(r.id),
-				...(typeof payload?.path === 'string' && payload.path ? { path: payload.path } : {}),
-				content: typeof payload?.content === 'string' ? payload.content : '',
+				...(typeof payload.path === 'string' && payload.path ? { path: payload.path } : {}),
+				content: typeof payload.content === 'string' ? payload.content : '',
 				score: r.score,
-				metadata: payload as unknown as QdrantPayload,
+				metadata: payload,
 			};
 		});
 	}
@@ -628,38 +616,29 @@ export class QdrantService {
 		});
 
 		// Sort by RRF score and take top results
+		// offset is always 0 here — values > 0 are rejected above
 		const sortedResults = Array.from(rrfScores.entries())
 			.sort((a, b) => b[1] - a[1])
-			.slice(params.offset ?? 0, (params.offset ?? 0) + limit)
+			.slice(0, limit)
 			.flatMap(([id, score]) => {
 				const point = pointsById.get(id);
 				if (!point) return [];
-				const payload = point.payload as unknown as Record<string, unknown>;
+				const payload = this.toQdrantPayload(point.payload) ?? {
+					content: '',
+					created_at: new Date().toISOString(),
+					updated_at: new Date().toISOString(),
+				};
 				return [{
 					id,
-					...(typeof payload?.path === 'string' && payload.path ? { path: payload.path } : {}),
-					content: typeof payload?.content === 'string' ? payload.content : '',
+					...(typeof payload.path === 'string' && payload.path ? { path: payload.path } : {}),
+					content: typeof payload.content === 'string' ? payload.content : '',
 					score,
-					metadata: payload as unknown as QdrantPayload,
+					metadata: payload,
 				}];
 			});
 
 		// Update access tracking (fire-and-forget)
-		const resultIds = sortedResults.map((r) => r.id);
-		if (resultIds.length > 0) {
-			this.updateAccessTracking(resultIds).catch((err: unknown) => {
-				this.accessTrackingFailureCount++;
-				// Rate-limit warning logs: only log if at least 10 seconds have passed
-				const now = Date.now();
-				if (now - this.lastTrackingWarningTime >= ACCESS_TRACKING_WARNING_INTERVAL_MS) {
-					this.lastTrackingWarningTime = now;
-					logger.warn(
-						`Failed to update access tracking (${this.accessTrackingFailureCount} total failures):`,
-						err,
-					);
-				}
-			});
-		}
+		this.trackAccess(sortedResults.map((r) => r.id));
 
 		logger.debug(
 			`Hybrid search with RRF: ${vectorResults.length} vector + ${textResults.points.length} text results → ${sortedResults.length} final`,
@@ -687,17 +666,19 @@ export class QdrantService {
 		const [point] = result;
 
 		// Update access tracking (fire-and-forget)
-		this.updateAccessTracking([id]).catch((err: unknown) =>
-			logger.warn('Failed to update access tracking:', err),
-		);
+		this.trackAccess([id]);
 
-		const payload = point.payload as unknown as Record<string, unknown>;
+		const payload = this.toQdrantPayload(point.payload) ?? {
+			content: '',
+			created_at: new Date().toISOString(),
+			updated_at: new Date().toISOString(),
+		};
 		return {
 			id: String(point.id),
-			...(typeof payload?.path === 'string' && payload.path ? { path: payload.path } : {}),
-			content: typeof payload?.content === 'string' ? payload.content : '',
+			...(typeof payload.path === 'string' && payload.path ? { path: payload.path } : {}),
+			content: typeof payload.content === 'string' ? payload.content : '',
 			score: 1.0,
-			metadata: payload as unknown as QdrantPayload,
+			metadata: payload,
 		};
 	}
 
@@ -750,13 +731,17 @@ export class QdrantService {
 		}));
 
 		return results.points.map((p) => {
-			const payload = p.payload as unknown as Record<string, unknown>;
+			const payload = this.toQdrantPayload(p.payload) ?? {
+				content: '',
+				created_at: new Date().toISOString(),
+				updated_at: new Date().toISOString(),
+			};
 			return {
 				id: String(p.id),
-				...(typeof payload?.path === 'string' && payload.path ? { path: payload.path } : {}),
-				content: typeof payload?.content === 'string' ? payload.content : '',
+				...(typeof payload.path === 'string' && payload.path ? { path: payload.path } : {}),
+				content: typeof payload.content === 'string' ? payload.content : '',
 				score: 1.0,
-				metadata: payload as unknown as QdrantPayload,
+				metadata: payload,
 			};
 		});
 	}
@@ -770,7 +755,6 @@ export class QdrantService {
 		const info = await withRetry(() => this.client.getCollection(this.collectionName));
 
 		return {
-			vectors_count: info.points_count ?? 0,
 			indexed_vectors_count: info.indexed_vectors_count ?? 0,
 			points_count: info.points_count ?? 0,
 			segments_count: info.segments_count ?? 0,
@@ -947,10 +931,50 @@ export class QdrantService {
 			}),
 		);
 	}
+	/**
+	 * Convert a Qdrant point payload to the typed QdrantPayload shape.
+	 * Safely narrows from unknown to the expected structure, returning null
+	 * if the payload is missing or invalid.
+	 *
+	 * @param payload - The raw payload from a Qdrant point (may be any type)
+	 * @returns The typed payload, or null if narrowing fails
+	 */
+	private toQdrantPayload(payload: unknown): QdrantPayload | null {
+		if (typeof payload !== 'object' || payload === null) {
+			return null;
+		}
+		return payload as unknown as QdrantPayload;
+	}
 
 	/**
-   * Ensure service is initialized
-   */
+	 * Track access to retrieved points with rate-limited error logging.
+	 *
+	 * Fire-and-forget operation: updates access_count and last_accessed_at
+	 * without blocking the caller. Failures are logged at most once per
+	 * {@link ACCESS_TRACKING_WARNING_INTERVAL_MS} to avoid log spam.
+	 *
+	 * @param ids - Array of point IDs to track
+	 */
+	private trackAccess(ids: string[]): void {
+		if (ids.length === 0) return;
+
+		this.updateAccessTracking(ids).catch((err: unknown) => {
+			this.accessTrackingFailureCount++;
+			// Rate-limit warning logs: only log if at least 10 seconds have passed
+			const now = Date.now();
+			if (now - this.lastTrackingWarningTime >= ACCESS_TRACKING_WARNING_INTERVAL_MS) {
+				this.lastTrackingWarningTime = now;
+				logger.warn(
+					`Failed to update access tracking (${this.accessTrackingFailureCount} total failures):`,
+					err,
+				);
+			}
+		});
+	}
+
+	/**
+	 * Ensure service is initialized
+	 */
 	private async ensureInitialized(): Promise<void> {
 		if (!this.initialized) {
 			await this.initialize();

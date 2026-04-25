@@ -191,6 +191,5 @@ export interface SearchFilters {
 	/** Restrict to memories that have at least one of these tags. */
 	tags?: string[];
 	/** Match on arbitrary payload fields (exact value match per key). */
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Open schemas require dynamic metadata filtering
-	metadata?: Record<string, any>;
+	metadata?: Record<string, unknown>;
 }
