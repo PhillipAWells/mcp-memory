@@ -22,7 +22,7 @@
 		"lint:fix": "eslint src/ --fix",
 		"test": "vitest run",
 		"test:ui": "vitest --ui",
-		"test:coverage": "vitest --coverage",
+		"test:coverage": "vitest run --coverage",
 		"pipeline": "yarn typecheck && yarn lint && yarn test:coverage && yarn build",
 		"prepublishOnly": "yarn build",
 		"prepare": "husky"
