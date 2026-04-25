@@ -20,7 +20,7 @@ jobs:
     name: Typecheck & Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@0ad4c9a3629326bcc8a5a7bda12e16da52f39ba7 # v4
+      - uses: actions/checkout@v6
 
       - name: Enable corepack
         run: corepack enable
@@ -49,7 +49,7 @@ jobs:
       matrix:
         node-version: ['22', '24']
     steps:
-      - uses: actions/checkout@0ad4c9a3629326bcc8a5a7bda12e16da52f39ba7 # v4
+      - uses: actions/checkout@v6
 
       - name: Enable corepack
         run: corepack enable
@@ -75,7 +75,7 @@ jobs:
     needs: [validate, test]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@0ad4c9a3629326bcc8a5a7bda12e16da52f39ba7 # v4
+      - uses: actions/checkout@v6
 
       - name: Enable corepack
         run: corepack enable
