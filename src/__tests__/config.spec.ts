@@ -159,6 +159,16 @@ describe('config.ts', () => {
 	});
 
 	describe('parseIntEnv', () => {
+		let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+
+		beforeEach(() => {
+			consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		});
+
+		afterEach(() => {
+			consoleErrorSpy.mockRestore();
+		});
+
 		it('returns the fallback when raw is undefined', () => {
 			const result = parseIntEnv(undefined, 42, 'TEST_VAR');
 			expect(result).toBe(42);
@@ -268,15 +278,20 @@ describe('config.ts', () => {
 
 	describe('loadConfig with environment variable manipulation', () => {
 		let originalEnv: Record<string, string | undefined>;
+		let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 
 		beforeEach(() => {
 			// Save original environment
 			originalEnv = { ...process.env };
+			// Mock console.error to suppress validation error messages
+			consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 		});
 
 		afterEach(() => {
 			// Restore original environment
 			process.env = originalEnv;
+			// Restore console.error
+			consoleErrorSpy.mockRestore();
 		});
 
 		it('throws an error when OPENAI_API_KEY is missing', () => {
