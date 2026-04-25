@@ -376,7 +376,7 @@ __metadata:
     husky: "npm:^9.1.7"
     openai: "npm:^6.34.0"
     typescript: "npm:~6.0.0"
-    undici: "npm:^6.0.0"
+    undici: "npm:^8.1.0"
     uuid: "npm:^14.0.0"
     vitest: "npm:^4.1.5"
     zod: "npm:^4.3.6"
@@ -4315,17 +4315,17 @@ __metadata:
   languageName: node
   linkType: hard
 
-"undici@npm:^6.0.0":
-  version: 6.25.0
-  resolution: "undici@npm:6.25.0"
-  checksum: 10c0/2597cc6689bdb02c210c557b1f85febbfda65becae6e6fc1061508e2f33734d25207f81cd8af56ada9956329eb3a7bd7431e87dcfeceba20ee87059b57dcf985
-  languageName: node
-  linkType: hard
-
 "undici@npm:^6.23.0":
   version: 6.24.1
   resolution: "undici@npm:6.24.1"
   checksum: 10c0/53fdbaa357139a2c12deed34f67d67fc6ad269630ba85a1507e7717f53ad2d3a02c95fbd17d3ab321e34c60b6f0a716cdc2f7e2eca1e07178702dc89cc3a73c4
+  languageName: node
+  linkType: hard
+
+"undici@npm:^8.1.0":
+  version: 8.1.0
+  resolution: "undici@npm:8.1.0"
+  checksum: 10c0/c55ad57f10efb9b55ab683104dde1c6f620496b9facde640ba26cffdc53a53694c12a8c3f7196069017c5c1b5031ef0843e232d9c04dcc834b3baa046d3ea678
   languageName: node
   linkType: hard
 
