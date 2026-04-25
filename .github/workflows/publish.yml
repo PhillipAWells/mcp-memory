@@ -42,6 +42,8 @@ jobs:
 
       - name: Build
         run: yarn build
+        env:
+          HUSKY: '0'
 
       - name: Publish to npm
         run: yarn npm publish --provenance --access public

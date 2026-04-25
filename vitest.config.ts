@@ -6,6 +6,7 @@ export default defineConfig({
     environment: 'node',
     env: {
       LOG_LEVEL: 'silent',
+      OPENAI_API_KEY: 'test-key',
     },
     include: ['src/**/*.{test,spec}.ts'],
     exclude: ['node_modules', 'build', 'tmp'],
@@ -22,8 +23,7 @@ export default defineConfig({
         '**/*.test.ts',
         '**/*.spec.ts',
         '**/types/**',
-        'src/index.ts',
-        'src/utils/proxy.ts',
+        'src/index.ts', // entry point — tested via integration tests only
         'src/schemas/**',
       ],
       thresholds: {

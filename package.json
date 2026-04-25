@@ -85,7 +85,8 @@
 	"packageManager": "yarn@4.12.0",
 	"files": [
 		"build",
-		"rules"
+		"rules",
+		"README.md"
 	],
 	"publishConfig": {
 		"access": "public"
