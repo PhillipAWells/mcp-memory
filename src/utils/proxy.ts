@@ -95,7 +95,7 @@ if (_proxyUrl !== null) {
 	): ReturnType<typeof fetch> => {
 		// init may contain dispatcher from Qdrant client; replace it with our proxy-aware agent
 		if (init !== undefined && typeof init === 'object' && 'dispatcher' in init) {
-			return _originalFetch(input, { ...init, dispatcher: agent });
+			return _originalFetch(input, { ...init, dispatcher: agent as unknown as Dispatcher });
 		}
 		return _originalFetch(input, init);
 	}) as unknown as typeof globalThis.fetch;
