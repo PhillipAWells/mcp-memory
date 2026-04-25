@@ -4,7 +4,7 @@
  * Tests configuration loading, validation, and error handling
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { config, parseIntEnv, parseBoolEnv, loadConfig } from '../config.js';
 import type { Config } from '../config.js';
 
