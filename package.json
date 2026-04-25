@@ -31,7 +31,7 @@
 		"@modelcontextprotocol/sdk": "^1.29.0",
 		"@pawells/logger": "^1.2.2",
 		"@qdrant/js-client-rest": "^1.17.0",
-		"dotenv": "^16.0.0",
+		"dotenv": "^17.4.2",
 		"openai": "^6.34.0",
 		"undici": "^6.0.0",
 		"uuid": "^14.0.0",
