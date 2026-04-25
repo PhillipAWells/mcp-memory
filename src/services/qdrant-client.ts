@@ -58,6 +58,27 @@ const HTTPS_DEFAULT_PORT = 443;
 /**
  * Point structure for Qdrant upsert
  */
+/**
+ * Type guard to check if a value is a valid QdrantPayload.
+ * Validates required fields: content (string), created_at (string), updated_at (string).
+ * Returns true only if the payload matches the expected structure.
+ *
+ * @param p - The value to check
+ * @returns True if p is a valid QdrantPayload, false otherwise
+ */
+function isQdrantPayload(p: unknown): p is QdrantPayload {
+	return (
+		typeof p === 'object' &&
+		p !== null &&
+		'content' in p &&
+		typeof (p as Record<string, unknown>).content === 'string' &&
+		'created_at' in p &&
+		typeof (p as Record<string, unknown>).created_at === 'string' &&
+		'updated_at' in p &&
+		typeof (p as Record<string, unknown>).updated_at === 'string'
+	);
+}
+
 interface QdrantPoint {
 	id: string;
 	vector: { dense: number[]; dense_large?: number[] };
@@ -146,8 +167,17 @@ export class QdrantService {
 	}
 
 	/**
-   * Initialize the collection with optimized configuration
-   */
+	 * Initializes the Qdrant collection with optimized configuration.
+	 *
+	 * Creates the collection if it doesn't exist, validates schema for existing collections, and creates payload indexes. Idempotent: subsequent calls are no-ops.
+	 *
+	 * @returns Resolves when initialization completes successfully.
+	 * @throws {Error} If collection validation fails or index creation fails.
+	 * @example
+	 * ```typescript
+	 * await qdrantService.initialize();
+	 * ```
+	 */
 	public async initialize(): Promise<void> {
 		if (this.initialized) {
 			logger.debug('Qdrant service already initialized');
@@ -338,9 +368,25 @@ export class QdrantService {
 	}
 
 	/**
-   * Upsert a single point
-   * Supports dual embeddings (small + large) when enabled
-   */
+	 * Stores a single point in Qdrant with optional dual embeddings (small and large).
+	 *
+	 * @param content - The text content to embed and store.
+	 * @param vector - The small embedding vector (typically 384 dimensions).
+	 * @param metadata - Optional metadata (id, workspace, memory_type, confidence, tags, etc.). If `id` is not provided, a UUID is generated. Timestamps (`created_at`, `updated_at`) default to the current time unless explicitly provided.
+	 * @param vectorLarge - Optional large embedding vector (typically 3072 dimensions) for dual-embedding support.
+	 * @returns The point ID (UUID).
+	 * @throws {Error} If the Qdrant API returns an error after all retry attempts are exhausted.
+	 * @example
+	 * ```typescript
+	 * const id = await qdrantService.upsert(
+	 *   'Hello world',
+	 *   [0.1, 0.2, ...], // small embedding
+	 *   { memory_type: 'long-term', confidence: 0.9 },
+	 *   [0.15, 0.25, ...] // large embedding (optional)
+	 * );
+	 * ```
+	 */
+
 	public async upsert(
 		content: string,
 		vector: number[],
@@ -384,13 +430,23 @@ export class QdrantService {
 	}
 
 	/**
-	 * Batch upsert multiple points into the collection.
+	 * Stores multiple points in Qdrant in batches (500 per batch by default).
 	 *
-	 * Uses the same timestamp and metadata logic as upsert().
+	 * Handles failures gracefully: if a batch fails, the failure is recorded but other batches continue processing.
 	 *
-	 * @param points - Array of points to upsert, each with content, vector(s), and optional metadata.
-	 * @returns Result with successful IDs, failed points, and total processed count.
+	 * @param points - Array of points to upsert, each with `content`, `vector`, optional `vectorLarge`, and optional `metadata`.
+	 * @returns Object with `successfulIds` (array of UUIDs), `failedPoints` (array of failures with index, id, and error message), and `totalProcessed` (count).
+	 * @throws {Error} If initialization fails.
+	 * @example
+	 * ```typescript
+	 * const result = await qdrantService.batchUpsert([
+	 *   { content: 'Text 1', vector: [0.1, ...], metadata: { memory_type: 'long-term' } },
+	 *   { content: 'Text 2', vector: [0.2, ...], vectorLarge: [0.2, ...] },
+	 * ]);
+	 * console.log(`${result.successfulIds.length}/${result.totalProcessed} succeeded`);
+	 * ```
 	 */
+
 	public async batchUpsert(
 		points: Array<{
 			content: string;
@@ -476,8 +532,25 @@ export class QdrantService {
 	}
 
 	/**
-   * Search for similar vectors with optional hybrid search (RRF)
-   */
+	 * Searches for similar vectors using dense similarity and optional hybrid search (RRF).
+	 *
+	 * Optionally combines dense vector similarity with full-text keyword search via Reciprocal Rank Fusion (RRF). Automatically tracks access counts on retrieved results.
+	 *
+	 * @param params - Search parameters including `vector` (required), optional `vectorLarge` for dual-embedding queries, `filter` (workspace, memory_type, confidence, tags), `limit`, `offset`, `scoreThreshold`, and hybrid search options (`useHybridSearch`, `query`, `hybridAlpha`).
+	 * @returns Array of search results, each with `id`, `content`, `score` (similarity score), and `metadata`.
+	 * @throws {Error} If the Qdrant API returns an error after all retry attempts are exhausted.
+	 * @example
+	 * ```typescript
+	 * const results = await qdrantService.search({
+	 *   vector: [0.1, 0.2, ...],
+	 *   filter: { workspace: 'my-project', memory_type: 'long-term' },
+	 *   limit: 10,
+	 *   useHybridSearch: true,
+	 *   query: 'search text',
+	 * });
+	 * ```
+	 */
+
 	public async search(params: SearchParams): Promise<SearchResult[]> {
 		await this.ensureInitialized();
 
@@ -648,8 +721,21 @@ export class QdrantService {
 	}
 
 	/**
-   * Get a point by ID
-   */
+	 * Retrieves a single point by ID.
+	 *
+	 * Automatically tracks the access count and last-accessed timestamp.
+	 *
+	 * @param id - The UUID of the point to retrieve.
+	 * @returns The search result with full content and metadata, or `null` if the point does not exist.
+	 * @throws {Error} If the Qdrant API returns an error after all retry attempts are exhausted.
+	 * @example
+	 * ```typescript
+	 * const point = await qdrantService.get('550e8400-e29b-41d4-a716-446655440000');
+	 * if (point) {
+	 *   console.log(point.content, point.metadata);
+	 * }
+	 * ```
+	 */
 	public async get(id: string): Promise<SearchResult | null> {
 		await this.ensureInitialized();
 
@@ -683,8 +769,16 @@ export class QdrantService {
 	}
 
 	/**
-   * Delete a point by ID
-   */
+	 * Deletes a single point by ID.
+	 *
+	 * @param id - The UUID of the point to delete.
+	 * @returns Resolves when the deletion completes successfully.
+	 * @throws {Error} If the Qdrant API returns an error after all retry attempts are exhausted.
+	 * @example
+	 * ```typescript
+	 * await qdrantService.delete('550e8400-e29b-41d4-a716-446655440000');
+	 * ```
+	 */
 	public async delete(id: string): Promise<void> {
 		await this.ensureInitialized();
 
@@ -697,8 +791,16 @@ export class QdrantService {
 	}
 
 	/**
-   * Delete multiple points by IDs
-   */
+	 * Deletes multiple points by IDs in a single Qdrant operation.
+	 *
+	 * @param ids - Array of point UUIDs to delete (max 100 for practical limits).
+	 * @returns Resolves when the batch deletion completes successfully.
+	 * @throws {Error} If the Qdrant API returns an error after all retry attempts are exhausted.
+	 * @example
+	 * ```typescript
+	 * await qdrantService.batchDelete(['id1', 'id2', 'id3']);
+	 * ```
+	 */
 	public async batchDelete(ids: string[]): Promise<void> {
 		await this.ensureInitialized();
 
@@ -711,8 +813,24 @@ export class QdrantService {
 	}
 
 	/**
-   * List all points with optional filtering
-   */
+	 * Lists points with optional filtering, pagination, and sorting.
+	 *
+	 * Uses Qdrant's scroll API to fetch results without payload vectors.
+	 *
+	 * @param filter - Optional filter criteria (workspace, memory_type, confidence, tags, metadata).
+	 * @param limit - Number of results per page (default 100, max 1000).
+	 * @param offset - Pagination offset (0-based).
+	 * @returns Array of search results (one page) with full content and metadata.
+	 * @throws {Error} If the Qdrant API returns an error after all retry attempts are exhausted.
+	 * @example
+	 * ```typescript
+	 * const page = await qdrantService.list(
+	 *   { workspace: 'my-project', memory_type: 'long-term' },
+	 *   100,
+	 *   0
+	 * );
+	 * ```
+	 */
 	public async list(
 		filter?: SearchFilters,
 		limit: number = DEFAULT_LIST_LIMIT,
@@ -747,8 +865,18 @@ export class QdrantService {
 	}
 
 	/**
-   * Get collection statistics
-   */
+	 * Retrieves collection statistics including point count, indexed vector count, segment count, and optimizer status.
+	 *
+	 * Also includes the cumulative count of access-tracking update failures since service start for diagnostics.
+	 *
+	 * @returns Collection statistics object with point counts, indexing status, and optimizer health.
+	 * @throws {Error} If the Qdrant API returns an error after all retry attempts are exhausted.
+	 * @example
+	 * ```typescript
+	 * const stats = await qdrantService.getStats();
+	 * console.log(`${stats.points_count} points, ${stats.indexed_vectors_count} indexed`);
+	 * ```
+	 */
 	public async getStats(): Promise<CollectionStats> {
 		await this.ensureInitialized();
 
@@ -770,8 +898,19 @@ export class QdrantService {
 	}
 
 	/**
-   * Count points matching filter
-   */
+	 * Counts points matching optional filter criteria.
+	 *
+	 * Uses Qdrant's approximate counting mode for performance; exact counts are not guaranteed.
+	 *
+	 * @param filter - Optional filter criteria (workspace, memory_type, confidence, tags, metadata).
+	 * @returns The approximate count of matching points.
+	 * @throws {Error} If the Qdrant API returns an error after all retry attempts are exhausted.
+	 * @example
+	 * ```typescript
+	 * const total = await qdrantService.count({ memory_type: 'long-term' });
+	 * console.log(`${total} long-term memories`);
+	 * ```
+	 */
 	public async count(filter?: SearchFilters): Promise<number> {
 		await this.ensureInitialized();
 
@@ -786,8 +925,22 @@ export class QdrantService {
 	}
 
 	/**
-   * Update point payload (metadata)
-   */
+	 * Updates metadata (payload) for a single point without modifying the embedding.
+	 *
+	 * Automatically updates the `updated_at` timestamp to the current time.
+	 *
+	 * @param id - The UUID of the point to update.
+	 * @param payload - Partial metadata object with fields to update (memory_type, confidence, tags, etc.).
+	 * @returns Resolves when the payload update completes successfully.
+	 * @throws {Error} If the Qdrant API returns an error after all retry attempts are exhausted.
+	 * @example
+	 * ```typescript
+	 * await qdrantService.updatePayload('550e8400-e29b-41d4-a716-446655440000', {
+	 *   confidence: 0.95,
+	 *   tags: ['important', 'verified'],
+	 * });
+	 * ```
+	 */
 	public async updatePayload(
 		id: string,
 		payload: Partial<QdrantPayload>,
@@ -940,10 +1093,11 @@ export class QdrantService {
 	 * @returns The typed payload, or null if narrowing fails
 	 */
 	private toQdrantPayload(payload: unknown): QdrantPayload | null {
-		if (typeof payload !== 'object' || payload === null) {
+		if (!isQdrantPayload(payload)) {
+			logger.warn('Invalid payload structure — missing required fields (content, created_at, updated_at)');
 			return null;
 		}
-		return payload as unknown as QdrantPayload;
+		return payload;
 	}
 
 	/**
