@@ -260,11 +260,9 @@ describe('config.ts', () => {
 			expect(parseBoolEnv('anything', false)).toBe(true);
 		});
 
-		it('treats empty string as true (any non-empty string)', () => {
-			// Empty string is falsy in JavaScript, but the function checks !== 'false' etc.
-			// Actually, let me re-read: if raw === undefined return fallback
-			// Otherwise, it checks lower !== 'false' etc, so empty string would pass those checks
-			expect(parseBoolEnv('', false)).toBe(true);
+		it('treats empty string as fallback value', () => {
+			// Empty string (after trim) returns the fallback value per the recent update
+			expect(parseBoolEnv('', false)).toBe(false);
 		});
 	});
 
@@ -405,11 +403,11 @@ describe('config.ts', () => {
 
 		it('accepts valid QDRANT_API_KEY of exactly 8 characters', () => {
 			const savedKey = process.env.QDRANT_API_KEY;
-			process.env.QDRANT_API_KEY = 'exactlyeight'; // exactly 8 chars
+			process.env.QDRANT_API_KEY = 'abcdefgh'; // exactly 8 chars
 
 			try {
 				const result = loadConfig();
-				expect(result.qdrant.apiKey).toBe('exactlyeight');
+				expect(result.qdrant.apiKey).toBe('abcdefgh');
 			} finally {
 				if (savedKey) {
 					process.env.QDRANT_API_KEY = savedKey;

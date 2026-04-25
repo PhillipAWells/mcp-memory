@@ -33,6 +33,10 @@ export function extractErrorMessage(error: unknown): string {
  * Extends Error with a code property for categorizing different failure modes.
  * When wrapping another error, always pass the original error as the `cause`.
  *
+ * NOTE: MemoryError is available for use in services when structured error codes
+ * are needed. Current service implementations throw generic Errors for simplicity;
+ * adopt MemoryError if callers need to programmatically distinguish error types.
+ *
  * @example
  * ```typescript
  * try {

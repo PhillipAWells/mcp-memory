@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { extractErrorMessage } from '../errors.js';
+import { extractErrorMessage, MemoryError } from '../errors.js';
 
 describe('extractErrorMessage', () => {
 	it('should extract message from Error instances', () => {
@@ -87,5 +87,38 @@ describe('extractErrorMessage', () => {
 		const innerError = new Error('Inner error');
 		const outerError = { message: innerError.message, wrapped: innerError };
 		expect(extractErrorMessage(outerError)).toBe('Inner error');
+	});
+});
+
+describe('MemoryError', () => {
+	it('constructor sets name to MemoryError', () => {
+		const error = new MemoryError('TEST_CODE', 'Test message');
+		expect(error.name).toBe('MemoryError');
+	});
+
+	it('constructor sets message correctly', () => {
+		const error = new MemoryError('TEST_CODE', 'Test error message');
+		expect(error.message).toBe('Test error message');
+	});
+
+	it('constructor sets code property', () => {
+		const error = new MemoryError('TEST_CODE', 'Test message');
+		expect(error.code).toBe('TEST_CODE');
+	});
+
+	it('cause is set when options with cause are passed', () => {
+		const originalError = new Error('Original error');
+		const error = new MemoryError('TEST_CODE', 'Test message', { cause: originalError });
+		expect(error.cause).toBe(originalError);
+	});
+
+	it('is an instance of Error', () => {
+		const error = new MemoryError('TEST_CODE', 'Test message');
+		expect(error).toBeInstanceOf(Error);
+	});
+
+	it('is an instance of MemoryError', () => {
+		const error = new MemoryError('TEST_CODE', 'Test message');
+		expect(error).toBeInstanceOf(MemoryError);
 	});
 });

@@ -45,6 +45,7 @@ const MIN_QDRANT_API_KEY_LENGTH = 8;
  */
 export function parseBoolEnv(raw: string | undefined, fallback: boolean): boolean {
 	if (raw === undefined) return fallback;
+	if (raw.trim().length === 0) return fallback;
 	const lower = raw.toLowerCase();
 	return lower !== 'false' && lower !== '0' && lower !== 'no' && lower !== 'off';
 }

@@ -1115,9 +1115,10 @@ describe('memory-store - secrets detection edge cases', () => {
 		vi.clearAllMocks();
 	});
 
-	it.skip('blocks content with medium-confidence patterns', async () => {
+	it('blocks content with medium-confidence patterns', async () => {
+		// Triggers 3 distinct medium-confidence patterns: password + oauth_token + generic_secret
 		const result = await getTool('memory-store').handler({
-			content: 'password123 secret456 token789',
+			content: '"password"="mypassword123" "access_token"="oauth_abc123def456789012345" AWS_SECRET_KEY=abcdef123456789abc',
 		});
 
 		expect(result.success).toBe(false);
@@ -1143,9 +1144,9 @@ describe('memory-store - secrets detection edge cases', () => {
 		expect(result.success).toBe(true);
 	});
 
-	it.skip('blocks private key headers', async () => {
+	it('blocks private key headers', async () => {
 		const result = await getTool('memory-store').handler({
-			content: '-----BEGIN PRIVATE KEY-----',
+			content: '-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQC7VJTUt9Us8cKj\n-----END PRIVATE KEY-----',
 		});
 
 		expect(result.success).toBe(false);
@@ -1718,7 +1719,8 @@ describe('memory-update - chunked memory', () => {
 		expect((result.data as any).old_chunks).toBe(3);
 	});
 
-	it.skip('re-chunks on chunk update', async () => {
+	// Re-enabled: logic verified correct
+	it('re-chunks on chunk update', async () => {
 		mockQdrant.get.mockResolvedValueOnce({
 			...baseMemory,
 			metadata: {
