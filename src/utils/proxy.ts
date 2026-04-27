@@ -41,6 +41,15 @@ export const DEFAULT_NO_PROXY = 'localhost,127.0.0.1,::1';
  * correct behavior on case-sensitive systems (Linux/macOS) where both can coexist,
  * and graceful behavior on case-insensitive systems (Windows) where the last
  * assignment takes precedence.
+ *
+ * @returns The proxy URL string from the environment, or `null` if no proxy is configured.
+ * @example
+ * ```typescript
+ * // With HTTPS_PROXY=http://proxy.corp:8080 set
+ * const url = getActiveProxyUrl(); // 'http://proxy.corp:8080'
+ * // With no proxy env vars set
+ * const url = getActiveProxyUrl(); // null
+ * ```
  */
 export function getActiveProxyUrl(): string | null {
 	return (
@@ -53,15 +62,37 @@ export function getActiveProxyUrl(): string | null {
 }
 
 /**
- * The EnvHttpProxyAgent installed as the global dispatcher, or null if no
- * proxy is configured. Exposed for test introspection.
+ * The EnvHttpProxyAgent installed as the global dispatcher, or `null` if no
+ * proxy is configured.
+ *
+ * Exposed for test introspection so tests can verify proxy installation without
+ * triggering real network calls.
+ *
+ * @example
+ * ```typescript
+ * import { activeProxyAgent } from './proxy.js';
+ * if (activeProxyAgent !== null) {
+ *   console.log('Proxy agent is active');
+ * }
+ * ```
  */
 export let activeProxyAgent: Dispatcher | null = null;
 
 /**
- * True if NO_PROXY was automatically set to DEFAULT_NO_PROXY by this module
- * (i.e. the user did not supply their own value). Used by initProxy() for
- * accurate startup logging, and by resetProxy() for clean test teardown.
+ * `true` if `NO_PROXY` was automatically set to {@link DEFAULT_NO_PROXY} by this
+ * module because the user did not supply their own value.
+ *
+ * Used by {@link initProxy} for accurate startup logging and by {@link resetProxy}
+ * for clean test teardown — the auto-defaulted value must be removed so it does not
+ * bleed into subsequent tests.
+ *
+ * @example
+ * ```typescript
+ * import { noProxyDefaulted } from './proxy.js';
+ * if (noProxyDefaulted) {
+ *   console.log('NO_PROXY was auto-defaulted to localhost exclusions');
+ * }
+ * ```
  */
 export let noProxyDefaulted = false;
 
@@ -126,6 +157,16 @@ if (_proxyUrl !== null) {
  *
  * The global dispatcher is already installed by the time this function is
  * called (the side effect above ran at import time).
+ *
+ * @param log - Minimal logger interface with `info` and `warn` methods. Accepts
+ *   the application logger or any compatible object (useful in tests).
+ * @example
+ * ```typescript
+ * import { initProxy } from './utils/proxy.js';
+ * import { logger } from './utils/logger.js';
+ * // Call once at startup, after the logger is ready
+ * initProxy(logger);
+ * ```
  */
 export function initProxy(log: { info: (msg: string) => void; warn: (msg: string) => void }): void {
 	const url = getActiveProxyUrl();
@@ -151,9 +192,16 @@ export function initProxy(log: { info: (msg: string) => void; warn: (msg: string
 
 /**
  * Reset the global dispatcher to a new default Agent and clear all proxy state.
- * Also removes NO_PROXY from the environment if it was auto-defaulted.
+ * Also removes `NO_PROXY` from the environment if it was auto-defaulted.
  *
- * @internal — For use in tests only. Do not call in production code.
+ * @internal For use in tests only. Do not call in production code.
+ * @example
+ * ```typescript
+ * // In a test afterEach hook
+ * afterEach(() => {
+ *   resetProxy();
+ * });
+ * ```
  */
 export function resetProxy(): void {
 	if (noProxyDefaulted) {
