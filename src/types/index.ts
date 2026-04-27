@@ -18,13 +18,6 @@ export type MemoryType =
   | 'long-term';    // Persistent knowledge (facts, concepts, workflows)
 
 /**
- * Metadata that can be attached to a stored memory.
- *
- * All fields are optional.  The index signature (`[key: string]: any`) allows
- * callers to persist custom fields that are forwarded verbatim to Qdrant.
- */
-
-/**
  * A single result returned by a vector search or point retrieval operation.
  */
 export interface SearchResult {
