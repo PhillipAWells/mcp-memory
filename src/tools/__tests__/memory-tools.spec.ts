@@ -2478,7 +2478,6 @@ describe('memory-list - sorting edge cases', () => {
 	});
 
 	it('applies pagination without in-memory sort for created_at', async () => {
-		const _now = new Date().toISOString();
 		const memories = Array.from({ length: 15 }, (_, i) => ({
 			id: `mem-${i}`,
 			content: `memory ${i}`,
