@@ -113,6 +113,11 @@ async function memoryStoreHandler(args: unknown): Promise<StandardResponse> {
 		const input = MemoryStoreInputSchema.parse(args);
 		logger.info('Storing memory...');
 
+		// Validate workspace if provided
+		if (input.metadata?.workspace && !workspaceDetector.isValidWorkspace(input.metadata.workspace)) {
+			return validationError('Invalid workspace name');
+		}
+
 		// Check for secrets and sensitive information
 		const secretsError = checkContentSecrets(input.content);
 		if (secretsError) return secretsError;
@@ -159,9 +164,9 @@ async function memoryStoreHandler(args: unknown): Promise<StandardResponse> {
 			// All chunks share a common group ID so siblings can be found and managed together
 			const chunkGroupId = uuidv4();
 
-			// Parallelize large embedding generation across all chunks
-			const largeEmbeddings = await Promise.all(
-				chunked.map(({ chunk }) => embeddingService.generateLargeEmbedding(chunk)),
+			// Batch large embedding generation across all chunks
+			const largeEmbeddings = await embeddingService.generateBatchLargeEmbeddings(
+				chunked.map(({ chunk }) => chunk),
 			);
 
 			// Batch upsert all chunks in a single operation
@@ -177,7 +182,7 @@ async function memoryStoreHandler(args: unknown): Promise<StandardResponse> {
 				return errorResponse(
 					`Failed to store ${batchResult.failedPoints.length} chunks`,
 					'EXECUTION_ERROR',
-					`Failed point IDs: ${batchResult.failedPoints.join(', ')}`,
+					`Failed point IDs: ${batchResult.failedPoints.map(p => p.id).join(', ')}`,
 				);
 			}
 			const ids = batchResult.successfulIds;
@@ -234,6 +239,7 @@ async function memoryQueryHandler(args: unknown): Promise<StandardResponse> {
 		const truncationSuffix = input.query.length > QUERY_LOG_LENGTH ? '...' : '';
 		logger.info(`Querying memory: "${queryPreview}${truncationSuffix}"`);
 
+		// Offset always has default value 0 from schema; the !== undefined check is redundant but kept as runtime defense
 		// Hybrid search does not support pagination
 		if (input.use_hybrid_search && input.offset !== undefined && input.offset > 0) {
 			return errorResponse(
@@ -421,6 +427,9 @@ async function memoryListHandler(args: unknown): Promise<StandardResponse> {
       `(sorted by ${input.sort_by ?? 'created_at'} ${input.sort_order})`,
 		);
 
+		const effectiveTotalCount = Math.min(totalCount, MAX_IN_MEMORY_SORT_COUNT);
+		const isCapped = totalCount > MAX_IN_MEMORY_SORT_COUNT;
+
 		return successResponse(
 			`Listed ${results.length} memories`,
 			{
@@ -430,9 +439,10 @@ async function memoryListHandler(args: unknown): Promise<StandardResponse> {
 					metadata: r.metadata,
 				})),
 				count: results.length,
-				total_count: totalCount,
+				total_count: effectiveTotalCount,
 				limit: input.limit,
 				offset: input.offset,
+				...(isCapped ? { capped: true, uncapped_count: totalCount } : {}),
 			},
 			{
 				duration_ms: Date.now() - startTime,
@@ -520,7 +530,13 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 		const input = MemoryUpdateInputSchema.parse(args);
 		logger.info(`Updating memory: ${input.id}`);
 
+		// Validate workspace if provided
+		if (input.metadata?.workspace && !workspaceDetector.isValidWorkspace(input.metadata.workspace)) {
+			return validationError('Invalid workspace name');
+		}
+
 		// Validation: at least one of content or metadata must be provided
+		// Safe to use Object.keys() because Zod strips undefined values from passthrough objects at parse time
 		const hasMetadata = input.metadata && Object.keys(input.metadata).length > 0;
 		if (!input.content && !hasMetadata) {
 			return validationError('metadata must contain at least one field, or provide new content');
@@ -575,9 +591,9 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 					const chunked = await embeddingService.generateChunkedEmbeddings(input.content);
 					const newChunkGroupId = uuidv4();
 
-					// Parallelize large embedding generation across all chunks
-					const largeEmbeddings = await Promise.all(
-						chunked.map(({ chunk }) => embeddingService.generateLargeEmbedding(chunk)),
+					// Batch large embedding generation across all chunks
+					const largeEmbeddings = await embeddingService.generateBatchLargeEmbeddings(
+						chunked.map(({ chunk }) => chunk),
 					);
 
 					// Batch upsert all chunks in a single operation
@@ -593,7 +609,7 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 						return errorResponse(
 							`Failed to update ${batchResult.failedPoints.length} chunks`,
 							'EXECUTION_ERROR',
-							`Failed point IDs: ${batchResult.failedPoints.join(', ')}`,
+							`Failed point IDs: ${batchResult.failedPoints.map(p => p.id).join(', ')}`,
 						);
 					}
 					const newIds = batchResult.successfulIds;

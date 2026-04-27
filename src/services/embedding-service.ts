@@ -138,7 +138,6 @@ export class EmbeddingService {
 	 * console.log(embedding.length); // 3072
 	 * ```
 	 */
-
 	public async generateLargeEmbedding(text: string): Promise<number[]> {
 		this.totalEmbeddings++;
 
@@ -203,9 +202,9 @@ export class EmbeddingService {
 	 * console.log(embeddings.length); // 3
 	 * ```
 	 */
-
 	public async generateBatchEmbeddings(texts: string[]): Promise<number[][]> {
 		logger.info(`Generating batch embeddings: ${texts.length} texts`);
+		this.totalEmbeddings += texts.length;
 
 		const embeddings: number[][] = [];
 		for (let i = 0; i < texts.length; i += BATCH_SIZE) {
@@ -223,6 +222,43 @@ export class EmbeddingService {
 		}
 
 		logger.info(`Batch embeddings completed: ${embeddings.length} embeddings`);
+		return embeddings;
+	}
+
+	/**
+	 * Generates embeddings for multiple texts using text-embedding-3-large.
+	 *
+	 * Processes texts in batches of up to 100 per OpenAI API call. Checks the cache first for each text; only uncached texts are sent to the API.
+	 *
+	 * @param texts - Array of texts to embed.
+	 * @returns Array of embedding vectors (one per input text) in the same order as `texts`. Each vector has dimensions matching `LARGE_DIMENSIONS`.
+	 * @throws {Error} If the OpenAI API returns an error after all retry attempts are exhausted, or if embedding generation is incomplete.
+	 * @example
+	 * ```typescript
+	 * const embeddings = await embeddingService.generateBatchLargeEmbeddings(['Text 1', 'Text 2', 'Text 3']);
+	 * console.log(embeddings.length); // 3
+	 * ```
+	 */
+	public async generateBatchLargeEmbeddings(texts: string[]): Promise<number[][]> {
+		logger.info(`Generating batch large embeddings: ${texts.length} texts`);
+		this.totalEmbeddings += texts.length;
+
+		const embeddings: number[][] = [];
+		for (let i = 0; i < texts.length; i += BATCH_SIZE) {
+			const batch = texts.slice(i, i + BATCH_SIZE);
+			const batchResults = await this.generateOpenAIBatch(
+				batch,
+				this.LARGE_MODEL,
+				this.LARGE_DIMENSIONS,
+				'large',
+			);
+			embeddings.push(...batchResults);
+			logger.debug(
+				`Batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(texts.length / BATCH_SIZE)} completed (large)`,
+			);
+		}
+
+		logger.info(`Batch large embeddings completed: ${embeddings.length} embeddings`);
 		return embeddings;
 	}
 
@@ -261,7 +297,6 @@ export class EmbeddingService {
 	 * console.log(`Cache: ${cacheStats.size}/${cacheStats.maxSize} entries (${cacheStats.utilizationPercent.toFixed(1)}%)`);
 	 * ```
 	 */
-
 	public getCacheStats(): {
 		size: number;
 		maxSize: number;
@@ -311,7 +346,6 @@ export class EmbeddingService {
 	 * embeddingService.clearCache();
 	 * ```
 	 */
-
 	public clearCache(): void {
 		const previousSize = this.cache.size;
 		this.cache.clear();
@@ -560,9 +594,6 @@ export class EmbeddingService {
 		if (uncachedIndices.length > 0) {
 			const uncachedTexts = uncachedIndices.map(i => texts[i]);
 			const isLarge = model === this.LARGE_MODEL;
-
-			// Count actual embedding requests (cache misses)
-			this.totalEmbeddings += uncachedIndices.length;
 
 			const response = await withRetry(
 				() => this.client.embeddings.create({ model, input: uncachedTexts, dimensions: dims }),

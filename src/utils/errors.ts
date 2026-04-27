@@ -6,6 +6,9 @@
  * TypeScript strict mode.
  */
 
+/** Maximum depth to traverse error cause chains. */
+const MAX_CAUSE_DEPTH = 3;
+
 /**
  * Safely extract a human-readable message from any thrown value.
  *
@@ -13,18 +16,33 @@
  * common cases into a plain string so callers don't need to repeat the same
  * type-narrowing guards everywhere.
  *
+ * Follows the error cause chain up to 3 levels deep, including the cause
+ * message in the output for better debugging context.
+ *
  * @param error - Any value caught from a `try/catch` block.
  * @returns The best available string description of the error.
  */
-export function extractErrorMessage(error: unknown): string {
+export function extractErrorMessage(error: unknown, depth = 0): string {
+	if (depth > MAX_CAUSE_DEPTH) return '';
+
+	let msg: string;
+
 	if (error instanceof Error) {
-		return error.message;
+		msg = error.message;
+	} else if (typeof error === 'object' && error !== null && 'message' in error) {
+		const messageValue = (error as Record<string, unknown>).message;
+		msg = String(messageValue);
+	} else {
+		msg = String(error);
 	}
-	if (typeof error === 'object' && error !== null && 'message' in error) {
-		const msg = error.message;
-		return String(msg);
+
+	const cause = (error as Record<string, unknown>)?.cause;
+	if (cause) {
+		const causedBy = extractErrorMessage(cause, depth + 1);
+		return msg + (causedBy ? ` (caused by: ${causedBy})` : '');
 	}
-	return String(error);
+
+	return msg;
 }
 
 /**

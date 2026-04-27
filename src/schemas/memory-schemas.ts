@@ -120,7 +120,8 @@ export const MemoryQueryInputSchema = z.object({
    * Weight between dense vector (1.0) and full-text (0.0) scoring in hybrid
    * mode (default 0.5).  Ignored when `use_hybrid_search` is `false`.
    */
-	hybrid_alpha: z.number().min(0.0).max(1.0).optional(),
+	// eslint-disable-next-line no-magic-numbers
+	hybrid_alpha: z.number().min(0.0).max(1.0).optional().default(0.5),
 });
 
 /** Type-safe input for the `memory-query` tool, inferred from {@link MemoryQueryInputSchema}. */
