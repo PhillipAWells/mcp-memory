@@ -34,7 +34,7 @@ import { extractErrorMessage } from './utils/errors.js';
 async function main(): Promise<void> {
 	logger.info('Starting MCP Memory Server...');
 
-	// Initialize proxy configuration (if any proxy env vars are set)
+	// Log proxy configuration status (dispatcher installed at module load time via proxy.ts)
 	initProxy(logger);
 
 	// Sanitize config to prevent logging sensitive information
