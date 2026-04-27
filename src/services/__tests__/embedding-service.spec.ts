@@ -168,7 +168,7 @@ describe('EmbeddingService LRU cache eviction', () => {
 	it('evicts the least-recently-used entry when cache is full', async () => {
 		mockCreate.mockResolvedValue(makeSmallResponse());
 		const service = makeService();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 		(service as any).maxCacheSize = 2;
 
 		vi.clearAllMocks();
@@ -243,7 +243,6 @@ describe('EmbeddingService.validateEmbedding', () => {
 	});
 
 	it('returns false for non-array', () => {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		expect(service.validateEmbedding('not an array' as any)).toBe(false);
 	});
 

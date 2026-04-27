@@ -24,9 +24,9 @@ import { RulesManagerService } from '../rules-manager.js';
 function makeServiceWithDirs(sourceDir: string, targetDir: string): RulesManagerService {
 	const service = new RulesManagerService();
 	// Override the private dirs via type cast to test with our temp dirs
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 	(service as any).sourceDir = sourceDir;
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 	(service as any).targetDir = targetDir;
 	return service;
 }

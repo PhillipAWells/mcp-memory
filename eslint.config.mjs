@@ -339,6 +339,9 @@ export default [
       // Inline test helpers rarely need explicit return types
       '@typescript-eslint/explicit-function-return-type': 'off',
       '@typescript-eslint/explicit-member-accessibility': 'off',
+      // 'as any' casts are acceptable in tests to access response data fields
+      // without needing to define the full typed shape of every tool response
+      '@typescript-eslint/no-explicit-any': 'off',
     },
   },
 

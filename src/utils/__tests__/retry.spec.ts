@@ -1,7 +1,6 @@
 /**
  * Tests for retry logic with exponential backoff
  */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { describe, it, expect, vi } from 'vitest';
 
