@@ -979,45 +979,73 @@ export class QdrantService {
 	}
 
 	/**
-   * Build Qdrant filter from SearchFilters
-   */
+	 * Builds a Qdrant filter from application-level {@link SearchFilters}.
+	 *
+	 * The expiry condition (`expires_at` is null OR > now) is **always** appended,
+	 * even when `filter` is `undefined`, so expired memories are excluded from
+	 * every `list`, `count`, and `search` call regardless of whether the caller
+	 * supplies other filter criteria.
+	 *
+	 * @param filter - Optional caller-supplied filter criteria.
+	 * @returns A Qdrant `must` filter object, or `undefined` when no conditions apply
+	 *   (not possible in practice because the expiry condition always contributes).
+	 */
 	private buildFilter(filter?: SearchFilters): Record<string, unknown> | undefined {
-		if (!filter) return undefined;
-
 		const conditions: Array<Record<string, unknown>> = [];
 
-		// Workspace filter
-		if (filter.workspace !== undefined) {
-			if (filter.workspace === null) {
-				// When workspace is explicitly null, match memories with no workspace
+		if (filter) {
+			// Workspace filter
+			if (filter.workspace !== undefined) {
+				if (filter.workspace === null) {
+					// When workspace is explicitly null, match memories with no workspace
+					conditions.push({
+						is_null: { key: 'workspace' },
+					});
+				} else {
+					conditions.push({
+						key: 'workspace',
+						match: { value: filter.workspace },
+					});
+				}
+			}
+
+			// Memory type filter
+			if (filter.memory_type) {
 				conditions.push({
-					is_null: { key: 'workspace' },
+					key: 'memory_type',
+					match: { value: filter.memory_type },
 				});
-			} else {
+			}
+
+			// Confidence filter (minimum threshold)
+			if (filter.min_confidence !== undefined) {
 				conditions.push({
-					key: 'workspace',
-					match: { value: filter.workspace },
+					key: 'confidence',
+					range: { gte: filter.min_confidence },
 				});
+			}
+
+			// Tags filter (match any)
+			if (filter.tags && filter.tags.length > 0) {
+				conditions.push({
+					key: 'tags',
+					match: { any: filter.tags },
+				});
+			}
+
+			// Custom metadata filters
+			if (filter.metadata) {
+				for (const [key, value] of Object.entries(filter.metadata)) {
+					conditions.push({
+						key,
+						match: { value },
+					});
+				}
 			}
 		}
 
-		// Memory type filter
-		if (filter.memory_type) {
-			conditions.push({
-				key: 'memory_type',
-				match: { value: filter.memory_type },
-			});
-		}
-
-		// Confidence filter (minimum threshold)
-		if (filter.min_confidence !== undefined) {
-			conditions.push({
-				key: 'confidence',
-				range: { gte: filter.min_confidence },
-			});
-		}
-
-		// Always exclude expired memories
+		// Always exclude expired memories — this condition is unconditional so that
+		// callers that pass no filter still see only non-expired memories.
 		const now = new Date().toISOString();
 		conditions.push({
 			should: [
@@ -1025,24 +1053,6 @@ export class QdrantService {
 				{ key: 'expires_at', range: { gt: now } },
 			],
 		});
-
-		// Tags filter (match any)
-		if (filter.tags && filter.tags.length > 0) {
-			conditions.push({
-				key: 'tags',
-				match: { any: filter.tags },
-			});
-		}
-
-		// Custom metadata filters
-		if (filter.metadata) {
-			for (const [key, value] of Object.entries(filter.metadata)) {
-				conditions.push({
-					key,
-					match: { value },
-				});
-			}
-		}
 
 		return conditions.length > 0 ? { must: conditions } : undefined;
 	}

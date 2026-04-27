@@ -133,12 +133,21 @@ describe('QdrantService.buildFilter (via count)', () => {
 		service = await createInitializedService();
 	});
 
-	it('passes undefined filter to Qdrant when no filter provided', async () => {
+	it('always applies expiry filter even when no filter is provided', async () => {
 		await service.count(undefined);
-		expect(mockClient.count).toHaveBeenCalledWith(
-			'test-collection',
-			expect.objectContaining({ filter: undefined }),
-		);
+		const [, args] = mockClient.count.mock.calls[0] as unknown[];
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const filter = (args as any).filter;
+		// The expiry condition must always be present — expired memories must be excluded
+		// even when the caller provides no other filter criteria.
+		expect(filter).toBeDefined();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const expiryCondition = filter.must.find((c: any) => 'should' in c);
+		expect(expiryCondition).toBeDefined();
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const shouldClauses = expiryCondition.should as any[];
+		expect(shouldClauses.some((s: any) => s.is_null?.key === 'expires_at')).toBe(true);
+		expect(shouldClauses.some((s: any) => s.key === 'expires_at')).toBe(true);
 	});
 
 	it('includes workspace condition when workspace filter is set', async () => {
