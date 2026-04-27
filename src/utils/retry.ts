@@ -76,27 +76,33 @@ export async function withRetry<T>(
 		throw new Error(`backoffFactor must be a positive number, got ${opts.backoffFactor}`);
 	}
 
-	let lastError: Error | undefined;
+	let lastError: unknown;
 
 	for (let attempt = 1; attempt <= opts.maxRetries; attempt++) {
 		try {
 			return await operation();
 		} catch (error) {
-			// Properly handle different error types
+			lastError = error;
+
+			// Convert to Error for logging and proper error handling
+			let errorToLog: Error;
 			if (error instanceof Error) {
-				lastError = error;
+				errorToLog = error;
 			} else if (typeof error === 'object' && error !== null && 'message' in error) {
-				lastError = new Error(String(error.message));
+				errorToLog = new Error(String(error.message), { cause: error });
 			} else {
-				lastError = new Error(String(error));
+				errorToLog = new Error(String(error));
 			}
 
 			// Check if error is retryable
 			const isRetryable = isRetryableError(error, opts);
 
 			if (!isRetryable || attempt === opts.maxRetries) {
-				logger.error(`Operation failed after ${attempt} attempt(s):`, lastError);
-				throw lastError;
+				logger.error(`Operation failed after ${attempt} attempt(s):`, errorToLog);
+				if (error instanceof Error) {
+					throw error;
+				}
+				throw errorToLog;
 			}
 
 			// Calculate delay with exponential backoff
@@ -107,14 +113,18 @@ export async function withRetry<T>(
 
 			logger.warn(
 				`Attempt ${attempt}/${opts.maxRetries} failed, retrying in ${delay}ms:`,
-				lastError.message,
+				errorToLog.message,
 			);
 
 			await sleep(delay);
 		}
 	}
 
-	throw lastError ?? new Error('Operation failed with unknown error');
+	// This should never be reached, but throw with the original error as cause if it does
+	if (lastError instanceof Error) {
+		throw lastError;
+	}
+	throw new Error('Operation failed with unknown error', { cause: lastError });
 }
 
 /**
