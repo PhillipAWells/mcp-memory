@@ -66,6 +66,14 @@ export class WorkspaceDetectorService {
    * @param currentDir - Directory to start the `package.json` search from
    *   (defaults to `process.cwd()`).
    * @returns The detected workspace name and the source that produced it.
+   * @example
+   * ```typescript
+   * const detector = new WorkspaceDetectorService();
+   * const result = detector.detect();
+   * // result.workspace may be 'my-project' (from package.json) or null
+   * const explicit = detector.detect('my-workspace');
+   * // explicit.workspace === 'my-workspace', explicit.source === 'explicit'
+   * ```
    */
 	public detect(
 		explicitWorkspace?: string | null,
@@ -215,6 +223,14 @@ export class WorkspaceDetectorService {
    * not a reserved internal name.
    *
    * @param name - Candidate workspace name.
+   * @returns `true` if the name is a valid workspace slug, `false` otherwise.
+   * @example
+   * ```typescript
+   * detector.isValidWorkspace('my-project');   // true
+   * detector.isValidWorkspace('system');        // false (reserved)
+   * detector.isValidWorkspace('@scope/name');   // false (invalid characters)
+   * detector.isValidWorkspace('');              // false (empty)
+   * ```
    */
 	public isValidWorkspace(name: string): boolean {
 		if (!name || typeof name !== 'string') {
@@ -270,6 +286,13 @@ export class WorkspaceDetectorService {
 	/**
    * Invalidate the in-memory workspace cache.
    * The next call to {@link detect} will perform a fresh auto-detection.
+   *
+   * @example
+   * ```typescript
+   * detector.clearCache();
+   * // Next call to detect() will re-read package.json / directory
+   * const fresh = detector.detect();
+   * ```
    */
 	public clearCache(): void {
 		this.cachedWorkspace = null;
@@ -287,14 +310,16 @@ export class WorkspaceDetectorService {
 	 *
 	 * @returns Object with `workspace` (cached value or null) and `cached` (true if cache was valid).
 	 * @example
+	 * ```typescript
 	 * const result = detector.getCached();
 	 * if (result.cached) {
 	 *   console.log('Using cached workspace:', result.workspace);
 	 * } else if (result.workspace === null) {
-	 *   console.log('Never detected');
+	 *   console.log('Cache never populated');
 	 * } else {
-	 *   console.log('Cache expired');
+	 *   console.log('Cache expired, last value was:', result.workspace);
 	 * }
+	 * ```
 	 */
 	public getCached(): { workspace: string | null, cached: boolean } {
 		if (!this.cachePopulated) {
@@ -312,6 +337,11 @@ export class WorkspaceDetectorService {
    *
    * @param workspace - Workspace name, or `null`.
    * @returns Lowercase trimmed name, or `null` if the input was `null`.
+   * @example
+   * ```typescript
+   * detector.normalize('MyProject');  // 'myproject'
+   * detector.normalize(null);         // null
+   * ```
    */
 	public normalize(workspace: string | null): string | null {
 		if (workspace === null) {
@@ -324,7 +354,15 @@ export class WorkspaceDetectorService {
 	/**
    * Compare two workspace names for equality, ignoring case.
    *
+   * @param a - First workspace name or `null`.
+   * @param b - Second workspace name or `null`.
    * @returns `true` when both names normalise to the same string.
+   * @example
+   * ```typescript
+   * detector.equals('MyProject', 'myproject'); // true
+   * detector.equals('ProjectA', 'ProjectB');   // false
+   * detector.equals(null, null);               // true
+   * ```
    */
 	public equals(a: string | null, b: string | null): boolean {
 		return this.normalize(a) === this.normalize(b);
@@ -335,7 +373,16 @@ export class WorkspaceDetectorService {
    * Useful for debugging workspace resolution in complex monorepos.
    *
    * @param currentDir - Directory to run detection from (defaults to `process.cwd()`).
+   * @returns Snapshot object with `detected` (current workspace result), `config` (auto-detect
+   *   settings), and `cache` (current cache age and validity).
    * @remarks This method calls `detect()` internally, which may update the workspace cache on first call.
+   * @example
+   * ```typescript
+   * const info = detector.getInfo();
+   * console.log('Workspace:', info.detected.workspace);
+   * console.log('Cache age (ms):', info.cache.age);
+   * console.log('Cache valid:', info.cache.valid);
+   * ```
    */
 	public getInfo(currentDir: string = process.cwd()): {
 		detected: WorkspaceDetectionResult;
