@@ -251,3 +251,15 @@ The `memory-list` tool loads up to 10,000 records into memory for sorting regard
 The `memory-list` tool uses `qdrantService.count(exact: false)` to determine how many records to fetch before sorting. Qdrant's approximate counting is "close but not guaranteed" — for very large collections, the approximated count can be significantly lower than the actual count, potentially causing the sort to miss records beyond the approximated threshold.
 
 **Workaround**: Use the `workspace`, `memory_type`, or `tags` filters to narrow the result set before sorting; this reduces the number of records fetched and mitigates the approximation risk. If exact count is critical, use exact: true (slower but guaranteed).
+
+### Pagination Limits and the `capped` Flag
+
+The `memory-list` tool sorts results in-memory and is limited to a maximum of 10,000 records. When sorting a collection larger than this:
+
+- **`total_count`**: Returns the effective count (capped at 10,000), representing the maximum addressable records
+- **`capped`**: Set to `true` when results are truncated at the 10,000-record limit
+- **`uncapped_count`**: Optional field containing Qdrant's approximate full count (for reference only)
+
+Clients should use `total_count` for pagination calculations. The `uncapped_count` shows the true collection size if needed for analytics.
+
+**Workaround for larger collections**: Use `workspace`, `memory_type`, or `tags` filters to narrow the result set before sorting, reducing the number of records loaded and processed.
