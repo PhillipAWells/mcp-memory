@@ -12,8 +12,11 @@
 // Proxy MUST be the first import — sets the global fetch dispatcher before any HTTP client module initialises.
 import { initProxy } from './utils/proxy.js';
 
-import { Server } from '@modelcontextprotocol/sdk/server.js';
+import { Server } from '@modelcontextprotocol/sdk/server';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import type {
+	CallToolRequest,
+} from '@modelcontextprotocol/sdk/types.js';
 import {
 	CallToolRequestSchema,
 	ListToolsRequestSchema,
@@ -95,7 +98,7 @@ async function main(): Promise<void> {
 	});
 
 	// Handler: Execute tool
-	server.setRequestHandler(CallToolRequestSchema, async (request) => {
+	server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest) => {
 		const { name, arguments: args } = request.params;
 
 		logger.info(`Executing tool: ${name}`);
