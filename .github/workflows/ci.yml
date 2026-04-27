@@ -107,7 +107,7 @@ jobs:
 
   publish:
     name: Publish
-    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: [build]
     runs-on: ubuntu-latest
     permissions:
@@ -140,6 +140,13 @@ jobs:
         run: |
           TAG="${{ github.ref_name }}"
           VERSION="${TAG#v}"
+
+          # Validate semantic version format (major.minor.patch with optional prerelease)
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?$ ]]; then
+            echo "Error: Invalid version format: $VERSION"
+            exit 1
+          fi
+
           if [[ "$VERSION" =~ - ]]; then
             DIST_TAG="${VERSION##*-}"
             DIST_TAG="${DIST_TAG%%.*}"
