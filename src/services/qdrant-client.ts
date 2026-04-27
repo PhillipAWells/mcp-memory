@@ -116,6 +116,13 @@ interface SearchParams {
 }
 
 /**
+ * Internal interface for hybrid search parameters, ensuring query is required.
+ */
+interface HybridSearchParams extends SearchParams {
+	query: string; // Required for hybrid search
+}
+
+/**
  * Collection statistics
  */
 interface CollectionStats {
@@ -489,7 +496,7 @@ export class QdrantService {
 					updated_at: p.metadata?.updated_at ?? now,
 				};
 
-				const vectorData = { dense: p.vector, dense_large: p.vectorLarge };
+				const vectorData = { dense: p.vector, ...(p.vectorLarge && { dense_large: p.vectorLarge }) };
 
 				return {
 					id,
@@ -564,7 +571,8 @@ export class QdrantService {
 
 		// Use hybrid search with RRF if query text is provided and explicitly enabled
 		if (params.useHybridSearch && params.query) {
-			return this.hybridSearchWithRRF(params, filter);
+			// Type guard: we've checked that query is defined above, so cast to HybridSearchParams
+			return this.hybridSearchWithRRF(params as HybridSearchParams, filter);
 		}
 
 		const vectorQuery = {
@@ -618,7 +626,7 @@ export class QdrantService {
    * "Hybrid" here means vector + full-text fusion via RRF, not dense + sparse vectors.
    */
 	private async hybridSearchWithRRF(
-		params: SearchParams,
+		params: HybridSearchParams,
 		filter?: Record<string, unknown>,
 	): Promise<SearchResult[]> {
 		// Pagination is not supported in hybrid search because it requires
@@ -650,7 +658,7 @@ export class QdrantService {
 		}));
 
 		// Perform text-based search using the text index on content field
-		const queryText = params.query as string;
+		const queryText = params.query;
 		const textFilter = {
 			...filter,
 			must: [
