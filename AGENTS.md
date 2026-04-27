@@ -245,3 +245,9 @@ Queries use Qdrant's `indexed_only: true` setting to skip segments that are curr
 The `memory-list` tool loads up to 10,000 records into memory for sorting regardless of the sort field chosen (`created_at`, `updated_at`, `access_count`, or `confidence`). Qdrant's internal scroll order is not guaranteed to match any application-level sort order, so the server always fetches all matching records and sorts them in-process. For collections with many memories, this can consume significant memory.
 
 **Workaround**: Use the `workspace`, `memory_type`, or `tags` filters to narrow the result set before sorting; this reduces the number of records loaded into memory. If the built-in scroll order is acceptable for your use case, omit `sort_by` entirely — the tool will return results in Qdrant's internal order without a full fetch.
+
+### All Sorting Uses Approximate Count for fetchLimit
+
+The `memory-list` tool uses `qdrantService.count(exact: false)` to determine how many records to fetch before sorting. Qdrant's approximate counting is "close but not guaranteed" — for very large collections, the approximated count can be significantly lower than the actual count, potentially causing the sort to miss records beyond the approximated threshold.
+
+**Workaround**: Use the `workspace`, `memory_type`, or `tags` filters to narrow the result set before sorting; this reduces the number of records fetched and mitigates the approximation risk. If exact count is critical, use exact: true (slower but guaranteed).
