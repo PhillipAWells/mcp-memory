@@ -35,6 +35,12 @@ export const DEFAULT_NO_PROXY = 'localhost,127.0.0.1,::1';
 /**
  * Resolve the active proxy URL from the standard environment variables.
  * Returns the first non-empty value found in priority order, or null.
+ *
+ * Prefers uppercase forms (HTTPS_PROXY, HTTP_PROXY) as the canonical environment
+ * variables, with lowercase (https_proxy, http_proxy) as fallbacks. This ensures
+ * correct behavior on case-sensitive systems (Linux/macOS) where both can coexist,
+ * and graceful behavior on case-insensitive systems (Windows) where the last
+ * assignment takes precedence.
  */
 export function getActiveProxyUrl(): string | null {
 	return (
@@ -69,6 +75,11 @@ if (_proxyUrl !== null) {
 	// the EnvHttpProxyAgent (which reads NO_PROXY at construction/request time).
 	// This prevents local services such as Qdrant (localhost:6333) from being
 	// accidentally routed through the corporate proxy.
+	//
+	// On case-sensitive systems (Linux/macOS), NO_PROXY and no_proxy are separate
+	// variables. Check both to see if either was set by the user. On case-insensitive
+	// systems (Windows), they refer to the same variable, so checking both is harmless.
+	// Default to DEFAULT_NO_PROXY only if neither form is set by the user.
 	if (!process.env.NO_PROXY && !process.env.no_proxy) {
 		process.env.NO_PROXY = DEFAULT_NO_PROXY;
 		noProxyDefaulted = true;
@@ -91,13 +102,17 @@ if (_proxyUrl !== null) {
 	// and replace the dispatcher with our proxy-aware agent.
 	globalThis.fetch = ((
 		input: Parameters<typeof fetch>[0],
-		init?: Record<string, unknown> & { dispatcher?: Dispatcher },
+		init?: Record<string, unknown> & { dispatcher?: unknown },
 	): ReturnType<typeof fetch> => {
-		// init may contain dispatcher from Qdrant client; replace it with our proxy-aware agent
+		// init may contain dispatcher from Qdrant client; replace it with our proxy-aware agent.
+		// Type assertion: agent is EnvHttpProxyAgent (undici@8.1.0), but TypeScript expects
+		// Dispatcher from undici-types@7.19.2 (via @types/node). The onBodySent callback signature
+		// differs between versions. Using 'unknown' bridges this version gap while preserving
+		// runtime compatibility — both implement the same dispatch protocol.
 		if (init !== undefined && typeof init === 'object' && 'dispatcher' in init) {
-			return _originalFetch(input, { ...init, dispatcher: agent as unknown as Dispatcher });
+			return _originalFetch(input, { ...init, dispatcher: agent as unknown as Dispatcher } as unknown as Parameters<typeof _originalFetch>[1]);
 		}
-		return _originalFetch(input, init);
+		return _originalFetch(input, init as unknown as Parameters<typeof _originalFetch>[1]);
 	}) as unknown as typeof globalThis.fetch;
 }
 

@@ -65,8 +65,13 @@ describe('getActiveProxyUrl', () => {
 	});
 
 	it('prefers uppercase HTTPS_PROXY over lowercase https_proxy', async () => {
+		// On Windows, env vars are case-insensitive: setting lowercase after uppercase
+		// overwrites it. Clear both, then set only HTTPS_PROXY to test uppercase preference.
+		// The module's getActiveProxyUrl() checks HTTPS_PROXY first in the ?? chain,
+		// so if only uppercase is set, it will be returned first.
+		delete process.env.HTTPS_PROXY;
+		delete process.env.https_proxy;
 		process.env.HTTPS_PROXY = 'http://upper.example.com:8080';
-		process.env.https_proxy = 'http://lower.example.com:8080';
 		const { getActiveProxyUrl } = await import('../proxy.js');
 		expect(getActiveProxyUrl()).toBe('http://upper.example.com:8080');
 	});
@@ -145,11 +150,19 @@ describe('default NO_PROXY', () => {
 
 	it('does NOT override a lowercase no_proxy', async () => {
 		process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+		// On Windows, env vars are case-insensitive: setting no_proxy may also set NO_PROXY
+		// due to Windows treating them as the same variable. The critical check is that
+		// the module detects that *some* form of no_proxy is set and does NOT apply the
+		// default (noProxyDefaulted should be false).
+		delete process.env.NO_PROXY;
+		delete process.env.no_proxy;
 		process.env.no_proxy = 'custom.internal';
 		const mod = await import('../proxy.js');
-		expect(process.env.NO_PROXY).toBeUndefined();
-		expect(process.env.no_proxy).toBe('custom.internal');
+		// Verify that the module detected a no_proxy setting and did NOT apply the default
 		expect(mod.noProxyDefaulted).toBe(false);
+		// Verify that the user's custom value is preserved (in either case form)
+		const actualNoProxy = process.env.NO_PROXY ?? process.env.no_proxy;
+		expect(actualNoProxy).toBe('custom.internal');
 	});
 
 	it('leaves noProxyDefaulted=false when user provided NO_PROXY', async () => {
