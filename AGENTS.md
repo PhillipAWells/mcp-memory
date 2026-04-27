@@ -50,7 +50,7 @@ MCP Client (Claude Code) → MCP Server (src/index.ts)
 
 **Configuration** (`src/config.ts`): All environment variables are loaded and validated using Zod schemas. See `.env.example` for complete variable list. `OPENAI_API_KEY` and `QDRANT_URL` are required.
 
-**Types** (`src/types/index.ts`): Shared interfaces including `MemoryType`, `MemoryMetadata`, `SearchResult`, `StandardResponse<T>`, `ErrorType`, `MCPTool`, `EmbeddingStats`, `QdrantPayload`, and `SearchFilters`.
+**Types** (`src/types/index.ts`): Shared interfaces including `MemoryType`, `SearchResult`, `StandardResponse<T>`, `ErrorType`, `MCPTool`, `EmbeddingStats`, `QdrantPayload`, and `SearchFilters`.
 
 **Schemas** (`src/schemas/memory-schemas.ts`): Zod schemas for all tool inputs, automatically generating JSON Schema for MCP registration. Validates `memory-store`, `memory-query`, `memory-list`, `memory-get`, `memory-update`, `memory-delete`, `memory-batch-delete`, `memory-status`, and `memory-count` inputs.
 

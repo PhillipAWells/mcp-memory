@@ -86,6 +86,8 @@ if (_proxyUrl !== null) {
 	}
 
 	const agent = new EnvHttpProxyAgent();
+	// TODO: Remove 'as unknown' casts once undici-types is bumped to match undici's onBodySent signature
+	// (currently undici@8.1.0 with undici-types@6.21.0 via @types/node@22; signature mismatch in callback types)
 	setGlobalDispatcher(agent as unknown as Parameters<typeof setGlobalDispatcher>[0]);
 	activeProxyAgent = agent as unknown as Dispatcher;
 
@@ -105,10 +107,12 @@ if (_proxyUrl !== null) {
 		init?: Record<string, unknown> & { dispatcher?: unknown },
 	): ReturnType<typeof fetch> => {
 		// init may contain dispatcher from Qdrant client; replace it with our proxy-aware agent.
+		// TODO: Remove 'as unknown' casts once undici-types is bumped to match undici's onBodySent signature
+		// (currently undici@8.1.0 with undici-types@6.21.0 via @types/node@22; signature mismatch in callback types)
 		// Type assertion: agent is EnvHttpProxyAgent (undici@8.1.0), but TypeScript expects
-		// Dispatcher from undici-types@7.19.2 (via @types/node). The onBodySent callback signature
-		// differs between versions. Using 'unknown' bridges this version gap while preserving
-		// runtime compatibility — both implement the same dispatch protocol.
+		// Dispatcher from undici-types. The onBodySent callback signature differs between versions.
+		// Using 'unknown' bridges this version gap while preserving runtime compatibility — both
+		// implement the same dispatch protocol.
 		if (init !== undefined && typeof init === 'object' && 'dispatcher' in init) {
 			return _originalFetch(input, { ...init, dispatcher: agent as unknown as Dispatcher } as unknown as Parameters<typeof _originalFetch>[1]);
 		}
