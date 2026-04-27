@@ -10,6 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { withRetry } from '../utils/retry.js';
+import { MemoryError, extractErrorMessage } from '../utils/errors.js';
 import type {
 	QdrantPayload,
 	SearchFilters,
@@ -138,7 +139,7 @@ interface CollectionStats {
 export class QdrantService {
 	private readonly client: QdrantClient;
 	private readonly collectionName: string;
-	private initialized: boolean = false;
+	private initPromise: Promise<void> | null = null;
 	/** Running count of access-tracking update failures for diagnostics. */
 	private accessTrackingFailureCount: number = 0;
 	/** Timestamp of the last access tracking warning log (for rate-limiting). */
@@ -179,35 +180,36 @@ export class QdrantService {
 	 * ```
 	 */
 	public async initialize(): Promise<void> {
-		if (this.initialized) {
-			logger.debug('Qdrant service already initialized');
+		if (this.initPromise) {
+			await this.initPromise;
 			return;
 		}
+		this.initPromise = (async () => {
+			try {
+				// Check if collection exists
+				const collections = await this.client.getCollections();
+				const exists = collections.collections.some(
+					(c) => c.name === this.collectionName,
+				);
 
-		try {
-			// Check if collection exists
-			const collections = await this.client.getCollections();
-			const exists = collections.collections.some(
-				(c) => c.name === this.collectionName,
-			);
+				if (!exists) {
+					logger.info(`Creating collection: ${this.collectionName}`);
+					await this.createCollection();
+				} else {
+					logger.info(`Collection already exists: ${this.collectionName}`);
+					await this.validateCollectionSchema();
+				}
 
-			if (!exists) {
-				logger.info(`Creating collection: ${this.collectionName}`);
-				await this.createCollection();
-			} else {
-				logger.info(`Collection already exists: ${this.collectionName}`);
-				await this.validateCollectionSchema();
+				// Create payload indexes
+				await this.createPayloadIndexes();
+
+				logger.info('Qdrant service initialized successfully');
+			} catch (error) {
+				logger.error('Failed to initialize Qdrant service:', error);
+				throw error;
 			}
-
-			// Create payload indexes
-			await this.createPayloadIndexes();
-
-			this.initialized = true;
-			logger.info('Qdrant service initialized successfully');
-		} catch (error) {
-			logger.error('Failed to initialize Qdrant service:', error);
-			throw error;
-		}
+		})();
+		await this.initPromise;
 	}
 
 	/**
@@ -411,7 +413,7 @@ export class QdrantService {
 			updated_at: metadata.updated_at ?? now,
 		};
 
-		const vectorData = { dense: vector, dense_large: vectorLarge };
+		const vectorData = { dense: vector, ...(vectorLarge && { dense_large: vectorLarge }) };
 
 		const point: QdrantPoint = {
 			id,
@@ -419,10 +421,14 @@ export class QdrantService {
 			payload,
 		};
 
-		await withRetry(() => this.client.upsert(this.collectionName, {
-			wait: true,
-			points: [point],
-		}));
+		try {
+			await withRetry(() => this.client.upsert(this.collectionName, {
+				wait: true,
+				points: [point],
+			}));
+		} catch (error) {
+			throw new MemoryError('STORAGE_FAILED', `Failed to upsert points to Qdrant: ${extractErrorMessage(error)}`, { cause: error });
+		}
 
 		const embeddingType = vectorLarge ? 'dual' : 'single';
 		logger.debug(`Upserted point with ${embeddingType} embedding: ${id}`);
@@ -1084,6 +1090,7 @@ export class QdrantService {
 			}),
 		);
 	}
+
 	/**
 	 * Convert a Qdrant point payload to the typed QdrantPayload shape.
 	 * Safely narrows from unknown to the expected structure, returning null
@@ -1130,9 +1137,7 @@ export class QdrantService {
 	 * Ensure service is initialized
 	 */
 	private async ensureInitialized(): Promise<void> {
-		if (!this.initialized) {
-			await this.initialize();
-		}
+		await this.initialize();
 	}
 }
 

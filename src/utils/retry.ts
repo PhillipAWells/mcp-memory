@@ -144,7 +144,10 @@ function isRetryableError(error: unknown, options: Required<RetryOptions>): bool
 }
 
 /**
- * Sleep for specified milliseconds
+ * Sleep for a given number of milliseconds.
+ * @param ms - Duration to sleep in milliseconds
+ * @returns Promise that resolves after the duration
+ * @internal
  */
 async function sleep(ms: number): Promise<void> {
 	await new Promise(resolve => setTimeout(resolve, ms));

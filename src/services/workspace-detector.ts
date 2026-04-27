@@ -83,7 +83,7 @@ export class WorkspaceDetectorService {
 				return { workspace: explicitWorkspace, source: 'explicit' };
 			}
 			// Invalid explicit workspace: fall through to auto-detection
-			logger.debug(`Invalid explicit workspace "${explicitWorkspace}", falling through to auto-detection`);
+			logger.warn('Workspace validation failed, falling through to auto-detection');
 		}
 
 		// 2. Check cache (only valid when autoDetect is still enabled)
