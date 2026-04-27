@@ -434,7 +434,10 @@ async function memoryListHandler(args: unknown): Promise<StandardResponse> {
 			{
 				memories: results.map((r) => ({
 					id: r.id,
-					content: r.content.slice(0, CONTENT_PREVIEW_LENGTH), // Truncate for listing
+					// Truncate for listing; append ellipsis so callers know the content was cut
+					content: r.content.length > CONTENT_PREVIEW_LENGTH
+						? `${r.content.slice(0, CONTENT_PREVIEW_LENGTH)}...`
+						: r.content,
 					metadata: r.metadata,
 				})),
 				count: results.length,
