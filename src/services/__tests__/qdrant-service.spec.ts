@@ -1193,14 +1193,14 @@ describe('QdrantService.createPayloadIndexes with existing indexes', () => {
 		await expect(service.initialize()).resolves.not.toThrow();
 	});
 
-	it('logs warning when payload index creation fails with non-exists error', async () => {
+	it('throws when critical payload index creation fails with non-exists error', async () => {
 		mockClient.createPayloadIndex.mockRejectedValueOnce(
 			new Error('unexpected error'),
 		);
 		mockClient.createPayloadIndex.mockResolvedValue({});
 
 		service = new QdrantService();
-		await expect(service.initialize()).resolves.not.toThrow();
+		await expect(service.initialize()).rejects.toThrow('unexpected error');
 	});
 });
 

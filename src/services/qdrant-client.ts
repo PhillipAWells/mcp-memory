@@ -57,11 +57,9 @@ const ACCESS_TRACKING_WARNING_INTERVAL_MS = 10_000;
 const HTTPS_DEFAULT_PORT = 443;
 
 /**
- * Point structure for Qdrant upsert
- */
-/**
  * Type guard to check if a value is a valid QdrantPayload.
- * Validates required fields: content (string), created_at (string), updated_at (string).
+ *
+ * Validates required fields: `content` (string), `created_at` (string), `updated_at` (string).
  * Returns true only if the payload matches the expected structure.
  *
  * @param p - The value to check
@@ -329,20 +327,21 @@ export class QdrantService {
 	private async createPayloadIndexes(): Promise<void> {
 		const indexes = [
 			// Core indexes (used in most queries)
-			{ field: 'workspace', schema: 'keyword' as const },
-			{ field: 'memory_type', schema: 'keyword' as const },
-			{ field: 'confidence', schema: 'float' as const },
-			{ field: 'created_at', schema: 'datetime' as const },
-			{ field: 'updated_at', schema: 'datetime' as const },
+			{ field: 'workspace', schema: 'keyword' as const, critical: true },
+			{ field: 'memory_type', schema: 'keyword' as const, critical: true },
+			{ field: 'confidence', schema: 'float' as const, critical: true },
+			{ field: 'created_at', schema: 'datetime' as const, critical: false },
+			{ field: 'updated_at', schema: 'datetime' as const, critical: false },
+			{ field: 'expires_at', schema: 'datetime' as const, critical: true },
 
 			// Optional indexes (for analytics)
-			{ field: 'access_count', schema: 'integer' as const },
-			{ field: 'last_accessed_at', schema: 'datetime' as const },
-			{ field: 'tags', schema: 'keyword' as const },
-			{ field: 'chunk_group_id', schema: 'keyword' as const },
+			{ field: 'access_count', schema: 'integer' as const, critical: false },
+			{ field: 'last_accessed_at', schema: 'datetime' as const, critical: false },
+			{ field: 'tags', schema: 'keyword' as const, critical: false },
+			{ field: 'chunk_group_id', schema: 'keyword' as const, critical: true },
 
 			// Text index for full-text search
-			{ field: 'content', schema: 'text' as const },
+			{ field: 'content', schema: 'text' as const, critical: true },
 		];
 
 		logger.info('Creating payload indexes...');
@@ -367,8 +366,13 @@ export class QdrantService {
 				// Ignore if index already exists
 				if (error instanceof Error && error.message.includes('already exists')) {
 					logger.debug(`Index already exists for field: ${index.field}`);
+				} else if (index.critical) {
+					// Critical indexes must succeed; propagate errors for these
+					logger.error(`Failed to create critical index for ${index.field}:`, error);
+					throw error;
 				} else {
-					logger.warn(`Failed to create index for ${index.field}:`, error);
+					// Optional indexes can be skipped; log as warning only
+					logger.warn(`Failed to create optional index for ${index.field}:`, error);
 				}
 			}
 		}
@@ -518,11 +522,12 @@ export class QdrantService {
 				logger.debug(`Upserted batch ${i / UPSERT_BATCH_SIZE + 1}: ${batch.length} points`);
 			} catch (error) {
 				// Entire batch failed - record all as failures
+				const errorMessage = error instanceof Error ? error.message : String(error);
 				qdrantPoints.forEach((point, idx) => {
 					result.failedPoints.push({
 						index: i + idx,
 						id: point.id,
-						error: error instanceof Error ? error.message : String(error),
+						error: errorMessage,
 					});
 				});
 				result.totalProcessed += batch.length;
