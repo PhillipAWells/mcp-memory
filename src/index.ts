@@ -12,7 +12,7 @@
 // Proxy MUST be the first import — sets the global fetch dispatcher before any HTTP client module initialises.
 import { initProxy } from './utils/proxy.js';
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { Server } from '@modelcontextprotocol/sdk/server.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
 	CallToolRequestSchema,
