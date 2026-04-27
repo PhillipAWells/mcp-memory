@@ -1,1 +1,18 @@
 # Note: package.json 'files' whitelist takes precedence; entries here exclude files within whitelisted directories
+
+# Dependencies and source files
+src/
+*.spec.ts
+
+# Configuration and build artifacts
+.github/
+.husky/
+coverage/
+.env*
+.devcontainer/
+vitest.config.ts
+tsconfig*.json
+
+# Development dependencies
+.vscode/
+.idea/
