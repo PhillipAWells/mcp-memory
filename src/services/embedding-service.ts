@@ -51,6 +51,10 @@ const HTTP_STATUS_BAD_GATEWAY = 502;
 const HTTP_STATUS_SERVICE_UNAVAILABLE = 503;
 /** HTTP 504 Gateway Timeout — upstream timeout, safe to retry. */
 const HTTP_STATUS_GATEWAY_TIMEOUT = 504;
+/** OpenAI text-embedding-3-small model identifier. */
+const SMALL_MODEL = 'text-embedding-3-small';
+/** OpenAI text-embedding-3-large model identifier. */
+const LARGE_MODEL = 'text-embedding-3-large';
 
 /**
  * Embedding Service
@@ -63,8 +67,6 @@ export class EmbeddingService {
 	private readonly cache: Map<string, CacheEntry>;
 	private readonly maxCacheSize: number = MAX_CACHE_SIZE;
 
-	private readonly SMALL_MODEL = 'text-embedding-3-small';
-	private readonly LARGE_MODEL = 'text-embedding-3-large';
 	private readonly SMALL_DIMENSIONS: number;
 	private readonly LARGE_DIMENSIONS: number;
 
@@ -80,7 +82,7 @@ export class EmbeddingService {
 		this.LARGE_DIMENSIONS = config.embedding.largeDimensions;
 		this.cache = new Map();
 		this.client = new OpenAI({ apiKey: config.openai.apiKey });
-		logger.info(`Embedding service initialized (model: ${this.SMALL_MODEL})`);
+		logger.info(`Embedding service initialized (model: ${SMALL_MODEL})`);
 		logger.debug(`Max cache size: ${this.maxCacheSize}`);
 	}
 
@@ -118,7 +120,7 @@ export class EmbeddingService {
 		this.cacheMisses++;
 		logger.debug(`Generating embedding for text: "${this.truncate(text, DEBUG_TRUNCATE_LEN)}"`);
 
-		const embedding = await this.generateOpenAIEmbedding(text, this.SMALL_MODEL, this.SMALL_DIMENSIONS);
+		const embedding = await this.generateOpenAIEmbedding(text, SMALL_MODEL, this.SMALL_DIMENSIONS);
 
 		this.addToCache(cacheKey, embedding);
 		return embedding;
@@ -158,7 +160,7 @@ export class EmbeddingService {
 		this.cacheMisses++;
 		logger.debug(`Generating large embedding for text: "${this.truncate(text, DEBUG_TRUNCATE_LEN)}"`);
 
-		const embedding = await this.generateOpenAIEmbedding(text, this.LARGE_MODEL, this.LARGE_DIMENSIONS);
+		const embedding = await this.generateOpenAIEmbedding(text, LARGE_MODEL, this.LARGE_DIMENSIONS);
 
 		this.addToCache(cacheKey, embedding);
 		return embedding;
@@ -211,7 +213,7 @@ export class EmbeddingService {
 			const batch = texts.slice(i, i + BATCH_SIZE);
 			const batchResults = await this.generateOpenAIBatch(
 				batch,
-				this.SMALL_MODEL,
+				SMALL_MODEL,
 				this.SMALL_DIMENSIONS,
 				'small',
 			);
@@ -248,7 +250,7 @@ export class EmbeddingService {
 			const batch = texts.slice(i, i + BATCH_SIZE);
 			const batchResults = await this.generateOpenAIBatch(
 				batch,
-				this.LARGE_MODEL,
+				LARGE_MODEL,
 				this.LARGE_DIMENSIONS,
 				'large',
 			);
@@ -515,7 +517,7 @@ export class EmbeddingService {
 		model: string,
 		dimensions: number,
 	): Promise<number[]> {
-		const isLarge = model === this.LARGE_MODEL;
+		const isLarge = model === LARGE_MODEL;
 
 		const result = await withRetry(
 			() => this.client.embeddings.create({ model, input: text, dimensions }),
@@ -593,7 +595,7 @@ export class EmbeddingService {
 
 		if (uncachedIndices.length > 0) {
 			const uncachedTexts = uncachedIndices.map(i => texts[i]);
-			const isLarge = model === this.LARGE_MODEL;
+			const isLarge = model === LARGE_MODEL;
 
 			const response = await withRetry(
 				() => this.client.embeddings.create({ model, input: uncachedTexts, dimensions: dims }),
@@ -637,7 +639,7 @@ export class EmbeddingService {
 
 	private getCacheKey(text: string, variant: 'small' | 'large'): string {
 		const hash = createHash('sha256');
-		const model = variant === 'large' ? this.LARGE_MODEL : this.SMALL_MODEL;
+		const model = variant === 'large' ? LARGE_MODEL : SMALL_MODEL;
 		const dims = variant === 'large' ? this.LARGE_DIMENSIONS : this.SMALL_DIMENSIONS;
 		hash.update(model);
 		hash.update(String(dims));
