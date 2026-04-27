@@ -239,9 +239,8 @@ async function memoryQueryHandler(args: unknown): Promise<StandardResponse> {
 		const truncationSuffix = input.query.length > QUERY_LOG_LENGTH ? '...' : '';
 		logger.info(`Querying memory: "${queryPreview}${truncationSuffix}"`);
 
-		// Offset always has default value 0 from schema; the !== undefined check is redundant but kept as runtime defense
 		// Hybrid search does not support pagination
-		if (input.use_hybrid_search && input.offset !== undefined && input.offset > 0) {
+		if (input.use_hybrid_search && input.offset > 0) {
 			return errorResponse(
 				'Hybrid search does not support pagination. Use standard search for pagination.',
 				'VALIDATION_ERROR',
@@ -536,9 +535,9 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 		}
 
 		// Validation: at least one of content or metadata must be provided
-		// Safe to use Object.keys() because Zod strips undefined values from passthrough objects at parse time
+		const hasContent = input.content !== undefined && input.content !== null;
 		const hasMetadata = input.metadata && Object.keys(input.metadata).length > 0;
-		if (!input.content && !hasMetadata) {
+		if (!hasContent && !hasMetadata) {
 			return validationError('metadata must contain at least one field, or provide new content');
 		}
 
