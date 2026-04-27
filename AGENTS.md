@@ -263,3 +263,25 @@ The `memory-list` tool sorts results in-memory and is limited to a maximum of 10
 Clients should use `total_count` for pagination calculations. The `uncapped_count` shows the true collection size if needed for analytics.
 
 **Workaround for larger collections**: Use `workspace`, `memory_type`, or `tags` filters to narrow the result set before sorting, reducing the number of records loaded and processed.
+
+### Metadata-Only Chunk Updates Have a Race Condition
+
+When updating only the metadata for a chunked memory (not changing content), the `memory-update` handler lists all sibling chunks and updates their payloads in a secondary operation. If a sibling chunk is deleted between the list and update phases, the `setPayload()` operation silently no-ops for that missing ID — Qdrant does not return an error.
+
+This is acceptable for eventual-consistency systems where transient inconsistency is tolerated, but callers should be aware that metadata updates to chunked memories may not apply to all siblings if concurrent deletes occur. In practice, this is rare (concurrent deletes of siblings are uncommon), but it's a known limitation of the current implementation.
+
+**Mitigation**: If metadata consistency across all chunks is critical, avoid concurrent operations on the same chunk group. The race window is narrow (milliseconds), but it exists.
+
+### WorkspaceDetector Uses Synchronous File I/O
+
+`WorkspaceDetector.findPackageJson()` uses synchronous filesystem calls (`existsSync` + `readFileSync`) to detect workspace configuration from package.json. While these calls block the event loop, the impact is mitigated by TTL caching (default `WORKSPACE_CACHE_TTL=60000`). If the cache expires under load, every request re-triggers filesystem I/O, which can cause event loop blocking.
+
+This is acceptable at current scale but worth documenting for future capacity planning. Under very high concurrency, synchronous I/O on a hot cache miss could cause latency spikes.
+
+**Mitigation for high concurrency**: Ensure `WORKSPACE_CACHE_TTL` is sufficiently high (e.g., 300000 for 5 minutes) to minimize cache expiry under normal load. Alternatively, set `WORKSPACE_AUTO_DETECT=false` and provide `WORKSPACE_DEFAULT` to skip detection entirely.
+
+### expires_at Now Uses Datetime Index
+
+Expiry filtering queries (`memory-query`, `memory-list`) previously scanned all payloads (O(n)) to filter expired memories. A datetime index on `expires_at` was added during this review, enabling indexed lookups that avoid full payload scans. This improves query performance significantly for large collections with many short-term or episodic memories.
+
+This is a performance bug fix and not a gotcha, but it's worth noting if you observe improved query latency on large collections after this change.
