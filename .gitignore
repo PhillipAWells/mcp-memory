@@ -13,6 +13,11 @@ coverage/
 # Temp
 tmp/
 
+# Analysis and review files
+.analysis-findings.md
+.code-review-findings.json
+.review-summary.md
+
 # Environment
 .env
 .env.local
