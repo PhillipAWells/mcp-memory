@@ -100,6 +100,17 @@ describe('EmbeddingService.generateEmbedding', () => {
 		expect(stats.cacheHits).toBe(1);
 		expect(stats.cacheMisses).toBe(2);
 	});
+
+	it('throws when OpenAI returns an embedding with wrong dimensions', async () => {
+		// Return a 100-dim embedding where 1536 is expected
+		mockCreate.mockResolvedValue({
+			data: [{ index: 0, embedding: new Array(100).fill(0.1) }],
+			usage: { total_tokens: 10 },
+		});
+		await expect(service.generateEmbedding('test text')).rejects.toThrow(
+			'Invalid embedding received from OpenAI',
+		);
+	});
 });
 
 // ── generateLargeEmbedding ────────────────────────────────────────────────────

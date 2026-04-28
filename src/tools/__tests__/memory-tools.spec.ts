@@ -254,6 +254,16 @@ describe('memory-query', () => {
 		const result = await getTool('memory-query').handler(MemoryQueryInputSchema.parse({ query: 'my query text' }));
 		expect((result.data as any).query).toBe('my query text');
 	});
+
+	it('returns EXECUTION_ERROR when search throws a non-Zod error', async () => {
+		mockEmbedding.generateDualEmbeddings.mockRejectedValueOnce(new Error('OpenAI connection failed'));
+		const result = await getTool('memory-query').handler(
+			MemoryQueryInputSchema.parse({ query: 'test query' }),
+		);
+		expect(result.success).toBe(false);
+		expect(result.error_type).toBe('EXECUTION_ERROR');
+		expect(result.message).toContain('Failed to query memory');
+	});
 });
 
 // ── memory-list ───────────────────────────────────────────────────────────────
@@ -495,6 +505,17 @@ describe('memory-update', () => {
 		}));
 		expect(result.success).toBe(false);
 		expect(result.metadata?.error_code).toBe('SECRETS_DETECTED');
+	});
+
+	it('returns VALIDATION_ERROR when metadata workspace is a reserved name', async () => {
+		const result = await getTool('memory-update').handler(
+			MemoryUpdateInputSchema.parse({
+				id: VALID_UUID,
+				metadata: { workspace: 'admin' },
+			}),
+		);
+		expect(result.success).toBe(false);
+		expect(result.error_type).toBe('VALIDATION_ERROR');
 	});
 });
 
@@ -1017,7 +1038,7 @@ describe('memory-update - content and metadata update behavior', () => {
 
 	it('returns success even when batchDelete throws after consolidating chunked memory to single', async () => {
 		// Existing chunked memory
-		mockQdrant.get.mockResolvedValue({
+		mockQdrant.get.mockResolvedValueOnce({
 			id: VALID_UUID,
 			content: 'old chunk content',
 			metadata: {
@@ -1031,14 +1052,14 @@ describe('memory-update - content and metadata update behavior', () => {
 			score: 1,
 		});
 		// Siblings of this chunk (both IDs to delete)
-		mockQdrant.list.mockResolvedValue([
+		mockQdrant.list.mockResolvedValueOnce([
 			{ id: VALID_UUID, metadata: { chunk_index: 0, chunk_group_id: 'group-abc' } },
 			{ id: 'sibling-uuid', metadata: { chunk_index: 1, chunk_group_id: 'group-abc' } },
 		]);
 		// Single upsert succeeds
-		mockQdrant.upsert.mockResolvedValue('new-single-uuid');
+		mockQdrant.upsert.mockResolvedValueOnce('new-single-uuid');
 		// batchDelete throws a transient error
-		mockQdrant.batchDelete.mockRejectedValue(new Error('transient network error'));
+		mockQdrant.batchDelete.mockRejectedValueOnce(new Error('transient network error'));
 
 		// Use short content so no re-chunking occurs
 		const shortContent = 'Short replacement';
@@ -1053,10 +1074,92 @@ describe('memory-update - content and metadata update behavior', () => {
 		expect(mockQdrant.batchDelete).toHaveBeenCalled();
 	});
 
+	it('normalizes workspace to lowercase in merged metadata during chunked content update', async () => {
+		// Existing chunked memory
+		mockQdrant.get.mockResolvedValueOnce({
+			id: VALID_UUID,
+			content: 'old chunk content',
+			metadata: {
+				chunk_index: 0,
+				chunk_group_id: 'group-norm',
+				total_chunks: 1,
+				memory_type: 'long-term',
+				workspace: 'my-project',
+				created_at: new Date().toISOString(),
+				updated_at: new Date().toISOString(),
+				access_count: 0,
+			},
+			score: 1,
+		});
+		mockQdrant.list.mockResolvedValueOnce([
+			{ id: VALID_UUID, metadata: { chunk_index: 0, chunk_group_id: 'group-norm' } },
+		]);
+		mockQdrant.upsert.mockResolvedValueOnce('normalized-id');
+
+		// Pass uppercase workspace — should be normalized to lowercase
+		const result = await getTool('memory-update').handler(
+			MemoryUpdateInputSchema.parse({
+				id: VALID_UUID,
+				content: 'short replacement',  // short enough to not re-chunk
+				metadata: { workspace: 'My-Project' },
+			}),
+		);
+
+		expect(result.success).toBe(true);
+		// Verify upsert was called with normalized (lowercase) workspace
+		expect(mockQdrant.upsert).toHaveBeenCalledWith(
+			'short replacement',
+			expect.any(Array),
+			expect.objectContaining({ workspace: 'my-project' }),
+			expect.any(Array),
+		);
+	});
+
+	it('returns success even when batchDelete throws after successful re-chunking', async () => {
+		const chunkGroupId = 'group-rechunk';
+		// Existing chunked memory
+		mockQdrant.get.mockResolvedValueOnce({
+			id: VALID_UUID,
+			content: 'old chunk 1',
+			metadata: {
+				chunk_index: 0,
+				chunk_group_id: chunkGroupId,
+				total_chunks: 2,
+				memory_type: 'long-term',
+				created_at: new Date().toISOString(),
+				updated_at: new Date().toISOString(),
+				access_count: 0,
+			},
+			score: 1,
+		});
+		mockQdrant.list.mockResolvedValueOnce([
+			{ id: VALID_UUID, metadata: { chunk_index: 0, chunk_group_id: chunkGroupId } },
+			{ id: 'sibling-id', metadata: { chunk_index: 1, chunk_group_id: chunkGroupId } },
+		]);
+		// batchUpsert succeeds with new chunks
+		mockQdrant.batchUpsert.mockResolvedValueOnce({
+			successfulIds: ['new-chunk-1', 'new-chunk-2'],
+			failedPoints: [],
+			totalProcessed: 2,
+		});
+		// batchDelete throws — old chunks not deleted
+		mockQdrant.batchDelete.mockRejectedValueOnce(new Error('transient delete error'));
+
+		// New content is LONG (> chunkSize of 1000 in test config)
+		const longContent = 'x'.repeat(2000);
+		const result = await getTool('memory-update').handler(
+			MemoryUpdateInputSchema.parse({ id: VALID_UUID, content: longContent, auto_chunk: true }),
+		);
+
+		// Must succeed — new chunks stored, old ones orphaned (data safety)
+		expect(result.success).toBe(true);
+		expect(mockQdrant.batchDelete).toHaveBeenCalled();
+	});
+
 	it('returns success with reduced siblings_updated when one sibling updatePayload fails', async () => {
 		const chunkGroupId = 'group-meta-123';
 		// Existing memory is a chunk with siblings
-		mockQdrant.get.mockResolvedValue({
+		mockQdrant.get.mockResolvedValueOnce({
 			id: VALID_UUID,
 			content: 'chunk content',
 			metadata: {
@@ -1072,7 +1175,7 @@ describe('memory-update - content and metadata update behavior', () => {
 		});
 		// Two siblings
 		const siblingId = 'sibling-id-456';
-		mockQdrant.list.mockResolvedValue([
+		mockQdrant.list.mockResolvedValueOnce([
 			{ id: VALID_UUID, metadata: { chunk_index: 0, chunk_group_id: chunkGroupId } },
 			{ id: siblingId, metadata: { chunk_index: 1, chunk_group_id: chunkGroupId } },
 		]);

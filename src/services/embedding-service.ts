@@ -515,6 +515,7 @@ export class EmbeddingService {
 
 		return chunks.map((chunk, index) => {
 			const embedding = embeddings[index];
+			/* v8 ignore next 3 */
 			if (embedding === undefined) {
 				throw new Error(`Internal error: missing embedding for chunk ${index} of ${chunks.length}`);
 			}

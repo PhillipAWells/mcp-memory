@@ -307,6 +307,85 @@ describe('QdrantService.validateCollectionSchema', () => {
 	});
 });
 
+// ── QdrantService.initialize — collection creation ────────────────────────────
+
+describe('QdrantService.initialize — collection creation', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		// Reset getCollection to a valid dual-vector schema (may have been contaminated by prior describe blocks)
+		mockClient.getCollection.mockResolvedValue({
+			config: {
+				params: {
+					vectors: {
+						dense: { size: 1536, distance: 'Cosine' },
+						dense_large: { size: 3072, distance: 'Cosine' },
+					},
+				},
+			},
+			points_count: 0,
+			indexed_vectors_count: 0,
+			segments_count: 1,
+			status: 'green',
+			optimizer_status: 'ok',
+		});
+		mockClient.createPayloadIndex.mockResolvedValue({});
+		mockClient.createCollection.mockResolvedValue({});
+	});
+
+	it('creates collection when it does not exist', async () => {
+		// Mock: collection list returns empty (collection does not exist)
+		mockClient.getCollections.mockResolvedValueOnce({ collections: [] });
+
+		const service = new QdrantService();
+		await service.initialize();
+
+		expect(mockClient.createCollection).toHaveBeenCalledWith(
+			'test-collection',
+			expect.objectContaining({ vectors: expect.any(Object) }),
+		);
+	});
+});
+
+describe('QdrantService.initialize — optional index creation failure', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		// Reset getCollection to a valid dual-vector schema (may have been contaminated by prior describe blocks)
+		mockClient.getCollections.mockResolvedValue({ collections: [{ name: 'test-collection' }] });
+		mockClient.getCollection.mockResolvedValue({
+			config: {
+				params: {
+					vectors: {
+						dense: { size: 1536, distance: 'Cosine' },
+						dense_large: { size: 3072, distance: 'Cosine' },
+					},
+				},
+			},
+			points_count: 0,
+			indexed_vectors_count: 0,
+			segments_count: 1,
+			status: 'green',
+			optimizer_status: 'ok',
+		});
+	});
+
+	it('logs warning but continues when optional payload index creation fails', async () => {
+		// Non-critical fields: created_at, updated_at, access_count, last_accessed_at, tags
+		// Fail only these — critical indexes must succeed for initialization to complete
+		const nonCritical = ['created_at', 'updated_at', 'access_count', 'last_accessed_at', 'tags'];
+		mockClient.createPayloadIndex.mockImplementation((...args: unknown[]) => {
+			const opts = args[1] as { field_name?: string } | undefined;
+			if (opts?.field_name && nonCritical.includes(opts.field_name)) {
+				return Promise.reject(new Error('optional index creation failed'));
+			}
+			return Promise.resolve({});
+		});
+
+		const service = new QdrantService();
+		// Should not throw — optional index failures are warned but not fatal
+		await expect(service.initialize()).resolves.not.toThrow();
+	});
+});
+
 // ── Access tracking ──────────────────────────────────────────────────────────
 
 describe('QdrantService.get (access tracking)', () => {
