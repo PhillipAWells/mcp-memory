@@ -11,6 +11,13 @@
  * - `short-term` — volatile working context; auto-expires after 7 days.
  * - `episodic`   — specific experiences or events; auto-expires after 90 days.
  * - `long-term`  — persistent facts, concepts, and workflows; no expiry.
+ *
+ * @example
+ * ```typescript
+ * const workingContext: MemoryType = 'short-term';
+ * const sessionNote: MemoryType = 'episodic';
+ * const coreKnowledge: MemoryType = 'long-term';
+ * ```
  */
 export type MemoryType =
   | 'short-term'    // Volatile working memory
@@ -19,6 +26,17 @@ export type MemoryType =
 
 /**
  * A single result returned by a vector search or point retrieval operation.
+ *
+ * @example
+ * ```typescript
+ * const result: SearchResult = {
+ *   id: '550e8400-e29b-41d4-a716-446655440000',
+ *   path: '/workspace/file.md',
+ *   content: 'Important workflow information...',
+ *   score: 0.92,
+ *   metadata: { memory_type: 'long-term', workspace: 'myapp', created_at: '2026-04-28T...' },
+ * };
+ * ```
  */
 export interface SearchResult {
 	/** UUID of the Qdrant point. */
@@ -41,6 +59,23 @@ export interface SearchResult {
  * `error_type` describe the failure.
  *
  * @template T - Type of the `data` payload on success.
+ *
+ * @example
+ * ```typescript
+ * const successResponse: StandardResponse<{ id: string }> = {
+ *   success: true,
+ *   message: 'Memory stored successfully',
+ *   data: { id: '550e8400-e29b-41d4-a716-446655440000' },
+ *   metadata: { duration_ms: 125 },
+ * };
+ *
+ * const errorResponse: StandardResponse = {
+ *   success: false,
+ *   message: 'Failed to store memory',
+ *   error: 'VALIDATION_ERROR: content is required',
+ *   error_type: 'VALIDATION_ERROR',
+ * };
+ * ```
  */
 export interface StandardResponse<T = unknown> {
 	/** `true` on success, `false` on any error. */
@@ -62,6 +97,16 @@ export interface StandardResponse<T = unknown> {
  *
  * Handlers should pick the most specific type so callers can branch
  * on error category without parsing the `message` string.
+ *
+ * @example
+ * ```typescript
+ * const errorType: ErrorType = 'VALIDATION_ERROR';
+ * if (response.error_type === 'NOT_FOUND_ERROR') {
+ *   console.log('Memory not found, try searching instead');
+ * } else if (response.error_type === 'CONNECTION_ERROR') {
+ *   console.log('Cannot reach Qdrant server, check network');
+ * }
+ * ```
  */
 export type ErrorType =
   | 'VALIDATION_ERROR'      // Input failed schema validation
@@ -80,6 +125,25 @@ export type ErrorType =
  * The server iterates over the {@link tools} array, registers each tool's
  * `name` + `inputSchema` with the MCP protocol layer, and routes incoming
  * `tools/call` requests to the matching `handler`.
+ *
+ * @example
+ * ```typescript
+ * const tool: MCPTool = {
+ *   name: 'memory-store',
+ *   description: 'Embed and store a new memory',
+ *   inputSchema: {
+ *     type: 'object',
+ *     properties: {
+ *       content: { type: 'string', description: 'Content to store' },
+ *     },
+ *     required: ['content'],
+ *   },
+ *   handler: async (args) => {
+ *     const response: StandardResponse = { success: true, message: 'Stored', data: {} };
+ *     return response;
+ *   },
+ * };
+ * ```
  */
 export interface MCPTool {
 	/** Unique tool identifier used in MCP `tools/call` requests. */
@@ -109,6 +173,18 @@ export interface MCPTool {
 /**
  * Cumulative statistics for the {@link EmbeddingService}.
  * Returned by `embeddingService.getStats()` and included in `memory-status` responses.
+ *
+ * @example
+ * ```typescript
+ * const stats: EmbeddingStats = {
+ *   totalEmbeddings: 1000,
+ *   cacheHits: 850,
+ *   cacheMisses: 150,
+ *   totalTokens: 45000,
+ *   totalCost: 0.18,
+ *   cacheHitRate: 0.85,
+ * };
+ * ```
  */
 export interface EmbeddingStats {
 	/** Total number of `generateEmbedding` / `generateLargeEmbedding` calls. */
@@ -131,6 +207,22 @@ export interface EmbeddingStats {
  * All fields except `content`, `created_at`, and `updated_at` are optional.
  * The index signature allows arbitrary caller-defined fields to be stored and
  * retrieved without schema changes.
+ *
+ * @example
+ * ```typescript
+ * const payload: QdrantPayload = {
+ *   id: '550e8400-e29b-41d4-a716-446655440000',
+ *   content: 'Core workflow documentation...',
+ *   path: '/docs/workflow.md',
+ *   workspace: 'myapp',
+ *   memory_type: 'long-term',
+ *   confidence: 0.95,
+ *   tags: ['workflow', 'documentation'],
+ *   created_at: '2026-04-28T10:30:00Z',
+ *   updated_at: '2026-04-28T10:30:00Z',
+ *   access_count: 5,
+ * };
+ * ```
  */
 export interface QdrantPayload {
 	/** Point UUID; set by the application, not by Qdrant. */
@@ -173,6 +265,17 @@ export interface QdrantPayload {
  *
  * All fields are optional.  Only memories that match every specified field
  * are returned (implicit AND).  Expired memories are always excluded.
+ *
+ * @example
+ * ```typescript
+ * const filters: SearchFilters = {
+ *   workspace: 'myapp',
+ *   memory_type: 'long-term',
+ *   min_confidence: 0.8,
+ *   tags: ['workflow', 'important'],
+ * };
+ * // Finds long-term memories in 'myapp' workspace with high confidence and workflow tag
+ * ```
  */
 export interface SearchFilters {
 	/** Restrict to a specific workspace slug; `null` matches unscoped memories. */

@@ -183,6 +183,15 @@ interface CollectionStats {
  * Manages vector database operations with optimized configuration.
  * Note: The underlying QdrantClient does not support explicit connection closing;
  * connections are automatically managed by the HTTP client.
+ *
+ * @example
+ * ```typescript
+ * const service = new QdrantService();
+ * await service.initialize(); // Create/validate collection
+ * const results = await service.search([0.1, 0.2, 0.3], { limit: 5 });
+ * await service.store({ id: 'uuid', content: 'text', embedding: [...] });
+ * await service.delete('uuid');
+ * ```
  */
 export class QdrantService {
 	private readonly client: QdrantClient;
@@ -1218,5 +1227,15 @@ export class QdrantService {
 	}
 }
 
-// Export singleton instance
+/**
+ * Singleton Qdrant service instance for the entire application.
+ *
+ * @example
+ * ```typescript
+ * import { qdrantService } from './services/qdrant-client.js';
+ * await qdrantService.initialize();
+ * const searchResults = await qdrantService.search(embedding, { limit: 10 });
+ * await qdrantService.store({ id: 'mem-1', content: '...', embedding: [...] });
+ * ```
+ */
 export const qdrantService = new QdrantService();

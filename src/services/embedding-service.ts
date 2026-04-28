@@ -677,5 +677,16 @@ export class EmbeddingService {
 	}
 }
 
-// Export singleton instance
+/**
+ * Singleton embedding service instance for the entire application.
+ *
+ * @example
+ * ```typescript
+ * import { embeddingService } from './services/embedding-service.js';
+ * const embedding = await embeddingService.generateEmbedding('Hello, world!');
+ * const largeEmbedding = await embeddingService.generateLargeEmbedding('Longer text here');
+ * const stats = embeddingService.getStats();
+ * console.log(`Cache hit rate: ${(stats.cacheHitRate * 100).toFixed(1)}%`);
+ * ```
+ */
 export const embeddingService = new EmbeddingService();

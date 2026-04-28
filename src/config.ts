@@ -136,6 +136,20 @@ const ConfigSchema = z.object({
 /**
  * Fully-resolved, type-safe application configuration.
  * Inferred from {@link ConfigSchema} — see that schema for field documentation.
+ *
+ * @example
+ * ```typescript
+ * type MyConfig = Config;
+ * const cfg: MyConfig = {
+ *   openai: { apiKey: 'sk-...' },
+ *   embedding: { smallDimensions: 1536, largeDimensions: 3072 },
+ *   qdrant: { url: 'http://localhost:6333', collection: 'mcp-memory', timeout: 30000 },
+ *   server: { logLevel: 'info' },
+ *   memory: { chunkSize: 1000, chunkOverlap: 200 },
+ *   workspace: { autoDetect: true, default: null, cacheTTL: 60000 },
+ *   rules: { copyClaudeRules: true },
+ * };
+ * ```
  */
 export type Config = z.infer<typeof ConfigSchema>;
 
@@ -212,5 +226,12 @@ export function loadConfig(): Config {
  * Application-wide configuration singleton.
  * Loaded and validated once at module initialisation time.
  * Import this object wherever configuration values are needed.
+ *
+ * @example
+ * ```typescript
+ * import { config } from './config.js';
+ * const apiKey = config.openai.apiKey;
+ * const qdrantUrl = config.qdrant.url;
+ * ```
  */
 export const config = loadConfig();

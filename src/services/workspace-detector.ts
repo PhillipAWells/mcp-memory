@@ -11,12 +11,33 @@ import { logger } from '../utils/logger.js';
 
 /**
  * Workspace detection result
+ *
+ * @example
+ * ```typescript
+ * const result: WorkspaceDetectionResult = {
+ *   workspace: 'mcp-memory',
+ *   source: 'package.json',
+ *   path: '/workspace/mcp-memory/package.json',
+ * };
+ * ```
  */
 export interface WorkspaceDetectionResult {
 	workspace: string | null;
 	source: 'explicit' | 'package.json' | 'directory' | 'default' | 'none';
 	path?: string;
 }
+
+/** Maximum allowed workspace name length. */
+const MAX_WORKSPACE_NAME_LENGTH = 100;
+/** Number of parent directories to search for package.json. */
+const PACKAGE_JSON_SEARCH_LEVELS = 5;
+/**
+ * Names reserved for internal use.  Storing memories under these names could
+ * cause confusion in logs and error messages, so they are rejected at validation time.
+ */
+const RESERVED_WORKSPACE_NAMES = new Set([
+	'system', 'metadata', 'admin', 'internal', 'default', 'null', 'undefined', 'root',
+]);
 
 /**
  * Detects the current workspace name from environmental context.
@@ -34,24 +55,12 @@ export interface WorkspaceDetectionResult {
  *
  * @example
  * ```typescript
- * const detector = new WorkspaceDetectorService();
- * const result = detector.detect();
+ * const service = new WorkspaceDetectorService();
+ * const result = service.detect();
  * console.log(result.workspace); // 'mcp-memory' or null
  * console.log(result.source);    // 'package.json' or 'directory'
  * ```
  */
-/** Maximum allowed workspace name length. */
-const MAX_WORKSPACE_NAME_LENGTH = 100;
-/** Number of parent directories to search for package.json. */
-const PACKAGE_JSON_SEARCH_LEVELS = 5;
-/**
- * Names reserved for internal use.  Storing memories under these names could
- * cause confusion in logs and error messages, so they are rejected at validation time.
- */
-const RESERVED_WORKSPACE_NAMES = new Set([
-	'system', 'metadata', 'admin', 'internal', 'default', 'null', 'undefined', 'root',
-]);
-
 export class WorkspaceDetectorService {
 	// Mutable: cache entries updated on workspace detection
 	private cachedWorkspace: string | null = null;
@@ -447,5 +456,15 @@ export class WorkspaceDetectorService {
 	}
 }
 
-/** Singleton {@link WorkspaceDetectorService} instance used throughout the application. */
+/**
+ * Singleton {@link WorkspaceDetectorService} instance used throughout the application.
+ *
+ * @example
+ * ```typescript
+ * import { workspaceDetector } from './services/workspace-detector.js';
+ * const result = workspaceDetector.detect();
+ * console.log(result.workspace); // 'mcp-memory' or null
+ * console.log(result.source);    // 'package.json', 'directory', etc.
+ * ```
+ */
 export const workspaceDetector = new WorkspaceDetectorService();

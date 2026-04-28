@@ -29,6 +29,15 @@ const level = levelMap[config.server.logLevel] ?? LogLevel.INFO;
  *
  * Log level is controlled by `LOG_LEVEL` (debug | info | warn | error | silent).
  * `silent` suppresses all output — useful in tests. When unset, defaults to `info`.
+ *
+ * @example
+ * ```typescript
+ * import { logger } from './utils/logger.js';
+ * logger.info('Server starting...');
+ * logger.warn('Cache miss on embedding lookup');
+ * logger.error('Failed to connect to Qdrant', error);
+ * logger.debug('Detailed diagnostic information');
+ * ```
  */
 export const logger = new Logger({
 	service: 'mcp-memory',

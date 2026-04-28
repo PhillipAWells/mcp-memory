@@ -7,6 +7,19 @@ import { logger } from './logger.js';
 /**
  * Configuration options for {@link withRetry}.
  * All fields are optional; unset fields fall back to {@link DEFAULT_OPTIONS}.
+ *
+ * @example
+ * ```typescript
+ * const options: RetryOptions = {
+ *   maxRetries: 5,
+ *   initialDelay: 500,
+ *   maxDelay: 60000,
+ *   backoffFactor: 2,
+ *   retryableErrors: ['ECONNRESET', 'ETIMEDOUT'],
+ *   retryableStatusCodes: [502, 503],
+ * };
+ * const result = await withRetry(() => fetchData(), options);
+ * ```
  */
 export interface RetryOptions {
 	/** Maximum number of attempts before giving up (default: 3). */

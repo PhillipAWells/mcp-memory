@@ -11,6 +11,17 @@
  * @property found - Whether any secrets were detected.
  * @property secrets - Array of detected secret instances.
  * @property sanitized - Optional sanitized version of content with secrets replaced by placeholders.
+ *
+ * @example
+ * ```typescript
+ * const result: SecretDetection = {
+ *   found: true,
+ *   secrets: [
+ *     { type: 'api_key', pattern: 'OpenAI API key format', confidence: 'high', location: { start: 10, end: 30 }, context: '...sk-[REDACTED]...' }
+ *   ],
+ *   sanitized: 'My API key is [REDACTED] for testing'
+ * };
+ * ```
  */
 export interface SecretDetection {
 	found: boolean;
@@ -26,6 +37,17 @@ export interface SecretDetection {
  * @property location - Character indices of the detected secret in the original content.
  * @property context - Surrounding context with the secret redacted.
  * @property confidence - Confidence level: high/medium/low.
+ *
+ * @example
+ * ```typescript
+ * const secret: DetectedSecret = {
+ *   type: 'api_key',
+ *   pattern: 'OpenAI API key format (sk-...)',
+ *   location: { start: 15, end: 35 },
+ *   context: '...my key is [REDACTED] here...',
+ *   confidence: 'high',
+ * };
+ * ```
  */
 export interface DetectedSecret {
 	type: SecretType;
@@ -43,6 +65,18 @@ export interface DetectedSecret {
  *
  * Includes API keys, tokens (JWT, OAuth, Bearer), credentials (AWS, GCP, Azure),
  * database URLs, private keys, and PII (email, phone, SSN, credit cards).
+ *
+ * @example
+ * ```typescript
+ * const secretTypes: SecretType[] = [
+ *   'api_key',
+ *   'jwt_token',
+ *   'aws_credentials',
+ *   'password',
+ *   'private_key',
+ *   'database_url',
+ * ];
+ * ```
  */
 export type SecretType =
   | 'api_key'
@@ -333,11 +367,13 @@ function applySanitization(content: string, secrets: DetectedSecret[]): string {
  * @param content - The text to scan for secrets.
  * @returns Detection result with found flag, list of secrets, and sanitized content.
  * @example
+ * ```typescript
  * const detection = detectSecrets('API key: sk-abc123');
  * if (detection.found) {
  *   console.log('Secrets detected:', detection.secrets.length);
  *   console.log('Sanitized:', detection.sanitized);
  * }
+ * ```
  */
 export function detectSecrets(content: string): SecretDetection {
 	const secrets: DetectedSecret[] = [];
