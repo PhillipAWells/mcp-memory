@@ -62,6 +62,13 @@ const LARGE_MODEL = 'text-embedding-3-large';
  *
  * Generates embeddings using OpenAI text-embedding-3-small and
  * text-embedding-3-large with LRU caching and cost tracking.
+ *
+ * @example
+ * ```typescript
+ * import { embeddingService } from './embedding-service.js';
+ * const { small, large } = await embeddingService.embedBoth('search query text');
+ * console.log(`Small: ${small.length}d, Large: ${large.length}d`);
+ * ```
  */
 export class EmbeddingService {
 	private readonly client: OpenAI;
