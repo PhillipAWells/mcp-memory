@@ -660,6 +660,7 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 					const newIds = batchResult.successfulIds;
 
 					// Validate that we have results before proceeding with deletion
+					/* v8 ignore next 3 */
 					if (newIds.length === 0) {
 						return errorResponse('Chunk update produced no results', 'EXECUTION_ERROR');
 					}

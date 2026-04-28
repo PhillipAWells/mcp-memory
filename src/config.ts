@@ -219,6 +219,7 @@ export function loadConfig(): Config {
 	try {
 		return ConfigSchema.parse(rawConfig);
 	} catch (error) {
+		/* v8 ignore else */
 		if (error instanceof z.ZodError) {
 			// Chicken-and-egg: logger depends on config being loaded, so we must use
 			// console.error here even though we use structured logging elsewhere.

@@ -6,6 +6,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { config } from '../../config.js';
 import { WorkspaceDetectorService } from '../workspace-detector.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -498,5 +499,39 @@ describe('WorkspaceDetectorService cache invalidation', () => {
 		const result = detector.getCached();
 		expect(result.cached).toBe(true);
 		expect(result.workspace).toBe('test-ws-2');
+	});
+});
+
+// ── autoDetect disabled ───────────────────────────────────────────────────────
+
+describe('WorkspaceDetectorService.detect — autoDetect disabled', () => {
+	let detector: WorkspaceDetectorService;
+	let originalAutoDetect: boolean;
+	let originalDefault: string | null;
+
+	beforeEach(() => {
+		originalAutoDetect = config.workspace.autoDetect;
+		originalDefault = config.workspace.default;
+		Object.assign(config.workspace, { autoDetect: false });
+		config.workspace.default = null;
+		detector = makeDetector();
+	});
+
+	afterEach(() => {
+		Object.assign(config.workspace, { autoDetect: originalAutoDetect });
+		config.workspace.default = originalDefault;
+	});
+
+	it('returns null workspace when autoDetect is false and no default is configured', () => {
+		const result = detector.detect(undefined, process.cwd());
+		expect(result.workspace).toBeNull();
+		expect(result.source).toBe('default');
+	});
+
+	it('returns configured default when autoDetect is false and default is set', () => {
+		Object.assign(config.workspace, { default: 'my-default' });
+		const result = detector.detect(undefined, process.cwd());
+		expect(result.workspace).toBe('my-default');
+		expect(result.source).toBe('default');
 	});
 });

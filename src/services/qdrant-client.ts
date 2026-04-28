@@ -797,6 +797,7 @@ export class QdrantService {
 			.slice(0, limit)
 			.flatMap(([id, score]) => {
 				const rawPayload = payloadsById.get(id);
+				/* v8 ignore next */
 				if (!rawPayload) return [];
 				const payload = this.toQdrantPayload(rawPayload) ?? {
 					content: '',

@@ -1014,6 +1014,85 @@ describe('memory-update - content and metadata update behavior', () => {
 		expect(result.success).toBe(true);
 		expect(mockQdrant.upsert).toHaveBeenCalled();
 	});
+
+	it('returns success even when batchDelete throws after consolidating chunked memory to single', async () => {
+		// Existing chunked memory
+		mockQdrant.get.mockResolvedValue({
+			id: VALID_UUID,
+			content: 'old chunk content',
+			metadata: {
+				chunk_index: 0,
+				chunk_group_id: 'group-abc',
+				memory_type: 'long-term',
+				created_at: new Date().toISOString(),
+				updated_at: new Date().toISOString(),
+				access_count: 0,
+			},
+			score: 1,
+		});
+		// Siblings of this chunk (both IDs to delete)
+		mockQdrant.list.mockResolvedValue([
+			{ id: VALID_UUID, metadata: { chunk_index: 0, chunk_group_id: 'group-abc' } },
+			{ id: 'sibling-uuid', metadata: { chunk_index: 1, chunk_group_id: 'group-abc' } },
+		]);
+		// Single upsert succeeds
+		mockQdrant.upsert.mockResolvedValue('new-single-uuid');
+		// batchDelete throws a transient error
+		mockQdrant.batchDelete.mockRejectedValue(new Error('transient network error'));
+
+		// Use short content so no re-chunking occurs
+		const shortContent = 'Short replacement';
+		const result = await getTool('memory-update').handler(
+			MemoryUpdateInputSchema.parse({ id: VALID_UUID, content: shortContent, auto_chunk: true }),
+		);
+
+		// Must succeed: new data is safe even though old chunks weren't deleted
+		expect(result.success).toBe(true);
+		expect((result.data as { id: string }).id).toBe('new-single-uuid');
+		// batchDelete was still attempted
+		expect(mockQdrant.batchDelete).toHaveBeenCalled();
+	});
+
+	it('returns success with reduced siblings_updated when one sibling updatePayload fails', async () => {
+		const chunkGroupId = 'group-meta-123';
+		// Existing memory is a chunk with siblings
+		mockQdrant.get.mockResolvedValue({
+			id: VALID_UUID,
+			content: 'chunk content',
+			metadata: {
+				chunk_index: 0,
+				chunk_group_id: chunkGroupId,
+				total_chunks: 2,
+				memory_type: 'long-term',
+				created_at: new Date().toISOString(),
+				updated_at: new Date().toISOString(),
+				access_count: 0,
+			},
+			score: 1,
+		});
+		// Two siblings
+		const siblingId = 'sibling-id-456';
+		mockQdrant.list.mockResolvedValue([
+			{ id: VALID_UUID, metadata: { chunk_index: 0, chunk_group_id: chunkGroupId } },
+			{ id: siblingId, metadata: { chunk_index: 1, chunk_group_id: chunkGroupId } },
+		]);
+		// updatePayload succeeds for first sibling, fails for second
+		mockQdrant.updatePayload
+			.mockResolvedValueOnce(undefined)
+			.mockRejectedValueOnce(new Error('payload update failed'));
+
+		const result = await getTool('memory-update').handler(
+			MemoryUpdateInputSchema.parse({
+				id: VALID_UUID,
+				metadata: { confidence: 0.9 },
+			}),
+		);
+
+		// Still returns success (partial failure is non-fatal)
+		expect(result.success).toBe(true);
+		// siblings_updated reflects actual successes (1 of 2)
+		expect((result.data as { siblings_updated: number }).siblings_updated).toBe(1);
+	});
 });
 
 // ── memory-query and memory-search result filtering ──────────────────────────
