@@ -417,26 +417,6 @@ describe('WorkspaceDetectorService cache TTL expiry', () => {
 	});
 });
 
-// ── auto-detect disabled ──────────────────────────────────────────────────────
-
-describe('WorkspaceDetectorService auto-detection disabled', () => {
-	let detector: WorkspaceDetectorService;
-
-	beforeEach(() => {
-		detector = makeDetector();
-	});
-
-	it('returns default workspace when auto-detect is disabled', () => {
-		// This test requires mocking config.workspace.autoDetect
-		// Since we cannot directly mock config in the service, we rely on
-		// the environment configuration. For now, we document the expected behavior:
-		// When WORKSPACE_AUTO_DETECT=false, detect() returns WORKSPACE_DEFAULT or null.
-		//
-		// The actual test is deferred to integration tests where env vars can be set.
-		expect(detector).toBeDefined();
-	});
-});
-
 // ── getCached edge cases ──────────────────────────────────────────────────────
 
 describe('WorkspaceDetectorService.getCached edge cases', () => {

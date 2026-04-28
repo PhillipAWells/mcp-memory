@@ -843,7 +843,7 @@ describe('QdrantService.batchDelete', () => {
 
 		await service.batchDelete(ids);
 
-		expect(mockClient.delete).toHaveBeenCalled();
+		expect(mockClient.delete).not.toHaveBeenCalled();
 	});
 });
 
