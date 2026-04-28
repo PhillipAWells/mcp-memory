@@ -377,6 +377,7 @@ __metadata:
     openai: "npm:^6.34.0"
     typescript: "npm:~6.0.0"
     undici: "npm:^8.1.0"
+    undici-types: "npm:^8.1.0"
     uuid: "npm:^14.0.0"
     vitest: "npm:^4.1.5"
     zod: "npm:^4.3.6"
@@ -4305,6 +4306,13 @@ __metadata:
     has-symbols: "npm:^1.1.0"
     which-boxed-primitive: "npm:^1.1.1"
   checksum: 10c0/7dbd35ab02b0e05fe07136c72cb9355091242455473ec15057c11430129bab38b7b3624019b8778d02a881c13de44d63cd02d122ee782fb519e1de7775b5b982
+  languageName: node
+  linkType: hard
+
+"undici-types@npm:^8.1.0":
+  version: 8.1.0
+  resolution: "undici-types@npm:8.1.0"
+  checksum: 10c0/07d56cffe5153eac8a9ee40db32407bda7b3d8193d7327fc2bde1bb4f3c828f9f63ba6777e8d433bd5c01ebd9407f2bc87441443477f0e1def4f0ddb537c6ccf
   languageName: node
   linkType: hard
 
