@@ -97,7 +97,7 @@ Expired memories are automatically filtered from queries and listings.
 
 **Error Handling Note**: Service implementations currently throw generic `Error` for simplicity rather than always using `MemoryError`. This is an intentional deviation from pawells standards to reduce boilerplate. Future versions may adopt `MemoryError` consistently if callers need programmatic error distinction.
 
-**Chunking**: Content longer than the configured `MEMORY_CHUNK_SIZE` (default 1,000 chars) is auto-split into overlapping chunks. All chunks share a `chunk_group_id` UUID in metadata. `memory-update` blocks updates to individual chunks — must update via the group.
+**Chunking**: Content longer than the configured `MEMORY_CHUNK_SIZE` (default 1,000 chars) is auto-split into overlapping chunks. All chunks share a `chunk_group_id` UUID in metadata. `memory-update` blocks updates to individual chunks — must update via the group. When updating chunked content, new chunks are upserted first; old chunks are deleted only after the upsert succeeds, so a failed upsert leaves the original data intact. For `memory-store`, if a batch upsert partially fails, successfully stored chunks are cleaned up on a best-effort basis to avoid orphaning them.
 
 **Retry logic**: `src/utils/retry.ts` provides exponential backoff; used by both `QdrantService` and `EmbeddingService` for resilience against transient failures.
 
@@ -275,6 +275,14 @@ When updating only the metadata for a chunked memory (not changing content), the
 This is acceptable for eventual-consistency systems where transient inconsistency is tolerated, but callers should be aware that metadata updates to chunked memories may not apply to all siblings if concurrent deletes occur. In practice, this is rare (concurrent deletes of siblings are uncommon), but it's a known limitation of the current implementation.
 
 **Mitigation**: If metadata consistency across all chunks is critical, avoid concurrent operations on the same chunk group. The race window is narrow (milliseconds), but it exists.
+
+### Old Chunks May Be Orphaned When Deletion Fails After a Successful Update
+
+When `memory-update` replaces chunked content, new chunks are written first and old chunks are deleted afterward. If the deletion step fails (e.g., a transient Qdrant error), the operation still returns success because the new data is safely stored. The old chunk IDs are logged at `warn` level, but they remain in the collection as orphaned points — they are no longer reachable via `chunk_group_id` but do occupy storage and will appear in unfiltered listings.
+
+The same applies when updated content no longer requires chunking: the single replacement memory is written first, then the old chunks are deleted. A deletion failure leaves those old chunks orphaned.
+
+**Mitigation**: If orphaned chunks are detected (via `memory-list` showing unexpected extra chunks, or by inspecting `chunk_group_id` values), use `memory-batch-delete` with the orphaned IDs to clean them up manually. The logged `oldChunkIds` field in the warning message provides the IDs needed for cleanup.
 
 ### WorkspaceDetector Uses Synchronous File I/O
 
