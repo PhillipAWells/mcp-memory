@@ -22,7 +22,7 @@ import { logger } from './logger.js';
  * ```
  */
 export interface RetryOptions {
-	/** Maximum number of attempts before giving up (default: 3). */
+	/** Maximum number of attempts (including the first). A value of `3` means one initial attempt plus two retries (default: 3). */
 	maxRetries?: number;
 	/** Delay in milliseconds before the first retry (default: 1000). */
 	initialDelay?: number;
@@ -71,7 +71,7 @@ const DEFAULT_OPTIONS: Required<RetryOptions> = {
  * or HTTP status code. Non-retryable errors propagate immediately.
  *
  * @param operation - Async function to attempt. Must be idempotent.
- * @param options - Override defaults for retry behaviour.
+ * @param options - Override defaults for retry behaviour (maxRetries is the maximum number of total attempts, including the first).
  * @returns The value resolved by `operation` on success.
  * @throws The last error thrown by `operation` after all retries are exhausted,
  *         or immediately for non-retryable errors.

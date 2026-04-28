@@ -455,7 +455,6 @@ export class QdrantService {
 	 * );
 	 * ```
 	 */
-
 	public async upsert(
 		content: string,
 		vector: number[],
@@ -519,7 +518,6 @@ export class QdrantService {
 	 * console.log(`${result.successfulIds.length}/${result.totalProcessed} succeeded`);
 	 * ```
 	 */
-
 	public async batchUpsert(
 		points: Array<{
 			content: string;
@@ -624,7 +622,6 @@ export class QdrantService {
 	 * });
 	 * ```
 	 */
-
 	public async search(params: SearchParams): Promise<SearchResult[]> {
 		await this.ensureInitialized();
 
@@ -874,6 +871,10 @@ export class QdrantService {
 	 * ```
 	 */
 	public async batchDelete(ids: string[]): Promise<void> {
+		if (ids.length === 0) {
+			return;
+		}
+
 		await this.ensureInitialized();
 
 		await withRetry(() => this.client.delete(this.collectionName, {

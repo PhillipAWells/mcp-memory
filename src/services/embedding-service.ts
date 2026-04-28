@@ -380,7 +380,6 @@ export class EmbeddingService {
 	 * const isValid = embeddingService.validateEmbedding([0.1, 0.2, ...], 'small');
 	 * ```
 	 */
-
 	public validateEmbedding(embedding: number[], variant: 'small' | 'large' = 'small'): boolean {
 		if (!Array.isArray(embedding)) {
 			return false;
@@ -413,7 +412,6 @@ export class EmbeddingService {
 	 * console.log(tokens); // ~3
 	 * ```
 	 */
-
 	public estimateTokens(text: string): number {
 		return Math.ceil(text.length / CHARS_PER_TOKEN);
 	}
@@ -431,7 +429,6 @@ export class EmbeddingService {
 	 * console.log(`Estimated cost: $${cost.toFixed(6)}`);
 	 * ```
 	 */
-
 	public estimateCost(text: string): number {
 		const tokens = this.estimateTokens(text);
 		return (tokens / TOKENS_PER_MILLION) * COST_PER_MILLION_TOKENS_SMALL;
@@ -499,7 +496,6 @@ export class EmbeddingService {
 	 * console.log(`${chunks.length} chunks embedded`);
 	 * ```
 	 */
-
 	public async generateChunkedEmbeddings(
 		text: string,
 		chunkSize?: number,

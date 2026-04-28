@@ -572,8 +572,8 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 		const input = MemoryUpdateInputSchema.parse(args);
 		logger.info(`Updating memory: ${input.id}`);
 
-		// Validate workspace if provided
-		if (input.metadata?.workspace && !workspaceDetector.isValidWorkspace(input.metadata.workspace)) {
+		// Validate workspace if provided (check for non-null, non-undefined)
+		if (input.metadata?.workspace !== undefined && input.metadata.workspace !== null && !workspaceDetector.isValidWorkspace(input.metadata.workspace)) {
 			return validationError('Invalid workspace name');
 		}
 
