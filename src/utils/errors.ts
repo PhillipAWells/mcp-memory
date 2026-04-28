@@ -21,6 +21,15 @@ const MAX_CAUSE_DEPTH = 3;
  *
  * @param error - Any value caught from a `try/catch` block.
  * @returns The best available string description of the error.
+ * @example
+ * ```typescript
+ * try {
+ *   await riskyOperation();
+ * } catch (error) {
+ *   const msg = extractErrorMessage(error);
+ *   logger.error(`Operation failed: ${msg}`);
+ * }
+ * ```
  */
 export function extractErrorMessage(error: unknown, depth = 0): string {
 	if (depth > MAX_CAUSE_DEPTH) return '';

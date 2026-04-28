@@ -77,7 +77,9 @@ const DEFAULT_OPTIONS: Required<RetryOptions> = {
  *         or immediately for non-retryable errors.
  *
  * @example
+ * ```typescript
  * const data = await withRetry(() => fetch('https://api.example.com/data'));
+ * ```
  */
 export async function withRetry<T>(
 	operation: () => Promise<T>,
