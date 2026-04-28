@@ -93,15 +93,21 @@ function checkContentSecrets(content: string, idContext?: string): StandardRespo
 }
 
 /**
- * Normalizes workspace metadata field to lowercase for consistent storage.
+ * Normalizes the workspace metadata field to lowercase for consistent storage.
  *
- * @param metadata - The metadata object to normalize in-place.
- * @returns The normalized metadata object.
+ * Mutates the input object in-place by normalizing the workspace field through
+ * WorkspaceDetector.normalize(). If workspace is null or undefined, it is left unchanged.
+ * Returns the mutated object for convenience in chaining operations.
+ *
+ * @param metadata - The metadata object to normalize in-place. The workspace property (if present) will be transformed to lowercase.
+ * @returns The same metadata object passed as input, with workspace normalized.
+ * @throws Does not throw; silently skips normalization if workspace is null or undefined.
  * @example
  * ```typescript
  * const meta = { workspace: 'MyProject', memory_type: 'long-term' };
- * normalizeWorkspaceInMetadata(meta);
- * // meta.workspace is now 'myproject'
+ * const result = normalizeWorkspaceInMetadata(meta);
+ * // meta.workspace is now 'myproject' (mutated in-place)
+ * // result === meta (same reference)
  * ```
  */
 function normalizeWorkspaceInMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
@@ -199,6 +205,16 @@ async function memoryStoreHandler(args: unknown): Promise<StandardResponse> {
 
 			const batchResult = await qdrantService.batchUpsert(points);
 			if (batchResult.failedPoints.length > 0) {
+				// Best-effort cleanup to avoid orphaned chunks
+				if (batchResult.successfulIds.length > 0) {
+					try {
+						await qdrantService.batchDelete(batchResult.successfulIds);
+					} catch (cleanupError) {
+						logger.warn('Failed to clean up orphaned chunks after partial batch failure', {
+							cause: cleanupError,
+						});
+					}
+				}
 				return errorResponse(
 					`Failed to store ${batchResult.failedPoints.length} chunks`,
 					'EXECUTION_ERROR',
@@ -592,11 +608,6 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 
 				const siblingIds = siblings.map(s => s.id);
 
-				// Delete all old chunks
-				if (siblingIds.length > 0) {
-					await qdrantService.batchDelete(siblingIds);
-				}
-
 				// Re-chunk and re-store with new content
 				const baseMetadata = { ...existing.metadata };
 				// Strip chunk-specific fields from base before overlaying input metadata
@@ -629,6 +640,7 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 						metadata: { ...mergedMetadata, chunk_index: index, total_chunks: total, chunk_group_id: newChunkGroupId },
 					}));
 
+					// Store new chunks BEFORE deleting old ones to prevent data loss if upsert fails
 					const batchResult = await qdrantService.batchUpsert(points);
 					if (batchResult.failedPoints.length > 0) {
 						return errorResponse(
@@ -639,6 +651,19 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 						);
 					}
 					const newIds = batchResult.successfulIds;
+
+					// Delete old chunks only after successful upsert of new chunks
+					if (siblingIds.length > 0) {
+						try {
+							await qdrantService.batchDelete(siblingIds);
+						} catch (deleteError) {
+							// Log warning but still return success (new data is safe, old chunks become orphaned)
+							logger.warn('Failed to delete old chunks after successful update', {
+								cause: deleteError,
+								oldChunkIds: siblingIds,
+							});
+						}
+					}
 
 					logger.info(`Chunked memory updated: re-stored ${newIds.length} chunks (deleted ${siblingIds.length} old chunks)`);
 
@@ -658,6 +683,19 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 					// Store as a single memory (no chunking)
 					const dual = await embeddingService.generateDualEmbeddings(input.content);
 					const newId = await qdrantService.upsert(input.content, dual.small, mergedMetadata, dual.large);
+
+					// Delete old chunks only after successful upsert of new memory
+					if (siblingIds.length > 0) {
+						try {
+							await qdrantService.batchDelete(siblingIds);
+						} catch (deleteError) {
+							// Log warning but still return success (new data is safe, old chunks become orphaned)
+							logger.warn('Failed to delete old chunks after successful update', {
+								cause: deleteError,
+								oldChunkIds: siblingIds,
+							});
+						}
+					}
 
 					logger.info(`Chunked memory updated: re-stored as single memory (deleted ${siblingIds.length} chunks)`);
 
