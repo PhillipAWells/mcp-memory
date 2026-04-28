@@ -201,6 +201,31 @@ describe('memory-store', () => {
 		expect(groupId0).toBeDefined();
 		expect(groupId0).toBe(groupId1);
 	});
+
+	it('returns error when batchUpsert fails for chunked content', async () => {
+		const longContent = 'x '.repeat(600);
+		mockEmbedding.generateChunkedEmbeddings.mockResolvedValueOnce([
+			{ chunk: 'c1', embedding: new Array(384).fill(0.1), index: 0, total: 2 },
+			{ chunk: 'c2', embedding: new Array(384).fill(0.1), index: 1, total: 2 },
+		]);
+		mockEmbedding.generateBatchLargeEmbeddings.mockResolvedValueOnce([
+			new Array(3072).fill(0.1),
+			new Array(3072).fill(0.1),
+		]);
+		// Mock batchUpsert to return failed points
+		mockQdrant.batchUpsert.mockResolvedValueOnce({
+			successfulIds: ['chunk-id-1'],
+			failedPoints: [{ id: 'chunk-id-2', reason: 'network error' }],
+			totalProcessed: 2,
+		});
+
+		const result = await getTool('memory-store').handler(MemoryStoreInputSchema.parse({ content: longContent, auto_chunk: true }));
+
+		expect(result.success).toBe(false);
+		expect(result.error_type).toBe('EXECUTION_ERROR');
+		expect(result.message).toContain('Failed to store 1 chunks');
+		expect((result.metadata as any).successfulIds).toContain('chunk-id-1');
+	});
 });
 
 // ── memory-query ──────────────────────────────────────────────────────────────
@@ -855,6 +880,75 @@ describe('memory-update - chunked memory content updates', () => {
 
 		// Should still succeed and update what's available
 		expect(result.success).toBe(true);
+	});
+
+	it('returns error when batchUpsert fails during chunked content update', async () => {
+		const CHUNK_GROUP_ID = 'group-batch-fail-test';
+		mockQdrant.get.mockResolvedValueOnce({
+			...baseMemory,
+			metadata: {
+				...baseMemory.metadata,
+				chunk_index: 0,
+				total_chunks: 2,
+				chunk_group_id: CHUNK_GROUP_ID,
+			},
+		});
+
+		mockQdrant.list.mockResolvedValueOnce([
+			{
+				id: 'old-chunk-1',
+				content: 'old chunk 1',
+				score: 1,
+				path: '',
+				metadata: {
+					...baseMemory.metadata,
+					chunk_index: 0,
+					total_chunks: 2,
+					chunk_group_id: CHUNK_GROUP_ID,
+				},
+			},
+			{
+				id: 'old-chunk-2',
+				content: 'old chunk 2',
+				score: 1,
+				path: '',
+				metadata: {
+					...baseMemory.metadata,
+					chunk_index: 1,
+					total_chunks: 2,
+					chunk_group_id: CHUNK_GROUP_ID,
+				},
+			},
+		]);
+
+		mockEmbedding.generateChunkedEmbeddings.mockResolvedValueOnce([
+			{ chunk: 'new c1', embedding: new Array(384).fill(0.1), index: 0, total: 2 },
+			{ chunk: 'new c2', embedding: new Array(384).fill(0.1), index: 1, total: 2 },
+		]);
+		mockEmbedding.generateBatchLargeEmbeddings.mockResolvedValueOnce([
+			new Array(3072).fill(0.1),
+			new Array(3072).fill(0.1),
+		]);
+
+		// Mock batchUpsert to return a failed point
+		mockQdrant.batchUpsert.mockResolvedValueOnce({
+			successfulIds: ['new-chunk-id-1'],
+			failedPoints: [{ id: 'new-chunk-id-2', reason: 'database error' }],
+			totalProcessed: 2,
+		});
+		mockQdrant.batchDelete.mockResolvedValue(undefined);
+
+		const newContent = 'x '.repeat(600); // Long enough to trigger chunking
+		const result = await getTool('memory-update').handler(MemoryUpdateInputSchema.parse({
+			id: VALID_UUID,
+			content: newContent,
+			auto_chunk: true,
+		}));
+
+		expect(result.success).toBe(false);
+		expect(result.error_type).toBe('EXECUTION_ERROR');
+		expect(result.message).toContain('Failed to update 1 chunks');
+		expect((result.metadata as any).successfulIds).toContain('new-chunk-id-1');
 	});
 });
 

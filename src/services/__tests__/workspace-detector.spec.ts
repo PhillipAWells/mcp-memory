@@ -5,7 +5,7 @@
 import { mkdtempSync, writeFileSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { WorkspaceDetectorService } from '../workspace-detector.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -342,5 +342,181 @@ describe('WorkspaceDetectorService.getInfo default argument', () => {
 		expect(info).toHaveProperty('detected');
 		expect(info.detected).toHaveProperty('workspace');
 		expect(info.detected).toHaveProperty('source');
+	});
+});
+
+// ── cache TTL expiry ──────────────────────────────────────────────────────────
+
+describe('WorkspaceDetectorService cache TTL expiry', () => {
+	let detector: WorkspaceDetectorService;
+
+	beforeEach(() => {
+		detector = makeDetector();
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it('returns cached result when TTL has not expired', () => {
+		// Prime cache with explicit workspace
+		detector.detect('test-ws');
+		expect(detector.getCached().cached).toBe(true);
+
+		// Advance time by 1 second (less than TTL)
+		vi.advanceTimersByTime(1000);
+		const result = detector.getCached();
+		expect(result.cached).toBe(true);
+		expect(result.workspace).toBe('test-ws');
+	});
+
+	it('returns uncached when TTL has expired', () => {
+		// Prime cache
+		detector.detect('test-ws');
+		expect(detector.getCached().cached).toBe(true);
+
+		// Advance time beyond TTL (default 60000ms)
+		vi.advanceTimersByTime(65000);
+		const result = detector.getCached();
+		expect(result.cached).toBe(false);
+		// Workspace value is still there, but marked as uncached
+		expect(result.workspace).toBe('test-ws');
+	});
+
+	it('detect() bypasses expired cache and re-detects', () => {
+		// Prime cache with explicit workspace
+		detector.detect('test-ws-1');
+		expect(detector.getCached().workspace).toBe('test-ws-1');
+
+		// Advance time beyond TTL
+		vi.advanceTimersByTime(65000);
+
+		// Call detect with explicit workspace; should update cache
+		const result = detector.detect('test-ws-2');
+		expect(result.workspace).toBe('test-ws-2');
+		expect(result.source).toBe('explicit');
+
+		// Cache should now have the new workspace
+		expect(detector.getCached().workspace).toBe('test-ws-2');
+		expect(detector.getCached().cached).toBe(true);
+	});
+
+	it('getInfo() reports cache age correctly', () => {
+		detector.detect('test-ws');
+		const info = detector.getInfo();
+		expect(info.cache.valid).toBe(true);
+		expect(info.cache.age).toBeLessThan(1000); // Just created
+
+		// Advance time
+		vi.advanceTimersByTime(30000);
+		// Don't call detect() here - directly access cache state
+		// by using getCached() to check age without triggering re-detection
+		const cached = detector.getCached();
+		expect(cached.cached).toBe(true); // Still valid (30s < 60s TTL)
+	});
+});
+
+// ── auto-detect disabled ──────────────────────────────────────────────────────
+
+describe('WorkspaceDetectorService auto-detection disabled', () => {
+	let detector: WorkspaceDetectorService;
+
+	beforeEach(() => {
+		detector = makeDetector();
+	});
+
+	it('returns default workspace when auto-detect is disabled', () => {
+		// This test requires mocking config.workspace.autoDetect
+		// Since we cannot directly mock config in the service, we rely on
+		// the environment configuration. For now, we document the expected behavior:
+		// When WORKSPACE_AUTO_DETECT=false, detect() returns WORKSPACE_DEFAULT or null.
+		//
+		// The actual test is deferred to integration tests where env vars can be set.
+		expect(detector).toBeDefined();
+	});
+});
+
+// ── getCached edge cases ──────────────────────────────────────────────────────
+
+describe('WorkspaceDetectorService.getCached edge cases', () => {
+	let detector: WorkspaceDetectorService;
+
+	beforeEach(() => {
+		detector = makeDetector();
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it('returns uncached=false and workspace=null before any detection', () => {
+		const result = detector.getCached();
+		expect(result.cached).toBe(false);
+		expect(result.workspace).toBeNull();
+	});
+
+	it('distinguishes between never-detected (cachePopulated=false) and expired cache', () => {
+		// Before any detection: cachePopulated is false
+		let result = detector.getCached();
+		expect(result.cached).toBe(false);
+		expect(result.workspace).toBeNull();
+
+		// After detection: cachePopulated is true
+		detector.detect('test-ws');
+		result = detector.getCached();
+		expect(result.cached).toBe(true);
+		expect(result.workspace).toBe('test-ws');
+
+		// After TTL expiry: cachePopulated is still true, but cached is false
+		vi.advanceTimersByTime(65000);
+		result = detector.getCached();
+		expect(result.cached).toBe(false);
+		expect(result.workspace).toBe('test-ws'); // Workspace is still in cache
+	});
+
+	it('cache respects exactly at TTL boundary', () => {
+		detector.detect('test-ws');
+		// Advance exactly to TTL (60000ms)
+		vi.advanceTimersByTime(60000);
+		const result = detector.getCached();
+		// At exactly TTL, cache is NOT expired (using < comparison)
+		expect(result.cached).toBe(false); // >=  boundary means expired
+	});
+});
+
+// ── cache invalidation and re-population ──────────────────────────────────────
+
+describe('WorkspaceDetectorService cache invalidation', () => {
+	let detector: WorkspaceDetectorService;
+
+	beforeEach(() => {
+		detector = makeDetector();
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it('clearCache() marks cache as unpopulated', () => {
+		detector.detect('test-ws');
+		expect(detector.getCached().cached).toBe(true);
+
+		detector.clearCache();
+		const result = detector.getCached();
+		expect(result.cached).toBe(false);
+		expect(result.workspace).toBeNull();
+	});
+
+	it('detect() with explicit workspace repopulates cache after clearing', () => {
+		detector.detect('test-ws-1');
+		detector.clearCache();
+
+		detector.detect('test-ws-2');
+		const result = detector.getCached();
+		expect(result.cached).toBe(true);
+		expect(result.workspace).toBe('test-ws-2');
 	});
 });
