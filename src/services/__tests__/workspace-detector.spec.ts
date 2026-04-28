@@ -2,9 +2,9 @@
  * Tests for WorkspaceDetectorService
  */
 
-import { mkdtempSync, writeFileSync, rmSync } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { WorkspaceDetectorService } from '../workspace-detector.js';
 
@@ -481,7 +481,7 @@ describe('WorkspaceDetectorService.getCached edge cases', () => {
 		// Advance exactly to TTL (60000ms)
 		vi.advanceTimersByTime(60000);
 		const result = detector.getCached();
-		// At exactly TTL, cache is NOT expired (using < comparison)
+		// At exactly TTL, cache IS expired (using >= comparison)
 		expect(result.cached).toBe(false); // >=  boundary means expired
 	});
 });

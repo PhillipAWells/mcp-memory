@@ -4,9 +4,9 @@
  * Uses a real temporary directory to test file-system operations.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
+import { mkdtempSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import type * as FS from 'node:fs';
 
 // ── Mock config ───────────────────────────────────────────────────────────────
