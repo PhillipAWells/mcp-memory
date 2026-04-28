@@ -235,9 +235,7 @@ export const MemoryBatchDeleteInputSchema = z.object({
 });
 
 /** Type-safe input for the `memory-batch-delete` tool, inferred from {@link MemoryBatchDeleteInputSchema}. */
-export type MemoryBatchDeleteInput = z.infer<
-  typeof MemoryBatchDeleteInputSchema
->;
+export type MemoryBatchDeleteInput = z.infer<typeof MemoryBatchDeleteInputSchema>;
 
 /**
  * Input schema for the `memory-status` tool.

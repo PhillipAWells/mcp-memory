@@ -12,6 +12,18 @@ import { z } from 'zod';
 // variables are injected directly (CI, Docker, production).
 dotenv.config({ quiet: true });
 
+/**
+ * Coerces an empty string environment variable value to `undefined`.
+ * Uses `||` deliberately (not `??`) so both `undefined` and `""` produce `undefined`.
+ *
+ * @param value - The raw environment variable value.
+ * @returns The value if truthy, otherwise `undefined`.
+ */
+function coerceEnvToUndefined(value: string | undefined): string | undefined {
+	// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+	return value || undefined;
+}
+
 /** Default Qdrant request timeout in milliseconds. */
 const DEFAULT_QDRANT_TIMEOUT_MS = 30000;
 /** Default memory chunk size in characters. */
@@ -168,8 +180,7 @@ export type Config = z.infer<typeof ConfigSchema>;
  * const config = loadConfig();
  */
 export function loadConfig(): Config {
-	// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-	const apiKey = process.env.OPENAI_API_KEY || undefined; // || intentional: coerce empty string to undefined
+	const apiKey = coerceEnvToUndefined(process.env.OPENAI_API_KEY);
 
 	const smallDimensions = parseIntEnv(process.env.SMALL_EMBEDDING_DIMENSIONS, DEFAULT_SMALL_EMBEDDING_DIMENSIONS, 'SMALL_EMBEDDING_DIMENSIONS');
 	const largeDimensions = parseIntEnv(process.env.LARGE_EMBEDDING_DIMENSIONS, DEFAULT_OPENAI_LARGE_EMBEDDING_DIMENSIONS, 'LARGE_EMBEDDING_DIMENSIONS');
@@ -184,9 +195,7 @@ export function loadConfig(): Config {
 		},
 		qdrant: {
 			url: process.env.QDRANT_URL ?? 'http://localhost:6333',
-			// Coerce empty string to undefined so Zod treats it as absent
-			// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-			apiKey: process.env.QDRANT_API_KEY || undefined,
+			apiKey: coerceEnvToUndefined(process.env.QDRANT_API_KEY),
 			collection: process.env.QDRANT_COLLECTION ?? 'mcp-memory',
 			timeout: parseIntEnv(process.env.QDRANT_TIMEOUT, DEFAULT_QDRANT_TIMEOUT_MS, 'QDRANT_TIMEOUT'),
 		},

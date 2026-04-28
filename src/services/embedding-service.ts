@@ -276,6 +276,10 @@ export class EmbeddingService {
 	 * Returns embedding usage statistics.
 	 *
 	 * @returns Object with `totalEmbeddings` (count), `cacheHits`, `cacheMisses`, `totalTokens`, `totalCost` (USD), and `cacheHitRate` (0–1).
+	 *
+	 * Note: `totalEmbeddings` counts individual API calls, not unique texts. `generateDualEmbeddings` increments
+	 * the counter twice (once per model) for a single text. `cacheHitRate` is calculated as `cacheHits / totalEmbeddings`
+	 * where `hits + misses = totalEmbeddings`.
 	 * @example
 	 * ```typescript
 	 * const stats = embeddingService.getStats();

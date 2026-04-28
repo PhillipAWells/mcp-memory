@@ -307,7 +307,13 @@ async function memoryQueryHandler(args: unknown): Promise<StandardResponse> {
 			filter: {
 				...filter,
 				...(filter?.workspace === undefined
-					? { workspace: normalizedWorkspace }
+					? {
+						// When no workspace is detected and none was explicitly requested, filter for
+						// null-workspace memories. This is intentional: an undetected workspace implies
+						// the caller is operating without workspace context, so scoping to null-workspace
+						// memories avoids cross-contaminating results from other workspaces.
+						workspace: normalizedWorkspace,
+					}
 					: {}),
 			},
 			limit: input.limit,
