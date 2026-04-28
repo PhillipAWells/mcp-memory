@@ -31,6 +31,14 @@ export interface WorkspaceDetectionResult {
  *
  * Workspace names must match `[a-zA-Z0-9_-]+` (max 100 characters).
  * Scoped npm package names like `@scope/name` are normalised to `name`.
+ *
+ * @example
+ * ```typescript
+ * const detector = new WorkspaceDetectorService();
+ * const result = detector.detect();
+ * console.log(result.workspace); // 'mcp-memory' or null
+ * console.log(result.source);    // 'package.json' or 'directory'
+ * ```
  */
 /** Maximum allowed workspace name length. */
 const MAX_WORKSPACE_NAME_LENGTH = 100;
@@ -152,10 +160,22 @@ export class WorkspaceDetectorService {
 	/**
    * Walk up the directory tree looking for a `package.json` with a `name` field.
    *
+   * Traverses up to `maxLevels` parent directories. Returns immediately on
+   * first successful read with a valid package name. Stops if `package.json`
+   * cannot be parsed or if the `name` field is empty.
+   *
    * @param startDir - Directory to begin the search.
    * @param maxLevels - Maximum number of parent directories to traverse (default 5).
-   * @returns A detection result derived from the package name, or `null` if
+   * @returns WorkspaceDetectionResult | null - A detection result derived from the package name, or `null` if
    *   no suitable `package.json` was found within the traversal limit.
+   * @throws Does not throw; parse errors are logged and traversal continues.
+   * @example
+   * ```typescript
+   * const result = detector.findPackageJson(process.cwd(), 5);
+   * if (result) {
+   *   console.log(result.workspace); // Workspace name from package.json
+   * }
+   * ```
    */
 	private findPackageJson(
 		startDir: string,
@@ -260,7 +280,13 @@ export class WorkspaceDetectorService {
    * with hyphens, and collapses repeated hyphens.
    *
    * @param name - Raw name string to clean.
-   * @returns The cleaned name (may still fail {@link isValidWorkspace} if empty after cleaning).
+   * @returns string - The cleaned name (may still fail {@link isValidWorkspace} if empty after cleaning).
+   * @example
+   * ```typescript
+   * const clean1 = cleanWorkspaceName('@scope/my-app');    // 'my-app'
+   * const clean2 = cleanWorkspaceName('mcp-memory');       // 'memory'
+   * const clean3 = cleanWorkspaceName('My_App@123');       // 'my-app-123'
+   * ```
    */
 	private cleanWorkspaceName(name: string): string {
 		return name
@@ -274,7 +300,13 @@ export class WorkspaceDetectorService {
    * Store `workspace` in the in-memory cache and reset the TTL timer.
    *
    * @param workspace - Resolved workspace name, or `null` when none was found.
-   * @param source    - The detection source to report on cache hits.
+   * @param source - The detection source to report on cache hits (default `'package.json'`).
+   * @returns void
+   * @example
+   * ```typescript
+   * detector.updateCache('my-project', 'package.json');
+   * // Cache now stores 'my-project' and will be valid for WORKSPACE_CACHE_TTL ms
+   * ```
    */
 	private updateCache(workspace: string | null, source: WorkspaceDetectionResult['source'] = 'package.json'): void {
 		this.cachedWorkspace = workspace;

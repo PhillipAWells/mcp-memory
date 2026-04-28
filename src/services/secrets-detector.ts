@@ -95,6 +95,20 @@ const MEDIUM_CONFIDENCE_BLOCK_THRESHOLD = 3;
 /** Confidence ordering for deduplication. */
 const CONFIDENCE_ORDER = { high: 3, medium: 2, low: 1 } as const;
 
+/**
+ * Validate a numeric string using the Luhn algorithm.
+ *
+ * Extracts digits, calculates the Luhn checksum, and returns true if valid.
+ * Strings shorter than {@link LUHN_MIN_DIGITS} are rejected immediately.
+ *
+ * @param numStr - A string containing digits and potentially non-digit characters.
+ * @returns boolean - True if the string passes the Luhn checksum, false otherwise.
+ * @example
+ * ```typescript
+ * const valid = luhnCheck('4532015112830366'); // A valid card number format
+ * console.log(valid); // true
+ * ```
+ */
 function luhnCheck(numStr: string): boolean {
 	const digits = numStr.replace(/\D/g, '');
 	if (digits.length < LUHN_MIN_DIGITS) return false;
@@ -281,9 +295,20 @@ const SECRET_PATTERNS: SecretPattern[] = [
 ];
 
 /**
- * Internal helper: replace detected secrets in content with redaction placeholders.
+ * Replace detected secrets in content with redaction placeholders.
+ *
  * Operates end-to-start to preserve indices during replacement.
  * Does NOT call detectSecrets — avoids mutual recursion.
+ *
+ * @param content - The original content string to sanitize.
+ * @param secrets - Array of detected secrets with location information.
+ * @returns string - The sanitized content with secrets replaced by placeholders.
+ * @example
+ * ```typescript
+ * const secrets = [{ type: 'api_key', pattern: 'sk-...', confidence: 'high', location: { start: 5, end: 20 }, context: '' }];
+ * const sanitized = applySanitization('My sk-12345 key', secrets);
+ * console.log(sanitized); // 'My [REDACTED_API_KEY] key'
+ * ```
  */
 function applySanitization(content: string, secrets: DetectedSecret[]): string {
 	let sanitized = content;

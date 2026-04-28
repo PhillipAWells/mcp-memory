@@ -325,6 +325,7 @@ export class EmbeddingService {
 	 *
 	 * Clears cumulative counters for embeddings, cache hits/misses, tokens, and cost. Does not clear the cache itself.
 	 *
+	 * @returns void
 	 * @example
 	 * ```typescript
 	 * embeddingService.resetStats();
@@ -361,7 +362,7 @@ export class EmbeddingService {
 	 *
 	 * @param embedding - The vector to validate.
 	 * @param variant - Which model's dimensions to validate against: `'small'` (default, 384d) or `'large'` (3072d).
-	 * @returns `true` if the embedding is valid, `false` otherwise. Invalid embeddings are logged.
+	 * @returns boolean - `true` if the embedding is valid, `false` otherwise. Invalid embeddings are logged.
 	 * @example
 	 * ```typescript
 	 * const isValid = embeddingService.validateEmbedding([0.1, 0.2, ...], 'small');
@@ -393,7 +394,7 @@ export class EmbeddingService {
 	 * Estimates token count for a text using a simple heuristic (text length / 4).
 	 *
 	 * @param text - The text to estimate tokens for.
-	 * @returns Approximate token count (not guaranteed to match OpenAI's tokenizer).
+	 * @returns number - Approximate token count (not guaranteed to match OpenAI's tokenizer).
 	 * @example
 	 * ```typescript
 	 * const tokens = embeddingService.estimateTokens('Hello world');
@@ -411,7 +412,7 @@ export class EmbeddingService {
 	 * Cost = (estimated_tokens / 1,000,000) * $0.02.
 	 *
 	 * @param text - The text to estimate cost for.
-	 * @returns Estimated cost in USD (not guaranteed to match actual OpenAI billing).
+	 * @returns number - Estimated cost in USD (not guaranteed to match actual OpenAI billing).
 	 * @example
 	 * ```typescript
 	 * const cost = embeddingService.estimateCost('Hello world');

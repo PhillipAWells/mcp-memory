@@ -53,7 +53,8 @@ const MAX_IN_MEMORY_SORT_COUNT = 10000;
  *
  * @param content - The content string to check for sensitive patterns.
  * @param idContext - Optional memory ID for error reporting context.
- * @returns An error StandardResponse if unsafe content is detected (safe=false), null if storage is permitted.
+ * @returns StandardResponse | null - An error StandardResponse if unsafe content is detected (safe=false), null if storage is permitted.
+ * @throws Does not throw; all safety violations return an error response or null.
  * @example
  * ```typescript
  * const error = checkContentSecrets('API key: sk-abc123...');
@@ -961,7 +962,18 @@ async function memoryCountHandler(args: unknown): Promise<StandardResponse> {
 }
 
 /**
- * Export all memory tools
+ * Array of all available MCP memory tools for tool registration.
+ *
+ * Includes 9 tools covering the full memory lifecycle: store, query, list, get,
+ * update, delete, batch-delete, status, and count operations.
+ *
+ * @example
+ * ```typescript
+ * // All tools are registered by the MCP server at startup
+ * memoryTools.forEach(tool => {
+ *   console.log(tool.name); // 'memory-store', 'memory-query', etc.
+ * });
+ * ```
  */
 export const memoryTools: MCPTool[] = [
 	{

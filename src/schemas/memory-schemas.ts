@@ -12,7 +12,22 @@
 
 import { z } from 'zod';
 
-/** Reusable workspace field: nullable optional string matching `[a-zA-Z0-9_-]+`. */
+/**
+ * Reusable workspace field schema for memory tools.
+ *
+ * Validates optional workspace identifier: a nullable, optional string
+ * matching the pattern `[a-zA-Z0-9_-]+` (alphanumeric, underscore, hyphen).
+ * Used to filter or tag memories by workspace.
+ *
+ * @example
+ * ```typescript
+ * // Typical usage in Zod schema definitions
+ * const schema = z.object({
+ *   workspace: workspaceFieldSchema, // Optional workspace override
+ *   content: z.string(),
+ * });
+ * ```
+ */
 const workspaceFieldSchema = z.string().regex(/^[a-zA-Z0-9_-]+$/).nullable().optional();
 
 const TAG_MAX_LENGTH = 50;
@@ -263,6 +278,14 @@ export type MemoryCountInput = z.infer<typeof MemoryCountInputSchema>;
  * Generated from the Zod schemas via Zod v4's built-in `z.toJSONSchema()` and
  * passed directly to the MCP server during tool registration so the protocol
  * layer can validate incoming requests before handlers are invoked.
+ *
+ * @example
+ * ```typescript
+ * // Used for MCP tool registration
+ * const schema = memorySchemas['memory-store'];
+ * console.log(schema.$schema); // 'http://json-schema.org/draft/...'
+ * console.log(schema.properties); // Input parameter definitions
+ * ```
  */
 export const memorySchemas = {
 	'memory-store': z.toJSONSchema(MemoryStoreInputSchema),

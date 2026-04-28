@@ -62,8 +62,15 @@ const HTTPS_DEFAULT_PORT = 443;
  * Validates required fields: `content` (string), `created_at` (string), `updated_at` (string).
  * Returns true only if the payload matches the expected structure.
  *
- * @param p - The value to check
- * @returns True if p is a valid QdrantPayload, false otherwise
+ * @param p - The value to check.
+ * @returns boolean - True if p is a valid QdrantPayload, false otherwise.
+ * @example
+ * ```typescript
+ * const payload = { content: 'hello', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' };
+ * if (isQdrantPayload(payload)) {
+ *   // payload is now narrowed to QdrantPayload type
+ * }
+ * ```
  */
 function isQdrantPayload(p: unknown): p is QdrantPayload {
 	return (
@@ -1065,8 +1072,9 @@ export class QdrantService {
 	 * may be undercounted, but access_count is an analytic field and eventual
 	 * consistency is acceptable.
 	 *
-	 * @param ids - Array of point IDs to update
-	 * @throws {Error} If setPayload fails during update
+	 * @param ids - Array of point IDs to update.
+	 * @returns Promise<void>
+	 * @throws {Error} If setPayload fails during update.
 	 * @example
 	 * ```typescript
 	 * // Called internally after point retrieval
@@ -1119,8 +1127,16 @@ export class QdrantService {
 	 * Safely narrows from unknown to the expected structure, returning null
 	 * if the payload is missing or invalid.
 	 *
-	 * @param payload - The raw payload from a Qdrant point (may be any type)
-	 * @returns The typed payload, or null if narrowing fails
+	 * @param payload - The raw payload from a Qdrant point (may be any type).
+	 * @returns QdrantPayload | null - The typed payload, or null if narrowing fails.
+	 * @example
+	 * ```typescript
+	 * const payload = point.payload;
+	 * const typed = service.toQdrantPayload(payload);
+	 * if (typed !== null) {
+	 *   console.log(typed.content);
+	 * }
+	 * ```
 	 */
 	private toQdrantPayload(payload: unknown): QdrantPayload | null {
 		if (!isQdrantPayload(payload)) {
@@ -1137,7 +1153,9 @@ export class QdrantService {
 	 * without blocking the caller. Failures are logged at most once per
 	 * {@link ACCESS_TRACKING_WARNING_INTERVAL_MS} to avoid log spam.
 	 *
-	 * @param ids - Array of point IDs to track
+	 * @param ids - Array of point IDs to track.
+	 * @returns void
+	 * @throws Does not throw; errors are caught and logged internally.
 	 */
 	private trackAccess(ids: string[]): void {
 		if (ids.length === 0) return;

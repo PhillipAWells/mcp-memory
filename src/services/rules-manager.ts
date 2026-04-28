@@ -20,6 +20,12 @@ import { logger } from '../utils/logger.js';
  * rather than crashing the server.
  *
  * Controlled by the `COPY_CLAUDE_RULES` environment variable (default `true`).
+ *
+ * @example
+ * ```typescript
+ * const rulesManager = new RulesManagerService();
+ * rulesManager.initialize(); // Copies rules/*.md to .claude/rules/
+ * ```
  */
 export class RulesManagerService {
 	private readonly sourceDir: string;
@@ -53,6 +59,8 @@ export class RulesManagerService {
 	 * Errors are logged as warnings rather than crashing the server; this operation
 	 * is non-critical and must not block startup.
 	 *
+	 * @returns void
+	 * @throws Does not throw; errors are logged as warnings and operation continues.
 	 * @example
 	 * ```typescript
 	 * rulesManager.initialize();
@@ -94,7 +102,8 @@ export class RulesManagerService {
 	/**
    * Copy every file and subdirectory from {@link sourceDir} to {@link targetDir}.
    *
-   * @returns The total number of files successfully copied.
+   * @returns number - The total number of files successfully copied.
+   * @throws Does not throw; individual file copy failures are logged and counted.
    */
 	private copyRules(): number {
 		let copiedCount = 0;
@@ -129,7 +138,8 @@ export class RulesManagerService {
    *
    * @param source - Absolute path to the source directory.
    * @param target - Absolute path to the destination directory (created if absent).
-   * @returns The number of files copied in this subtree.
+   * @returns number - The number of files copied in this subtree.
+   * @throws Does not throw; individual file copy failures are logged and counted.
    */
 	private copyDirectory(source: string, target: string): number {
 		let copiedCount = 0;
@@ -166,6 +176,8 @@ export class RulesManagerService {
    * Create `dirPath` and any missing parent directories if it does not exist.
    *
    * @param dirPath - Absolute path of the directory to ensure.
+   * @returns void
+   * @throws {Error} If mkdirSync fails (e.g., permission denied).
    */
 	private ensureDirectoryExists(dirPath: string): void {
 		if (!existsSync(dirPath)) {
