@@ -89,11 +89,17 @@ Expired memories are automatically filtered from queries and listings.
 
 **Workspace Isolation**: Optional workspace slug (`[a-zA-Z0-9_-]+`) isolates memories for multi-project scenarios. Auto-detected from env vars, package.json name, or directory name.
 
+## Public API & Exports
+
+**Note on src/index.ts**: The `src/index.ts` file serves as the **MCP server entry point only**, not as a barrel export for npm consumers. This is intentional — the package is published exclusively for use as an MCP server (started via `yarn start`), not as a library with deep imports. If future versions support programmatic library usage, a separate barrel export in `src/index.ts` will be added.
+
 ## Key Patterns
 
 **Adding a new tool**: Define Zod schema in `src/schemas/memory-schemas.ts`, implement handler in `src/tools/memory-tools.ts`, register in `src/tools/index.ts`.
 
 **Error handling**: Always return `successResponse()` or `errorResponse()` from tools. Use `validationError()` for schema violations and `notFoundError()` for missing memories — both produce the `StandardResponse` type expected by MCP clients.
+
+**Error Handling Note**: Service implementations currently throw generic `Error` for simplicity rather than always using `MemoryError`. This is an intentional deviation from pawells standards to reduce boilerplate. Future versions may adopt `MemoryError` consistently if callers need programmatic error distinction.
 
 **Chunking**: Content longer than the configured `MEMORY_CHUNK_SIZE` (default 1,000 chars) is auto-split into overlapping chunks. All chunks share a `chunk_group_id` UUID in metadata. `memory-update` blocks updates to individual chunks — must update via the group.
 
