@@ -334,12 +334,16 @@ export class EmbeddingService {
 	 * Clears cumulative counters for embeddings, cache hits/misses, tokens, and cost. Does not clear the cache itself.
 	 *
 	 * @returns void
+	 *
 	 * @example
 	 * ```typescript
+	 * const stats = embeddingService.getStats();
+	 * console.log(stats.totalCost); // e.g., 0.0042
 	 * embeddingService.resetStats();
+	 * const resetStats = embeddingService.getStats();
+	 * console.log(resetStats.totalCost); // 0
 	 * ```
 	 */
-
 	public resetStats(): void {
 		this.totalEmbeddings = 0;
 		this.cacheHits = 0;

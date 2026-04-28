@@ -150,7 +150,15 @@ export async function withRetry<T>(
  *
  * @param error - The error value thrown by the operation.
  * @param options - Resolved retry configuration.
- * @returns `true` if the operation should be retried.
+ * @returns `true` if the operation should be retried, `false` otherwise.
+ *
+ * @example
+ * ```typescript
+ * const error = new Error('Connection reset');
+ * (error as Record<string, unknown>).code = 'ECONNRESET';
+ * const shouldRetry = isRetryableError(error, options);
+ * console.log(shouldRetry); // true
+ * ```
  */
 function isRetryableError(error: unknown, options: Required<RetryOptions>): boolean {
 	if (typeof error !== 'object' || error === null) return false;
@@ -170,8 +178,15 @@ function isRetryableError(error: unknown, options: Required<RetryOptions>): bool
 
 /**
  * Sleep for a given number of milliseconds.
- * @param ms - Duration to sleep in milliseconds
- * @returns Promise that resolves after the duration
+ *
+ * @param ms - Duration to sleep in milliseconds.
+ * @returns {Promise<void>} A promise that resolves after the specified duration.
+ *
+ * @example
+ * ```typescript
+ * await sleep(1000); // Sleep for 1 second
+ * ```
+ *
  * @internal
  */
 async function sleep(ms: number): Promise<void> {
