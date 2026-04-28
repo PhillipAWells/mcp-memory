@@ -390,6 +390,14 @@ describe('memory-get', () => {
 		expect(result.success).toBe(false);
 		expect(result.error_type).toBe('VALIDATION_ERROR');
 	});
+
+	it('returns EXECUTION_ERROR when get throws a non-Zod error', async () => {
+		mockQdrant.get.mockRejectedValueOnce(new Error('Qdrant connection failed'));
+		const result = await getTool('memory-get').handler({ id: VALID_UUID });
+		expect(result.success).toBe(false);
+		expect(result.error_type).toBe('EXECUTION_ERROR');
+		expect(result.message).toContain('Failed to get memory');
+	});
 });
 
 // ── memory-update ─────────────────────────────────────────────────────────────

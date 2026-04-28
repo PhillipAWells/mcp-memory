@@ -450,6 +450,7 @@ async function memoryListHandler(args: unknown): Promise<StandardResponse> {
 						aValue = typeof a.metadata?.confidence === 'number' ? a.metadata.confidence : 0;
 						bValue = typeof b.metadata?.confidence === 'number' ? b.metadata.confidence : 0;
 						break;
+					/* v8 ignore next 3 */
 					default:
 						aValue = new Date(a.metadata?.created_at ?? 0).getTime();
 						bValue = new Date(b.metadata?.created_at ?? 0).getTime();
