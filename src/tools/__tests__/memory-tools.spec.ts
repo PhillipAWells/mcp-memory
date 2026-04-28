@@ -949,6 +949,8 @@ describe('memory-update - chunked memory content updates', () => {
 		expect(result.error_type).toBe('EXECUTION_ERROR');
 		expect(result.message).toContain('Failed to update 1 chunks');
 		expect((result.metadata as any).successfulIds).toContain('new-chunk-id-1');
+		// Critical data-safety assertion: old chunks must NOT be deleted when upsert fails
+		expect(mockQdrant.batchDelete).not.toHaveBeenCalled();
 	});
 });
 
