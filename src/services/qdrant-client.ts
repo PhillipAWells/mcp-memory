@@ -85,6 +85,27 @@ function isQdrantPayload(p: unknown): p is QdrantPayload {
 	);
 }
 
+/**
+ * Type guard to check if search parameters represent a hybrid search operation.
+ *
+ * Hybrid search requires both `useHybridSearch` to be true and `query` to be a non-empty string.
+ * Used to narrow `SearchParams` to `HybridSearchParams` before calling `hybridSearchWithRRF()`.
+ *
+ * @param p - The search parameters to check.
+ * @returns boolean - True if p is configured for hybrid search, false otherwise.
+ * @example
+ * ```typescript
+ * const params: SearchParams = { vector: [...], query: 'text', useHybridSearch: true };
+ * if (isHybridSearchParams(params)) {
+ *   // params is now narrowed to HybridSearchParams
+ *   await service.hybridSearchWithRRF(params, filter);
+ * }
+ * ```
+ */
+function isHybridSearchParams(p: SearchParams): p is HybridSearchParams {
+	return typeof p.query === 'string' && p.query.length > 0 && p.useHybridSearch === true;
+}
+
 interface QdrantPoint {
 	id: string;
 	vector: { dense: number[]; dense_large?: number[] };
@@ -93,6 +114,13 @@ interface QdrantPoint {
 
 /**
  * Batch upsert result
+ */
+/**
+ * Result of a batch upsert operation to Qdrant.
+ *
+ * @property successfulIds - Array of point IDs that were successfully upserted.
+ * @property failedPoints - Array of points that failed to upsert, with error details.
+ * @property totalProcessed - Total number of points processed (successful + failed).
  */
 interface BatchUpsertResult {
 	successfulIds: string[];
@@ -128,7 +156,15 @@ interface HybridSearchParams extends SearchParams {
 }
 
 /**
- * Collection statistics
+ * Collection statistics from Qdrant.
+ *
+ * @property indexed_vectors_count - Number of vectors that have been indexed in HNSW.
+ * @property points_count - Total number of points in the collection.
+ * @property segments_count - Number of collection segments.
+ * @property status - Collection status (e.g., 'green', 'yellow', 'red').
+ * @property optimizer_status - Status of the background optimizer.
+ * @property config - Collection configuration object (structure varies by Qdrant version).
+ * @property access_tracking_failures - Cumulative count of access-tracking update failures since service start.
  */
 interface CollectionStats {
 	indexed_vectors_count: number;
@@ -137,7 +173,6 @@ interface CollectionStats {
 	status: string;
 	optimizer_status: string;
 	config: unknown;
-	/** Cumulative count of access-tracking update failures since service start. */
 	access_tracking_failures: number;
 }
 
@@ -151,10 +186,11 @@ interface CollectionStats {
 export class QdrantService {
 	private readonly client: QdrantClient;
 	private readonly collectionName: string;
-	private initPromise: Promise<void> | null = null;
-	/** Running count of access-tracking update failures for diagnostics. */
+	// Mutable: one-time initialization guard, reset to undefined only during reconnection
+	private initPromise: Promise<void> | undefined;
+	// Mutable: incremented on each failed access tracking operation
 	private accessTrackingFailureCount: number = 0;
-	/** Timestamp of the last access tracking warning log (for rate-limiting). */
+	// Mutable: updated on each access tracking warning log for rate-limiting
 	private lastTrackingWarningTime: number = 0;
 
 	constructor() {
@@ -582,9 +618,8 @@ export class QdrantService {
 		const filter = this.buildFilter(params.filter);
 
 		// Use hybrid search with RRF if query text is provided and explicitly enabled
-		if (params.useHybridSearch && params.query) {
-			// Type guard: we've checked that query is defined above, so cast to HybridSearchParams
-			return this.hybridSearchWithRRF(params as HybridSearchParams, filter);
+		if (isHybridSearchParams(params)) {
+			return this.hybridSearchWithRRF(params, filter);
 		}
 
 		const vectorQuery = {
