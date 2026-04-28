@@ -33,7 +33,20 @@ import { rulesManager } from './services/rules-manager.js';
 import { extractErrorMessage } from './utils/errors.js';
 
 /**
- * Initialize and start the MCP server
+ * Initializes and starts the mcp-memory MCP server.
+ *
+ * Sets up stdio transport, registers all 9 memory management tools,
+ * starts the RulesManager to synchronize rules, and begins listening
+ * for MCP protocol messages. Handles graceful shutdown on SIGINT/SIGTERM.
+ *
+ * @returns {Promise<void>} Resolves when the server is ready to accept connections; rejects on fatal startup errors.
+ * @throws {Error} If the MCP server fails to initialize, cannot read package.json version, or fails to connect to stdio transport.
+ * @example
+ * ```typescript
+ * // Typically invoked as the entry point when the package is run directly
+ * await main();
+ * // Server logs: "MCP Memory Server started successfully"
+ * ```
  */
 async function main(): Promise<void> {
 	logger.info('Starting MCP Memory Server...');
