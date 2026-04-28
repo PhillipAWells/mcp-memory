@@ -161,6 +161,17 @@ describe('QdrantService.buildFilter (via count)', () => {
 		expect(workspaceCond.match.value).toBe('my-ws');
 	});
 
+	it('includes is_null condition when workspace filter is explicitly null', async () => {
+		await service.count({ workspace: null });
+		const [, args] = mockClient.count.mock.calls[0] as unknown[];
+
+		const conditions = (args as any).filter.must;
+
+		const workspaceNullCond = conditions.find((c: any) => c.is_null?.key === 'workspace');
+		expect(workspaceNullCond).toBeDefined();
+		expect(workspaceNullCond.is_null.key).toBe('workspace');
+	});
+
 	it('includes memory_type condition when filter is set', async () => {
 		await service.count({ memory_type: 'episodic' });
 		const [, args] = mockClient.count.mock.calls[0] as unknown[];
