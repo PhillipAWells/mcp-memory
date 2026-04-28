@@ -6,9 +6,9 @@
  * Static top-level imports will NOT work for tests that need to vary env vars.
  */
 
+import type { Dispatcher } from 'undici';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Agent, EnvHttpProxyAgent, getGlobalDispatcher, setGlobalDispatcher } from 'undici';
-import type { Dispatcher } from 'undici';
 
 let originalDispatcher: Dispatcher;
 
@@ -330,6 +330,37 @@ describe('globalThis.fetch override (with proxy active)', () => {
 			await globalThis.fetch('http://example.com/');
 
 			expect(mockFetch).toHaveBeenCalledWith('http://example.com/', undefined);
+		} finally {
+			globalThis.fetch = realFetch;
+		}
+	});
+
+	it('replaces an existing dispatcher in init with the proxy agent', async () => {
+		const realFetch = globalThis.fetch;
+		const mockFetch = vi.fn().mockResolvedValue(new Response('ok'));
+		globalThis.fetch = mockFetch as typeof globalThis.fetch;
+
+		try {
+			process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+			const proxyModule = await import('../proxy.js');
+
+			// Create a mock dispatcher to simulate the Qdrant client's behavior
+			const existingDispatcher = { isFakeDispatcher: true };
+			const init = { method: 'POST', dispatcher: existingDispatcher } as unknown as Parameters<typeof globalThis.fetch>[1];
+
+			// Call overridden fetch with init that HAS an existing dispatcher
+			await globalThis.fetch('http://example.com/api', init);
+
+			// The mock (_originalFetch) should have been called with the dispatcher replaced
+			// by the proxy agent, not the original dispatcher
+			expect(mockFetch).toHaveBeenCalledWith(
+				'http://example.com/api',
+				expect.objectContaining({ dispatcher: proxyModule.activeProxyAgent }),
+			);
+
+			// Verify the existing dispatcher was NOT passed through
+			const [[, callInit]] = mockFetch.mock.calls;
+			expect(callInit).not.toEqual(expect.objectContaining({ dispatcher: existingDispatcher }));
 		} finally {
 			globalThis.fetch = realFetch;
 		}
