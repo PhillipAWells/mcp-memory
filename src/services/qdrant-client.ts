@@ -1031,10 +1031,9 @@ export class QdrantService {
 	 * supplies other filter criteria.
 	 *
 	 * @param filter - Optional caller-supplied filter criteria.
-	 * @returns A Qdrant `must` filter object, or `undefined` when no conditions apply
-	 *   (not possible in practice because the expiry condition always contributes).
+	 * @returns A Qdrant `must` filter object (always includes at minimum the expiry condition).
 	 */
-	private buildFilter(filter?: SearchFilters): Record<string, unknown> | undefined {
+	private buildFilter(filter?: SearchFilters): Record<string, unknown> {
 		const conditions: Array<Record<string, unknown>> = [];
 
 		if (filter) {
@@ -1098,7 +1097,7 @@ export class QdrantService {
 			],
 		});
 
-		return conditions.length > 0 ? { must: conditions } : undefined;
+		return { must: conditions };
 	}
 
 	/**

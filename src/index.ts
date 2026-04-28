@@ -61,11 +61,16 @@ async function main(): Promise<void> {
 	// Read server version from package.json
 	let serverVersion = 'unknown';
 	try {
-		const packageJson = JSON.parse(
+		const parsed: unknown = JSON.parse(
 			readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../package.json'), 'utf-8'),
-		) as { version?: string };
-		if (packageJson.version !== undefined) {
-			serverVersion = packageJson.version;
+		);
+		if (
+			typeof parsed === 'object' &&
+			parsed !== null &&
+			'version' in parsed &&
+			typeof (parsed as Record<string, unknown>).version === 'string'
+		) {
+			serverVersion = (parsed as Record<string, unknown>).version as string;
 		}
 	} catch (cause) {
 		logger.warn(

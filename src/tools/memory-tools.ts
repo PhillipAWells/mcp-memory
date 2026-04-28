@@ -93,6 +93,25 @@ function checkContentSecrets(content: string, idContext?: string): StandardRespo
 }
 
 /**
+ * Normalizes workspace metadata field to lowercase for consistent storage.
+ *
+ * @param metadata - The metadata object to normalize in-place.
+ * @returns The normalized metadata object.
+ * @example
+ * ```typescript
+ * const meta = { workspace: 'MyProject', memory_type: 'long-term' };
+ * normalizeWorkspaceInMetadata(meta);
+ * // meta.workspace is now 'myproject'
+ * ```
+ */
+function normalizeWorkspaceInMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
+	if (metadata.workspace !== null && metadata.workspace !== undefined) {
+		metadata.workspace = workspaceDetector.normalize(metadata.workspace as string);
+	}
+	return metadata;
+}
+
+/**
  * Handles the memory-store MCP tool — embeds and stores a memory, with automatic chunking for large content.
  *
  * Validates input, checks for secrets, auto-detects workspace, applies expiry based on memory_type,
@@ -184,6 +203,7 @@ async function memoryStoreHandler(args: unknown): Promise<StandardResponse> {
 					`Failed to store ${batchResult.failedPoints.length} chunks`,
 					'EXECUTION_ERROR',
 					`Failed point IDs: ${batchResult.failedPoints.map(p => p.id).join(', ')}`,
+					{ successfulIds: batchResult.successfulIds },
 				);
 			}
 			const ids = batchResult.successfulIds;
@@ -615,6 +635,7 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 							`Failed to update ${batchResult.failedPoints.length} chunks`,
 							'EXECUTION_ERROR',
 							`Failed point IDs: ${batchResult.failedPoints.map(p => p.id).join(', ')}`,
+							{ successfulIds: batchResult.successfulIds },
 						);
 					}
 					const newIds = batchResult.successfulIds;
@@ -657,8 +678,11 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 			if (chunkGroupId) {
 				const siblings = await qdrantService.list({ metadata: { chunk_group_id: chunkGroupId } });
 
+				const metadataToUpdateSiblings = { ...(input.metadata ?? {}) };
+				normalizeWorkspaceInMetadata(metadataToUpdateSiblings);
+
 				await Promise.all(
-					siblings.map(sibling => qdrantService.updatePayload(sibling.id, input.metadata ?? {})),
+					siblings.map(sibling => qdrantService.updatePayload(sibling.id, metadataToUpdateSiblings)),
 				);
 
 				logger.info(`Updated metadata across ${siblings.length} chunk siblings`);
@@ -704,10 +728,7 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 				id: input.id,
 			};
 
-			// Normalize workspace to lowercase for consistency
-			if (mergedMetadata.workspace !== null && mergedMetadata.workspace !== undefined) {
-				mergedMetadata.workspace = workspaceDetector.normalize(mergedMetadata.workspace);
-			}
+			normalizeWorkspaceInMetadata(mergedMetadata);
 
 			await qdrantService.upsert(
 				input.content,
@@ -719,11 +740,8 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 			logger.info(`Memory updated and reindexed: ${input.id}`);
 		} else {
 			// Metadata-only update
-			const metadataToUpdate = input.metadata ?? {};
-			// Normalize workspace to lowercase for consistency
-			if (metadataToUpdate.workspace !== null && metadataToUpdate.workspace !== undefined) {
-				metadataToUpdate.workspace = workspaceDetector.normalize(metadataToUpdate.workspace);
-			}
+			const metadataToUpdate = { ...(input.metadata ?? {}) };
+			normalizeWorkspaceInMetadata(metadataToUpdate);
 			await qdrantService.updatePayload(input.id, metadataToUpdate);
 			logger.info(`Memory metadata updated: ${input.id}`);
 		}
