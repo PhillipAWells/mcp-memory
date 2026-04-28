@@ -217,10 +217,10 @@ async function memoryStoreHandler(args: unknown): Promise<StandardResponse> {
 					}
 				}
 				return errorResponse(
-					`Failed to store ${batchResult.failedPoints.length} chunks`,
+					`Failed to store ${batchResult.failedPoints.length} of ${batchResult.totalProcessed} chunks`,
 					'EXECUTION_ERROR',
-					`Failed point IDs: ${batchResult.failedPoints.map(p => p.id).join(', ')}`,
-					{ successfulIds: batchResult.successfulIds },
+					`Batch store failed: ${batchResult.failedPoints.length} chunk(s) could not be written`,
+					{ successfulIds: batchResult.successfulIds, failed_count: batchResult.failedPoints.length },
 				);
 			}
 			const ids = batchResult.successfulIds;
@@ -607,7 +607,7 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 			const chunkGroupId = existing.metadata?.chunk_group_id;
 
 			// Case A: Content update - re-chunk and re-store all siblings
-			if (input.content) {
+			if (input.content !== undefined) {
 				// Find all siblings sharing the same chunk_group_id
 				const siblings = chunkGroupId
 					? await qdrantService.list({ metadata: { chunk_group_id: chunkGroupId } })
@@ -651,10 +651,10 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 					const batchResult = await qdrantService.batchUpsert(points);
 					if (batchResult.failedPoints.length > 0) {
 						return errorResponse(
-							`Failed to update ${batchResult.failedPoints.length} chunks`,
+							`Failed to update ${batchResult.failedPoints.length} of ${batchResult.totalProcessed} chunks`,
 							'EXECUTION_ERROR',
-							`Failed point IDs: ${batchResult.failedPoints.map(p => p.id).join(', ')}`,
-							{ successfulIds: batchResult.successfulIds },
+							`Batch update failed: ${batchResult.failedPoints.length} chunk(s) could not be written`,
+							{ successfulIds: batchResult.successfulIds, failed_count: batchResult.failedPoints.length },
 						);
 					}
 					const newIds = batchResult.successfulIds;

@@ -552,7 +552,7 @@ export function isSafeToStore(content: string): {
  * ```typescript
  * const detection = detectSecrets(content);
  * console.log(getSecretsSummary(detection));
- * // Output: "No secrets detected" or "Detected: 1 api_key(s) (1 high confidence)"
+ * // Output: "No secrets detected" or "Detected: 1 api key(s) (1 high confidence)"
  * ```
  */
 export function getSecretsSummary(detection: SecretDetection): string {

@@ -300,7 +300,7 @@ export class WorkspaceDetectorService {
    * ```typescript
    * const clean1 = cleanWorkspaceName('@scope/my-app');    // 'my-app'
    * const clean2 = cleanWorkspaceName('mcp-memory');       // 'memory'
-   * const clean3 = cleanWorkspaceName('My_App@123');       // 'my-app-123'
+   * const clean3 = cleanWorkspaceName('My_App@123');       // 'My_App-123'
    * ```
    */
 	private cleanWorkspaceName(name: string): string {

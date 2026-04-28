@@ -231,6 +231,22 @@ describe('initProxy', () => {
 		expect(log.warn).not.toHaveBeenCalled();
 	});
 
+	it('logs "NO_PROXY not set" when proxy is added after module load with no NO_PROXY set', async () => {
+		// Import the module WITHOUT HTTPS_PROXY set so noProxyDefaulted stays false.
+		// The module-level side effect runs at import time; if no proxy is active then,
+		// noProxyDefaulted remains false. We then set HTTPS_PROXY after import so that
+		// initProxy() sees an active proxy but noProxyDefaulted === false and NO_PROXY is empty.
+		delete process.env.HTTPS_PROXY;
+		delete process.env.NO_PROXY;
+		const { initProxy } = await import('../proxy.js');
+		process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+		const log = { info: vi.fn(), warn: vi.fn() };
+		initProxy(log);
+		const allInfoCalls = (log.info as ReturnType<typeof vi.fn>).mock.calls.flat().join(' ');
+		expect(allInfoCalls).toContain('NO_PROXY not set');
+		expect(log.warn).not.toHaveBeenCalled();
+	});
+
 	it('never warns regardless of NO_PROXY state when proxy is active', async () => {
 		process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
 		const { initProxy } = await import('../proxy.js');

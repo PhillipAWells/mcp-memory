@@ -39,6 +39,21 @@ describe('withRetry', () => {
 		expect(operation).toHaveBeenCalledTimes(2);
 	});
 
+	it('retries when error.name (not code) matches a retryable error', async () => {
+		const error = new Error('Named connection reset');
+		error.name = 'ECONNRESET';
+		const operation = vi.fn()
+			.mockRejectedValueOnce(error)
+			.mockResolvedValue('success');
+		const result = await withRetry(operation, {
+			maxRetries: 2,
+			initialDelay: 10,
+			retryableErrors: ['ECONNRESET'],
+		});
+		expect(result).toBe('success');
+		expect(operation).toHaveBeenCalledTimes(2);
+	});
+
 	it('should retry on 500 status codes', async () => {
 		const error = new Error('Server error');
 		(error as any).status = 500;

@@ -43,7 +43,7 @@ export function successResponse<T>(
  * @returns A `StandardResponse` with `success: false`.
  * @example
  * ```typescript
- * return errorResponse('Qdrant connection failed', 'STORAGE_FAILED', 'ECONNREFUSED');
+ * return errorResponse('Qdrant connection failed', 'CONNECTION_ERROR', 'ECONNREFUSED');
  * ```
  */
 export function errorResponse(

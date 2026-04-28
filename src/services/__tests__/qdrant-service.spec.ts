@@ -1349,3 +1349,76 @@ describe('QdrantService.validateCollectionSchema with distance mismatches', () =
 		await expect(service.initialize()).rejects.toThrow('distance mismatch');
 	});
 });
+
+// ── QdrantService.getStats (normalizeOptimizerStatus branches) ───────────────
+
+describe('QdrantService.getStats', () => {
+	let service: QdrantService;
+
+	beforeEach(async () => {
+		service = await createInitializedService();
+	});
+
+	it('normalizes optimizer_status when it is an object with error property', async () => {
+		mockClient.getCollection.mockResolvedValue({
+			config: {
+				params: {
+					vectors: {
+						dense: { size: 1536, distance: 'Cosine' },
+						dense_large: { size: 3072, distance: 'Cosine' },
+					},
+				},
+			},
+			points_count: 100,
+			indexed_vectors_count: 100,
+			segments_count: 3,
+			status: 'green',
+			optimizer_status: { error: 'index overflow' },
+		});
+
+		const stats = await service.getStats();
+		expect(stats.optimizer_status).toBe('error: index overflow');
+	});
+
+	it('normalizes optimizer_status when it is an object with ok property', async () => {
+		mockClient.getCollection.mockResolvedValue({
+			config: {
+				params: {
+					vectors: {
+						dense: { size: 1536, distance: 'Cosine' },
+						dense_large: { size: 3072, distance: 'Cosine' },
+					},
+				},
+			},
+			points_count: 50,
+			indexed_vectors_count: 50,
+			segments_count: 2,
+			status: 'green',
+			optimizer_status: { ok: true },
+		});
+
+		const stats = await service.getStats();
+		expect(stats.optimizer_status).toBe('ok');
+	});
+
+	it('normalizes optimizer_status to "unknown" when null', async () => {
+		mockClient.getCollection.mockResolvedValue({
+			config: {
+				params: {
+					vectors: {
+						dense: { size: 1536, distance: 'Cosine' },
+						dense_large: { size: 3072, distance: 'Cosine' },
+					},
+				},
+			},
+			points_count: 75,
+			indexed_vectors_count: 75,
+			segments_count: 2,
+			status: 'green',
+			optimizer_status: null,
+		});
+
+		const stats = await service.getStats();
+		expect(stats.optimizer_status).toBe('unknown');
+	});
+});

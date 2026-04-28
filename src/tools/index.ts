@@ -16,7 +16,7 @@ import { memoryTools } from './memory-tools.js';
  * @example
  * ```typescript
  * // Used by the MCP server to register all available tools
- * tools.forEach(tool => mcp.registerTool(tool));
+ * tools.forEach(tool => console.log(tool.name)); // 'memory-store', 'memory-query', etc.
  * ```
  */
 export const tools: MCPTool[] = [

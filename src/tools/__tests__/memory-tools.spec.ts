@@ -223,7 +223,7 @@ describe('memory-store', () => {
 
 		expect(result.success).toBe(false);
 		expect(result.error_type).toBe('EXECUTION_ERROR');
-		expect(result.message).toContain('Failed to store 1 chunks');
+		expect(result.message).toContain('Failed to store 1 of 2 chunks');
 		expect((result.metadata as any).successfulIds).toContain('chunk-id-1');
 	});
 });
@@ -586,6 +586,12 @@ describe('memory-status', () => {
 		const result = await getTool('memory-status').handler(MemoryStatusInputSchema.parse({ include_embedding_stats: false }));
 		expect((result.data as any).embeddings).toBeUndefined();
 	});
+
+	it('returns VALIDATION_ERROR when include_embedding_stats is not a boolean', async () => {
+		const result = await getTool('memory-status').handler({ include_embedding_stats: 'not-a-boolean' } as unknown as Parameters<typeof getTool>[0]);
+		expect(result.success).toBe(false);
+		expect(result.error_type).toBe('VALIDATION_ERROR');
+	});
 });
 
 // ── memory-count ──────────────────────────────────────────────────────────────
@@ -947,7 +953,7 @@ describe('memory-update - chunked memory content updates', () => {
 
 		expect(result.success).toBe(false);
 		expect(result.error_type).toBe('EXECUTION_ERROR');
-		expect(result.message).toContain('Failed to update 1 chunks');
+		expect(result.message).toContain('Failed to update 1 of 2 chunks');
 		expect((result.metadata as any).successfulIds).toContain('new-chunk-id-1');
 		// Critical data-safety assertion: old chunks must NOT be deleted when upsert fails
 		expect(mockQdrant.batchDelete).not.toHaveBeenCalled();

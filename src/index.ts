@@ -39,7 +39,7 @@ import { extractErrorMessage } from './utils/errors.js';
  * starts the RulesManager to synchronize rules, and begins listening
  * for MCP protocol messages. Handles graceful shutdown on SIGINT/SIGTERM.
  *
- * @returns {Promise<void>} Resolves when the server is ready to accept connections; rejects on fatal startup errors.
+ * @returns Resolves when the server is ready to accept connections; rejects on fatal startup errors.
  * @throws {Error} If the MCP server fails to initialize, cannot read package.json version, or fails to connect to stdio transport.
  * @example
  * ```typescript
