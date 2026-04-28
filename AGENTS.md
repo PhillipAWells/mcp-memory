@@ -89,10 +89,6 @@ Expired memories are automatically filtered from queries and listings.
 
 **Workspace Isolation**: Optional workspace slug (`[a-zA-Z0-9_-]+`) isolates memories for multi-project scenarios. Auto-detected from env vars, package.json name, or directory name.
 
-## Public API & Exports
-
-**Note on src/index.ts**: The `src/index.ts` file serves as the **MCP server entry point only**, not as a barrel export for npm consumers. This is intentional — the package is published exclusively for use as an MCP server (started via `yarn start`), not as a library with deep imports. If future versions support programmatic library usage, a separate barrel export in `src/index.ts` will be added.
-
 ## Key Patterns
 
 **Adding a new tool**: Define Zod schema in `src/schemas/memory-schemas.ts`, implement handler in `src/tools/memory-tools.ts`, register in `src/tools/index.ts`.
@@ -115,6 +111,8 @@ Expired memories are automatically filtered from queries and listings.
 Expired memories are automatically excluded from queries and listings.
 
 ## Public API
+
+**Note on src/index.ts**: The `src/index.ts` file serves as the **MCP server entry point only**, not as a barrel export for npm consumers. This is intentional — the package is published exclusively for use as an MCP server (started via `yarn start`), not as a library with deep imports. If future versions support programmatic library usage, a separate barrel export in `src/index.ts` will be added.
 
 The MCP server exposes 9 tools to clients. All tools return `StandardResponse<T>` which includes `success`, `message`, `data`, and a `metadata` bag containing `duration_ms`.
 
@@ -291,3 +289,9 @@ This is acceptable at current scale but worth documenting for future capacity pl
 Expiry filtering queries (`memory-query`, `memory-list`) previously scanned all payloads (O(n)) to filter expired memories. A datetime index on `expires_at` was added during this review, enabling indexed lookups that avoid full payload scans. This improves query performance significantly for large collections with many short-term or episodic memories.
 
 This is a performance bug fix and not a gotcha, but it's worth noting if you observe improved query latency on large collections after this change.
+
+### Workspace Scoping Behavior
+
+The `memory-query` tool automatically filters to the current workspace when no explicit workspace filter is provided. Other read operations (`memory-list`, `memory-count`, `memory-status`, `memory-get`) return ALL workspaces by default.
+
+This asymmetry exists because `memory-query` is the primary search operation and scoping queries to the current workspace is the safer default. Use explicit `filter: { workspace: null }` in `memory-query` to retrieve cross-workspace results, or specify a `workspace` in the filter for other operations.
