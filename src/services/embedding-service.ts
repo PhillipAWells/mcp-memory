@@ -646,6 +646,13 @@ export class EmbeddingService {
 		return typedResults;
 	}
 
+	/**
+	 * Generates a deterministic cache key from the model variant, dimensions, and text.
+	 *
+	 * @param text - The input text to hash.
+	 * @param variant - The embedding variant ('small' or 'large').
+	 * @returns A hex digest string used as the LRU cache key.
+	 */
 	private getCacheKey(text: string, variant: 'small' | 'large'): string {
 		const hash = createHash('sha256');
 		const model = variant === 'large' ? LARGE_MODEL : SMALL_MODEL;
@@ -656,6 +663,12 @@ export class EmbeddingService {
 		return hash.digest('hex');
 	}
 
+	/**
+	 * Adds an embedding to the LRU cache, evicting the least-recently-used entry if at capacity.
+	 *
+	 * @param key - The cache key returned by {@link getCacheKey}.
+	 * @param embedding - The embedding vector to store.
+	 */
 	private addToCache(key: string, embedding: number[]): void {
 		if (this.cache.size >= this.maxCacheSize) {
 			this.evictLRU();
@@ -668,6 +681,9 @@ export class EmbeddingService {
 		});
 	}
 
+	/**
+	 * Evicts the least-recently-used entry from the cache to free space.
+	 */
 	private evictLRU(): void {
 		// JavaScript's Map preserves insertion order.  Cache hits promote entries to
 		// the end via delete+re-insert (see generateEmbedding / generateLargeEmbedding),

@@ -79,25 +79,25 @@ export interface DetectedSecret {
  * ```
  */
 export type SecretType =
-  | 'api_key'
-  | 'bearer_token'
-  | 'jwt_token'
-  | 'oauth_token'
-  | 'password'
-  | 'private_key'
-  | 'database_url'
-  | 'aws_credentials'
-  | 'gcp_credentials'
-  | 'azure_credentials'
-  | 'github_token'
-  | 'slack_token'
-  | 'stripe_key'
-  | 'openai_key'
-  | 'email'
-  | 'phone_number'
-  | 'credit_card'
-  | 'ssn'
-  | 'generic_secret';
+	| 'api_key'
+	| 'bearer_token'
+	| 'jwt_token'
+	| 'oauth_token'
+	| 'password'
+	| 'private_key'
+	| 'database_url'
+	| 'aws_credentials'
+	| 'gcp_credentials'
+	| 'azure_credentials'
+	| 'github_token'
+	| 'slack_token'
+	| 'stripe_key'
+	| 'openai_key'
+	| 'email'
+	| 'phone_number'
+	| 'credit_card'
+	| 'ssn'
+	| 'generic_secret';
 
 interface SecretPattern {
 	type: SecretType;
@@ -106,10 +106,6 @@ interface SecretPattern {
 	description: string;
 }
 
-/**
- * Luhn algorithm check for credit card numbers.
- * Returns true if the number passes the Luhn check.
- */
 /** Minimum digits for a valid credit card number. */
 const LUHN_MIN_DIGITS = 13;
 /** Luhn algorithm: a doubled digit above this needs subtraction. */
@@ -130,10 +126,10 @@ const MEDIUM_CONFIDENCE_BLOCK_THRESHOLD = 3;
 const CONFIDENCE_ORDER = { high: 3, medium: 2, low: 1 } as const;
 
 /**
- * Validate a numeric string using the Luhn algorithm.
+ * Luhn algorithm check for credit card numbers.
  *
- * Extracts digits, calculates the Luhn checksum, and returns true if valid.
- * Strings shorter than {@link LUHN_MIN_DIGITS} are rejected immediately.
+ * Extracts digits from the input, calculates the Luhn checksum, and returns true if valid.
+ * Strings shorter than {@link LUHN_MIN_DIGITS} digits are rejected immediately.
  *
  * @param numStr - A string containing digits and potentially non-digit characters.
  * @returns boolean - True if the string passes the Luhn checksum, false otherwise.
@@ -467,8 +463,10 @@ export function detectSecrets(content: string): SecretDetection {
  * @param content - The text to sanitize.
  * @returns Sanitized content with secrets replaced by placeholders.
  * @example
+ * ```typescript
  * const sanitized = sanitizeContent('password: secret123');
  * // Returns: 'password: [REDACTED_PASSWORD]'
+ * ```
  */
 export function sanitizeContent(content: string): string {
 	const detection = detectSecrets(content);
@@ -486,10 +484,12 @@ export function sanitizeContent(content: string): string {
  * @returns Object with safe flag, optional reason, detected secrets, and full detection result.
  * @throws {never} Does not throw; always returns a result object.
  * @example
+ * ```typescript
  * const result = isSafeToStore('Database URL: postgres://user:pass@host/db');
  * if (!result.safe) {
  *   console.error('Cannot store:', result.reason);
  * }
+ * ```
  */
 export function isSafeToStore(content: string): {
 	safe: boolean;
@@ -549,9 +549,11 @@ export function isSafeToStore(content: string): {
  * @param detection - The result from detectSecrets().
  * @returns Human-readable summary string (e.g., "Detected: 2 api_key(s), 1 jwt_token(s) (1 high confidence)").
  * @example
+ * ```typescript
  * const detection = detectSecrets(content);
  * console.log(getSecretsSummary(detection));
  * // Output: "No secrets detected" or "Detected: 1 api_key(s) (1 high confidence)"
+ * ```
  */
 export function getSecretsSummary(detection: SecretDetection): string {
 	if (!detection.found) {

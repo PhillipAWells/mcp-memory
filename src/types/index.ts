@@ -20,9 +20,9 @@
  * ```
  */
 export type MemoryType =
-  | 'short-term'    // Volatile working memory
-  | 'episodic'      // Specific experiences, events
-  | 'long-term';    // Persistent knowledge (facts, concepts, workflows)
+	| 'short-term'    // Volatile working memory
+	| 'episodic'      // Specific experiences, events
+	| 'long-term';    // Persistent knowledge (facts, concepts, workflows)
 
 /**
  * A single result returned by a vector search or point retrieval operation.
@@ -109,15 +109,15 @@ export interface StandardResponse<T = unknown> {
  * ```
  */
 export type ErrorType =
-  | 'VALIDATION_ERROR'      // Input failed schema validation
-  | 'CONNECTION_ERROR'      // Could not reach an external service
-  | 'TIMEOUT_ERROR'         // Operation exceeded its time limit
-  | 'SERVER_ERROR'          // Internal server-side failure
-  | 'CLIENT_ERROR'          // Bad request from the caller
-  | 'NOT_FOUND_ERROR'       // Requested resource does not exist
-  | 'AUTHENTICATION_ERROR'  // Missing or invalid credentials
-  | 'EXECUTION_ERROR'       // General runtime error during tool execution
-  | 'UNKNOWN_ERROR';        // Uncategorised failure
+	| 'VALIDATION_ERROR'      // Input failed schema validation
+	| 'CONNECTION_ERROR'      // Could not reach an external service
+	| 'TIMEOUT_ERROR'         // Operation exceeded its time limit
+	| 'SERVER_ERROR'          // Internal server-side failure
+	| 'CLIENT_ERROR'          // Bad request from the caller
+	| 'NOT_FOUND_ERROR'       // Requested resource does not exist
+	| 'AUTHENTICATION_ERROR'  // Missing or invalid credentials
+	| 'EXECUTION_ERROR'       // General runtime error during tool execution
+	| 'UNKNOWN_ERROR';        // Uncategorised failure
 
 /**
  * MCP tool definition registered with the MCP server.
