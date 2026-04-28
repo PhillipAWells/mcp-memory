@@ -99,9 +99,9 @@ export let noProxyDefaulted = false;
 // --- Module-level side effect ---
 // Runs synchronously when this module is first evaluated (at import time).
 // The proxy import in src/index.ts must appear before all other imports.
-const _proxyUrl = getActiveProxyUrl();
+const _initialProxyUrl = getActiveProxyUrl();
 
-if (_proxyUrl !== null) {
+if (_initialProxyUrl !== null) {
 	// If NO_PROXY is absent or empty, apply the safe default before constructing
 	// the EnvHttpProxyAgent (which reads NO_PROXY at construction/request time).
 	// This prevents local services such as Qdrant (localhost:6333) from being

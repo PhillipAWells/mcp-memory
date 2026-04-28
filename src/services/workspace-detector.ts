@@ -258,7 +258,7 @@ export class WorkspaceDetectorService {
 			return false;
 		}
 
-		if (name.length === 0 || name.length > MAX_WORKSPACE_NAME_LENGTH) {
+		if (name.length > MAX_WORKSPACE_NAME_LENGTH) {
 			return false;
 		}
 

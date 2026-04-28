@@ -70,7 +70,7 @@ export function parseIntEnv(raw: string | undefined, fallback: number, name: str
 	if (isNaN(parsed) || !isFinite(parsed)) {
 		throw new Error(
 			`Invalid environment variable ${name}="${raw}": expected an integer, got "${raw}". ` +
-      `Using the default (${fallback}) requires unsetting the variable.`,
+			`Using the default (${fallback}) requires unsetting the variable.`,
 		);
 	}
 	return parsed;
