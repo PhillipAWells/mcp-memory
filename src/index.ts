@@ -67,10 +67,12 @@ async function main(): Promise<void> {
 		if (
 			typeof parsed === 'object' &&
 			parsed !== null &&
-			'version' in parsed &&
-			typeof (parsed as Record<string, unknown>).version === 'string'
+			'version' in parsed
 		) {
-			serverVersion = (parsed as Record<string, unknown>).version as string;
+			const record = parsed as Record<string, unknown>;
+			if (typeof record.version === 'string') {
+				serverVersion = record.version;
+			}
 		}
 	} catch (cause) {
 		logger.warn(

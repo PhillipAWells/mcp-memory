@@ -41,6 +41,8 @@ const HNSW_EF_MIN = 64;
 const HNSW_EF_MAX = 512;
 const DEFAULT_RESULT_LIMIT = 10;
 const BATCH_DELETE_MAX = 100;
+/** Default balance between vector similarity and keyword search in hybrid mode (0 = keyword-only, 1 = vector-only). */
+const DEFAULT_HYBRID_ALPHA = 0.5;
 
 /**
  * Zod enum for the three supported memory classification types.
@@ -135,8 +137,7 @@ export const MemoryQueryInputSchema = z.object({
    * Weight between dense vector (1.0) and full-text (0.0) scoring in hybrid
    * mode (default 0.5).  Ignored when `use_hybrid_search` is `false`.
    */
-	// eslint-disable-next-line no-magic-numbers
-	hybrid_alpha: z.number().min(0.0).max(1.0).optional().default(0.5),
+	hybrid_alpha: z.number().min(0.0).max(1.0).optional().default(DEFAULT_HYBRID_ALPHA),
 });
 
 /** Type-safe input for the `memory-query` tool, inferred from {@link MemoryQueryInputSchema}. */
