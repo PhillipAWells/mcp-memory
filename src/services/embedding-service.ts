@@ -6,7 +6,7 @@
  */
 
 import OpenAI from 'openai';
-import { createHash } from 'crypto';
+import { createHash } from 'node:crypto';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { withRetry } from '../utils/retry.js';
@@ -70,7 +70,7 @@ export class EmbeddingService {
 	private readonly SMALL_DIMENSIONS: number;
 	private readonly LARGE_DIMENSIONS: number;
 
-	// Usage statistics
+	// Mutable: incremented by embedding operations for cost tracking
 	private totalEmbeddings: number = 0;
 	private cacheHits: number = 0;
 	private cacheMisses: number = 0;

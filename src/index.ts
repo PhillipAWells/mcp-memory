@@ -12,6 +12,10 @@
 // Proxy MUST be the first import — sets the global fetch dispatcher before any HTTP client module initialises.
 import { initProxy } from './utils/proxy.js';
 
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
 import { Server } from '@modelcontextprotocol/sdk/server';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type {
@@ -21,9 +25,6 @@ import {
 	CallToolRequestSchema,
 	ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
 
 import { config } from './config.js';
 import { logger } from './utils/logger.js';

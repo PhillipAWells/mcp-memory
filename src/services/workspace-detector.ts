@@ -4,8 +4,8 @@
  * Auto-detect workspace from package.json or directory name
  */
 
-import { readFileSync, existsSync } from 'fs';
-import { join, dirname, basename } from 'path';
+import { readFileSync, existsSync } from 'node:fs';
+import { join, dirname, basename } from 'node:path';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 
@@ -53,6 +53,7 @@ const RESERVED_WORKSPACE_NAMES = new Set([
 ]);
 
 export class WorkspaceDetectorService {
+	// Mutable: cache entries updated on workspace detection
 	private cachedWorkspace: string | null = null;
 	private cachedSource: WorkspaceDetectionResult['source'] = 'none';
 	private cacheTimestamp: number = 0;

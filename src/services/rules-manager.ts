@@ -4,9 +4,9 @@
  * Manages copying of rules to Claude's rules directory
  */
 
-import { existsSync, mkdirSync, readdirSync, copyFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { existsSync, mkdirSync, readdirSync, copyFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 
