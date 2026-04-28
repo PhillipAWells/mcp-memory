@@ -578,9 +578,9 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 				// Re-chunk and re-store with new content
 				const baseMetadata = { ...existing.metadata };
 				// Strip chunk-specific fields from base before overlaying input metadata
-				delete baseMetadata.chunk_index;
-				delete baseMetadata.total_chunks;
-				delete baseMetadata.chunk_group_id;
+				baseMetadata.chunk_index = undefined;
+				baseMetadata.total_chunks = undefined;
+				baseMetadata.chunk_group_id = undefined;
 
 				const mergedMetadata = { ...baseMetadata, ...input.metadata };
 
