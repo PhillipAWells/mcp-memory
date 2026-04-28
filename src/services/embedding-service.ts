@@ -630,8 +630,8 @@ export class EmbeddingService {
 			this.totalTokens += tokens;
 			this.totalCost += (tokens / TOKENS_PER_MILLION) * costPerM;
 
-			response.data.forEach((item, idx) => {
-				const originalIdx = uncachedIndices[idx];
+			response.data.forEach((item) => {
+				const originalIdx = uncachedIndices[item.index];
 				const key = this.getCacheKey(texts[originalIdx], variant);
 				this.addToCache(key, item.embedding);
 				results[originalIdx] = item.embedding;

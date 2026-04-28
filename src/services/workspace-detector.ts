@@ -198,14 +198,19 @@ export class WorkspaceDetectorService {
 
 			if (existsSync(packageJsonPath)) {
 				try {
-					const packageJson = JSON.parse(
+					const packageJson: unknown = JSON.parse(
 						readFileSync(packageJsonPath, 'utf-8'),
 					);
 
-					if (packageJson.name && typeof packageJson.name === 'string') {
+					if (
+						typeof packageJson === 'object' &&
+						packageJson !== null &&
+						'name' in packageJson &&
+						typeof (packageJson as { name?: unknown }).name === 'string'
+					) {
 						// Extract workspace name from package name
 						// Handle scoped packages: @scope/name -> scope-name or just name
-						let workspaceName = packageJson.name;
+						let workspaceName = (packageJson as { name: string }).name;
 
 						if (workspaceName.startsWith('@')) {
 							// @scope/name -> name (simple approach)
@@ -263,7 +268,7 @@ export class WorkspaceDetectorService {
    * ```
    */
 	public isValidWorkspace(name: string): boolean {
-		if (!name || typeof name !== 'string') {
+		if (!name) {
 			return false;
 		}
 

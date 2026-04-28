@@ -36,14 +36,14 @@ import { EmbeddingService } from '../embedding-service.js';
 
 function makeSmallResponse(dims = 1536) {
 	return {
-		data: [{ embedding: new Array(dims).fill(0.1) }],
+		data: [{ index: 0, embedding: new Array(dims).fill(0.1) }],
 		usage: { total_tokens: 10 },
 	};
 }
 
 function makeLargeResponse(dims = 3072) {
 	return {
-		data: [{ embedding: new Array(dims).fill(0.2) }],
+		data: [{ index: 0, embedding: new Array(dims).fill(0.2) }],
 		usage: { total_tokens: 10 },
 	};
 }
@@ -331,8 +331,8 @@ describe('EmbeddingService.generateBatchEmbeddings', () => {
 	it('returns embeddings array for batch of texts', async () => {
 		mockCreate.mockResolvedValue({
 			data: [
-				{ embedding: new Array(1536).fill(0.1) },
-				{ embedding: new Array(1536).fill(0.2) },
+				{ index: 0, embedding: new Array(1536).fill(0.1) },
+				{ index: 1, embedding: new Array(1536).fill(0.2) },
 			],
 			usage: { total_tokens: 20 },
 		});
@@ -346,8 +346,8 @@ describe('EmbeddingService.generateBatchEmbeddings', () => {
 	it('increments totalEmbeddings counter for each batch item', async () => {
 		mockCreate.mockResolvedValue({
 			data: [
-				{ embedding: new Array(1536).fill(0.1) },
-				{ embedding: new Array(1536).fill(0.2) },
+				{ index: 0, embedding: new Array(1536).fill(0.1) },
+				{ index: 1, embedding: new Array(1536).fill(0.2) },
 			],
 			usage: { total_tokens: 20 },
 		});
@@ -361,8 +361,8 @@ describe('EmbeddingService.generateBatchEmbeddings', () => {
 	it('counts cache hits when batch items are already cached', async () => {
 		mockCreate.mockResolvedValueOnce({
 			data: [
-				{ embedding: new Array(1536).fill(0.1) },
-				{ embedding: new Array(1536).fill(0.2) },
+				{ index: 0, embedding: new Array(1536).fill(0.1) },
+				{ index: 1, embedding: new Array(1536).fill(0.2) },
 			],
 			usage: { total_tokens: 20 },
 		});
@@ -391,7 +391,7 @@ describe('EmbeddingService.generateChunkedEmbeddings', () => {
 	it('returns array of chunks with embeddings for long content', async () => {
 		mockCreate.mockImplementation(({ input }: { input: string[] }) => {
 			return Promise.resolve({
-				data: input.map(() => ({ embedding: new Array(1536).fill(0.1) })),
+				data: input.map((_, idx) => ({ index: idx, embedding: new Array(1536).fill(0.1) })),
 				usage: { total_tokens: 10 * input.length },
 			});
 		});
@@ -411,7 +411,7 @@ describe('EmbeddingService.generateChunkedEmbeddings', () => {
 	it('increments totalEmbeddings counter for each chunk', async () => {
 		mockCreate.mockImplementation(({ input }: { input: string[] }) => {
 			return Promise.resolve({
-				data: input.map(() => ({ embedding: new Array(1536).fill(0.1) })),
+				data: input.map((_, idx) => ({ index: idx, embedding: new Array(1536).fill(0.1) })),
 				usage: { total_tokens: 10 * input.length },
 			});
 		});

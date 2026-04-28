@@ -111,8 +111,9 @@ function checkContentSecrets(content: string, idContext?: string): StandardRespo
  * ```
  */
 function normalizeWorkspaceInMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
-	if (metadata.workspace !== null && metadata.workspace !== undefined) {
-		metadata.workspace = workspaceDetector.normalize(metadata.workspace as string);
+	const ws = metadata.workspace;
+	if (typeof ws === 'string' || ws === null) {
+		metadata.workspace = workspaceDetector.normalize(ws);
 	}
 	return metadata;
 }
@@ -436,12 +437,12 @@ async function memoryListHandler(args: unknown): Promise<StandardResponse> {
 						bValue = new Date(b.metadata?.updated_at ?? 0).getTime();
 						break;
 					case 'access_count':
-						aValue = a.metadata?.access_count ?? 0;
-						bValue = b.metadata?.access_count ?? 0;
+						aValue = typeof a.metadata?.access_count === 'number' ? a.metadata.access_count : 0;
+						bValue = typeof b.metadata?.access_count === 'number' ? b.metadata.access_count : 0;
 						break;
 					case 'confidence':
-						aValue = a.metadata?.confidence ?? 0;
-						bValue = b.metadata?.confidence ?? 0;
+						aValue = typeof a.metadata?.confidence === 'number' ? a.metadata.confidence : 0;
+						bValue = typeof b.metadata?.confidence === 'number' ? b.metadata.confidence : 0;
 						break;
 					default:
 						aValue = new Date(a.metadata?.created_at ?? 0).getTime();
@@ -754,7 +755,7 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 		}
 
 		// Content update: always reindex
-		if (input.content) {
+		if (input.content !== undefined) {
 			logger.debug('Re-generating dual embeddings for updated content');
 			const dual = await embeddingService.generateDualEmbeddings(input.content);
 

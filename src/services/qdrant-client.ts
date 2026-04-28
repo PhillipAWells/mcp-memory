@@ -55,6 +55,8 @@ const PERCENT = 100;
 const ACCESS_TRACKING_WARNING_INTERVAL_MS = 10_000;
 /** Default HTTPS port. */
 const HTTPS_DEFAULT_PORT = 443;
+/** Default hybrid search alpha weighting (0.5 = equal weighting between vector and text). */
+const DEFAULT_HYBRID_ALPHA = 0.5;
 
 /**
  * Type guard to check if a value is a valid QdrantPayload.
@@ -334,10 +336,9 @@ export class QdrantService {
 	}
 
 	/**
-   * Create collection with production-optimized configuration
-   * Supports hybrid search via text index + vector search with manual RRF
-   * Supports dual embeddings (small + large) when enabled
-   */
+	 * Creates a Qdrant collection with dual named vectors (dense and dense_large) and the configured distance metric.
+	 * Initializes HNSW indexes, quantization, and optimizer settings for production use.
+	 */
 	private async createCollection(): Promise<void> {
 		await withRetry(() => this.client.createCollection(this.collectionName, {
 			vectors: {
@@ -376,8 +377,9 @@ export class QdrantService {
 	}
 
 	/**
-   * Create payload indexes for all filterable fields
-   */
+	 * Creates payload field indexes for filtering (workspace, memory_type, tags, expires_at, chunk_group_id).
+	 * Includes text index on content field for hybrid full-text search.
+	 */
 	private async createPayloadIndexes(): Promise<void> {
 		const indexes = [
 			// Core indexes (used in most queries)
@@ -716,14 +718,13 @@ export class QdrantService {
 		}));
 
 		// Perform text-based search using the text index on content field
-		const queryText = params.query;
 		const textFilter = {
-			...filter,
+			...(filter ?? {}),
 			must: [
 				...(Array.isArray(filter?.must) ? filter.must : []),
 				{
 					key: 'content',
-					match: { text: queryText },
+					match: { text: params.query },
 				},
 			],
 		};
@@ -736,8 +737,7 @@ export class QdrantService {
 		}));
 
 		// Apply RRF: score = sum(alpha * 1 / (k + rank) for vector + (1 - alpha) * 1 / (k + rank) for text)
-		// eslint-disable-next-line no-magic-numbers
-		const alpha = params.hybridAlpha ?? 0.5; // Default: equal weighting between dense and text
+		const alpha = params.hybridAlpha ?? DEFAULT_HYBRID_ALPHA; // Default: equal weighting between dense and text
 		const rrfScores = new Map<string, number>();
 		// Qdrant points have arbitrary payload structure; using Record<string, unknown> for type safety
 		const pointsById = new Map<string, Record<string, unknown>>();
@@ -1220,7 +1220,8 @@ export class QdrantService {
 	}
 
 	/**
-	 * Ensure service is initialized
+	 * Ensures the service is initialized before use.
+	 * Delegates to `initialize()` which is idempotent.
 	 */
 	private async ensureInitialized(): Promise<void> {
 		await this.initialize();

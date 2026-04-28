@@ -45,7 +45,9 @@ export function extractErrorMessage(error: unknown, depth = 0): string {
 		msg = String(error);
 	}
 
-	const cause = (error as Record<string, unknown>)?.cause;
+	const cause = typeof error === 'object' && error !== null && 'cause' in error
+		? (error as { cause: unknown }).cause
+		: undefined;
 	if (cause) {
 		const causedBy = extractErrorMessage(cause, depth + 1);
 		return msg + (causedBy ? ` (caused by: ${causedBy})` : '');
