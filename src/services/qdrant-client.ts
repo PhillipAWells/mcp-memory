@@ -220,8 +220,8 @@ interface CollectionStats {
  * ```typescript
  * const service = new QdrantService();
  * await service.initialize(); // Create/validate collection
- * const results = await service.search([0.1, 0.2, 0.3], { limit: 5 });
- * await service.store({ id: 'uuid', content: 'text', embedding: [...] });
+ * const results = await service.search({ vector: [0.1, 0.2, 0.3], limit: 5 });
+ * await service.upsert('text', [0.1, 0.2, 0.3], { memory_type: 'long-term' });
  * await service.delete('uuid');
  * ```
  */
@@ -1229,7 +1229,6 @@ export class QdrantService {
 	 * {@link ACCESS_TRACKING_WARNING_INTERVAL_MS} to avoid log spam.
 	 *
 	 * @param ids - Array of point IDs to track.
-	 * @returns void
 	 * @throws Does not throw; errors are caught and logged internally.
 	 */
 	private trackAccess(ids: string[]): void {
@@ -1265,8 +1264,8 @@ export class QdrantService {
  * ```typescript
  * import { qdrantService } from './services/qdrant-client.js';
  * await qdrantService.initialize();
- * const searchResults = await qdrantService.search(embedding, { limit: 10 });
- * await qdrantService.store({ id: 'mem-1', content: '...', embedding: [...] });
+ * const searchResults = await qdrantService.search({ vector: embedding, limit: 10 });
+ * await qdrantService.upsert('memory content', embedding, { memory_type: 'long-term' });
  * ```
  */
 export const qdrantService = new QdrantService();

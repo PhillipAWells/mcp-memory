@@ -591,7 +591,7 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 		}
 
 		// Check for secrets if content is being updated
-		if (input.content) {
+		if (input.content !== undefined) {
 			const secretsError = checkContentSecrets(input.content, input.id);
 			if (secretsError) return secretsError;
 		}
@@ -749,7 +749,7 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 					'Metadata updated across all chunk siblings',
 					{
 						id: input.id,
-						siblings_updated: siblings.length,
+						siblings_updated: siblings.length - failures.length,
 					},
 					{
 						duration_ms: Date.now() - startTime,

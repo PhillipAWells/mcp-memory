@@ -66,7 +66,7 @@ const LARGE_MODEL = 'text-embedding-3-large';
  * @example
  * ```typescript
  * import { embeddingService } from './embedding-service.js';
- * const { small, large } = await embeddingService.embedBoth('search query text');
+ * const { small, large } = await embeddingService.generateDualEmbeddings('search query text');
  * console.log(`Small: ${small.length}d, Large: ${large.length}d`);
  * ```
  */
@@ -337,8 +337,6 @@ export class EmbeddingService {
 	 *
 	 * Clears cumulative counters for embeddings, cache hits/misses, tokens, and cost. Does not clear the cache itself.
 	 *
-	 * @returns void
-	 *
 	 * @example
 	 * ```typescript
 	 * const stats = embeddingService.getStats();
@@ -515,12 +513,13 @@ export class EmbeddingService {
 		const chunks = this.chunkText(text, chunkSize, overlap);
 		const embeddings = await this.generateBatchEmbeddings(chunks);
 
-		return chunks.map((chunk, index) => ({
-			chunk,
-			embedding: embeddings[index],
-			index,
-			total: chunks.length,
-		}));
+		return chunks.map((chunk, index) => {
+			const embedding = embeddings[index];
+			if (embedding === undefined) {
+				throw new Error(`Internal error: missing embedding for chunk ${index} of ${chunks.length}`);
+			}
+			return { chunk, embedding, index, total: chunks.length };
+		});
 	}
 
 	// ── Private helpers ────────────────────────────────────────────────────────

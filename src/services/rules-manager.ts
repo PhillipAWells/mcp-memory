@@ -59,7 +59,6 @@ export class RulesManagerService {
 	 * Errors are logged as warnings rather than crashing the server; this operation
 	 * is non-critical and must not block startup.
 	 *
-	 * @returns void
 	 * @throws Does not throw; errors are logged as warnings and operation continues.
 	 * @example
 	 * ```typescript
@@ -176,7 +175,6 @@ export class RulesManagerService {
    * Create `dirPath` and any missing parent directories if it does not exist.
    *
    * @param dirPath - Absolute path of the directory to ensure.
-   * @returns void
    * @throws {Error} If mkdirSync fails (e.g., permission denied).
    */
 	private ensureDirectoryExists(dirPath: string): void {

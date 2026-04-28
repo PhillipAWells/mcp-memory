@@ -316,7 +316,6 @@ export class WorkspaceDetectorService {
    *
    * @param workspace - Resolved workspace name, or `null` when none was found.
    * @param source - The detection source to report on cache hits (default `'package.json'`).
-   * @returns void
    * @example
    * ```typescript
    * detector.updateCache('my-project', 'package.json');
