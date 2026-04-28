@@ -298,3 +298,49 @@ describe('WorkspaceDetectorService.detect — malformed package.json recovery', 
 		}
 	});
 });
+
+// ── detect — unscoped and invalid package names ───────────────────────────────
+
+describe('WorkspaceDetectorService.detect — unscoped package names', () => {
+	it('detects workspace from package.json with unscoped name', () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'mcp-test-unscoped-'));
+		writeFileSync(join(tmpDir, 'package.json'), JSON.stringify({ name: 'my-app' }));
+		try {
+			const detector = new WorkspaceDetectorService();
+			const result = detector.detect(undefined, tmpDir);
+			expect(result.workspace).toBe('my-app');
+			expect(result.source).toBe('package.json');
+		} finally {
+			rmSync(tmpDir, { recursive: true, force: true });
+		}
+	});
+
+	it('falls through to directory name when package.json name is reserved', () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'my-valid-app-'));
+		// 'system' is a reserved workspace name and will be rejected
+		writeFileSync(join(tmpDir, 'package.json'), JSON.stringify({ name: 'system' }));
+		try {
+			const detector = new WorkspaceDetectorService();
+			const result = detector.detect(undefined, tmpDir);
+			// Falls through to directory name since 'system' is invalid
+			expect(result.source).toBe('directory');
+			expect(result.workspace).not.toBe('system');
+		} finally {
+			rmSync(tmpDir, { recursive: true, force: true });
+		}
+	});
+});
+
+// ── getInfo without arguments ─────────────────────────────────────────────────
+
+describe('WorkspaceDetectorService.getInfo default argument', () => {
+	it('uses process.cwd() as default directory when called without arguments', () => {
+		const detector = new WorkspaceDetectorService();
+		// Call without args — exercises the default parameter branch
+		const info = detector.getInfo();
+		// Should return an object with detected, config, and cache properties
+		expect(info).toHaveProperty('detected');
+		expect(info.detected).toHaveProperty('workspace');
+		expect(info.detected).toHaveProperty('source');
+	});
+});

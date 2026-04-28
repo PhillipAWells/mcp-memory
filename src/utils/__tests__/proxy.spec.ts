@@ -286,3 +286,52 @@ describe('resetProxy', () => {
 		expect(process.env.NO_PROXY).toBe('custom.internal');
 	});
 });
+
+// ---------------------------------------------------------------------------
+// globalThis.fetch override
+// ---------------------------------------------------------------------------
+
+describe('globalThis.fetch override (with proxy active)', () => {
+	it('passes through fetch calls that have no dispatcher in init', async () => {
+		// Save the real fetch, install a spy in its place BEFORE importing proxy
+		const realFetch = globalThis.fetch;
+		const mockFetch = vi.fn().mockResolvedValue(new Response('ok'));
+		globalThis.fetch = mockFetch as typeof globalThis.fetch;
+
+		try {
+			process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+			// Import proxy: it captures our mock as _originalFetch, then wraps globalThis.fetch
+			await import('../proxy.js');
+
+			// Call overridden fetch with init that has NO dispatcher
+			const init = { method: 'GET' };
+			await globalThis.fetch('http://example.com/api', init);
+
+			// The mock (_originalFetch) should have been called with the original init unchanged
+			expect(mockFetch).toHaveBeenCalledWith(
+				'http://example.com/api',
+				expect.not.objectContaining({ dispatcher: expect.anything() }),
+			);
+		} finally {
+			globalThis.fetch = realFetch;
+		}
+	});
+
+	it('passes through fetch calls with undefined init', async () => {
+		const realFetch = globalThis.fetch;
+		const mockFetch = vi.fn().mockResolvedValue(new Response('ok'));
+		globalThis.fetch = mockFetch as typeof globalThis.fetch;
+
+		try {
+			process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+			await import('../proxy.js');
+
+			// Call without init argument
+			await globalThis.fetch('http://example.com/');
+
+			expect(mockFetch).toHaveBeenCalledWith('http://example.com/', undefined);
+		} finally {
+			globalThis.fetch = realFetch;
+		}
+	});
+});

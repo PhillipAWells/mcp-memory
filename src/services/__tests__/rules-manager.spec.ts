@@ -20,6 +20,7 @@ vi.mock('../../config.js', () => ({
 // The service resolves dirs from import.meta.url so we need a helper approach.
 
 import { RulesManagerService } from '../rules-manager.js';
+import { config } from '../../config.js';
 
 function makeServiceWithDirs(sourceDir: string, targetDir: string): RulesManagerService {
 	const service = new RulesManagerService();
@@ -163,5 +164,31 @@ describe('RulesManagerService', () => {
 		const rules = service.listTargetRules();
 		expect(rules).toContain('file.md');
 		expect(rules).toContain('subdir');
+	});
+
+	it('does not copy files when copyClaudeRules is disabled', () => {
+		// Temporarily disable copying via the mocked config object
+		(config.rules as { copyClaudeRules: boolean }).copyClaudeRules = false;
+		try {
+			writeFileSync(join(sourceDir, 'memory.md'), '# Memory');
+			const service = makeServiceWithDirs(sourceDir, targetDir);
+			service.initialize();
+			// Target dir should NOT be created when copying is disabled
+			expect(existsSync(targetDir)).toBe(false);
+		} finally {
+			(config.rules as { copyClaudeRules: boolean }).copyClaudeRules = true;
+		}
+	});
+
+	it('does not recreate target directory when it already exists', () => {
+		// Pre-create the target directory
+		mkdirSync(targetDir, { recursive: true });
+		writeFileSync(join(targetDir, 'existing.md'), '# Existing');
+		writeFileSync(join(sourceDir, 'new.md'), '# New');
+		const service = makeServiceWithDirs(sourceDir, targetDir);
+		service.initialize();
+		// Both the pre-existing and newly-copied files should be present
+		expect(existsSync(join(targetDir, 'existing.md'))).toBe(true);
+		expect(existsSync(join(targetDir, 'new.md'))).toBe(true);
 	});
 });
