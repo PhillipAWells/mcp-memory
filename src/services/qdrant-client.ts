@@ -106,15 +106,16 @@ function isHybridSearchParams(p: SearchParams): p is HybridSearchParams {
 	return typeof p.query === 'string' && p.query.length > 0 && p.useHybridSearch === true;
 }
 
+/**
+ * Represents a single point in the Qdrant vector database.
+ * @internal
+ */
 interface QdrantPoint {
 	id: string;
 	vector: { dense: number[]; dense_large?: number[] };
 	payload: QdrantPayload;
 }
 
-/**
- * Batch upsert result
- */
 /**
  * Result of a batch upsert operation to Qdrant.
  *
@@ -254,6 +255,7 @@ export class QdrantService {
 				logger.info('Qdrant service initialized successfully');
 			} catch (error) {
 				logger.error('Failed to initialize Qdrant service:', error);
+				this.initPromise = undefined;
 				throw error;
 			}
 		})();

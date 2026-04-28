@@ -251,9 +251,11 @@ async function memoryQueryHandler(args: unknown): Promise<StandardResponse> {
 		// Auto-inject workspace to filter if not explicitly provided (match store behavior)
 		const { filter } = input;
 		const detected = workspaceDetector.detect();
+		let normalizedWorkspace = detected.workspace;
 		if (filter?.workspace === undefined) {
 			if (detected.workspace !== null && detected.workspace !== undefined) {
-				logger.debug(`Auto-injecting workspace filter: ${detected.workspace}`);
+				normalizedWorkspace = workspaceDetector.normalize(detected.workspace);
+				logger.debug(`Auto-injecting workspace filter: ${normalizedWorkspace}`);
 			} else {
 				logger.warn('No workspace detected; query will be limited to memories with null workspace');
 			}
@@ -268,7 +270,7 @@ async function memoryQueryHandler(args: unknown): Promise<StandardResponse> {
 			filter: {
 				...filter,
 				...(filter?.workspace === undefined
-					? { workspace: detected.workspace }
+					? { workspace: normalizedWorkspace }
 					: {}),
 			},
 			limit: input.limit,
@@ -389,8 +391,8 @@ async function memoryListHandler(args: unknown): Promise<StandardResponse> {
 
 			// Sort by requested field
 			const sortedResults = allResults.sort((a, b) => {
-				let aValue: number | string;
-				let bValue: number | string;
+				let aValue: number;
+				let bValue: number;
 
 				switch (input.sort_by) {
 					case 'updated_at':
@@ -539,7 +541,7 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 		}
 
 		// Validation: at least one of content or metadata must be provided
-		const hasContent = input.content !== undefined && input.content !== null;
+		const hasContent = input.content !== undefined;
 		const hasMetadata = input.metadata && Object.keys(input.metadata).length > 0;
 		if (!hasContent && !hasMetadata) {
 			return validationError('metadata must contain at least one field, or provide new content');
@@ -702,6 +704,11 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 				id: input.id,
 			};
 
+			// Normalize workspace to lowercase for consistency
+			if (mergedMetadata.workspace !== null && mergedMetadata.workspace !== undefined) {
+				mergedMetadata.workspace = workspaceDetector.normalize(mergedMetadata.workspace);
+			}
+
 			await qdrantService.upsert(
 				input.content,
 				dual.small,
@@ -712,7 +719,12 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 			logger.info(`Memory updated and reindexed: ${input.id}`);
 		} else {
 			// Metadata-only update
-			await qdrantService.updatePayload(input.id, input.metadata ?? {});
+			const metadataToUpdate = input.metadata ?? {};
+			// Normalize workspace to lowercase for consistency
+			if (metadataToUpdate.workspace !== null && metadataToUpdate.workspace !== undefined) {
+				metadataToUpdate.workspace = workspaceDetector.normalize(metadataToUpdate.workspace);
+			}
+			await qdrantService.updatePayload(input.id, metadataToUpdate);
 			logger.info(`Memory metadata updated: ${input.id}`);
 		}
 
