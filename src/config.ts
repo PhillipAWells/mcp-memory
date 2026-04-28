@@ -208,7 +208,7 @@ export function loadConfig(): Config {
 		},
 		workspace: {
 			autoDetect: parseBoolEnv(process.env.WORKSPACE_AUTO_DETECT, true),
-			default: process.env.WORKSPACE_DEFAULT ?? null,
+			default: coerceEnvToUndefined(process.env.WORKSPACE_DEFAULT) ?? null,
 			cacheTTL: parseIntEnv(process.env.WORKSPACE_CACHE_TTL, DEFAULT_WORKSPACE_CACHE_TTL_MS, 'WORKSPACE_CACHE_TTL'),
 		},
 		rules: {

@@ -318,6 +318,7 @@ export class QdrantService {
 		// Named-vector collections have an object keyed by vector name.
 		// A flat {size, distance} object means the collection was created with a
 		// single unnamed vector and is incompatible.
+		// Qdrant "simple" (unnamed) vector config — incompatible with named-vector schema
 		if (!vectors || typeof vectors !== 'object' || 'size' in vectors) {
 			throw new Error(
 				`Collection "${this.collectionName}" uses a single unnamed vector and is incompatible ` +

@@ -632,6 +632,10 @@ export class EmbeddingService {
 
 			response.data.forEach((item) => {
 				const originalIdx = uncachedIndices[item.index];
+				if (originalIdx === undefined) {
+					logger.warn(`OpenAI returned unexpected index ${item.index} (batch size: ${uncachedIndices.length}); skipping`);
+					return;
+				}
 				const key = this.getCacheKey(texts[originalIdx], variant);
 				this.addToCache(key, item.embedding);
 				results[originalIdx] = item.embedding;

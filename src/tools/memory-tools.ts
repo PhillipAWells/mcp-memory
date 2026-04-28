@@ -141,7 +141,7 @@ async function memoryStoreHandler(args: unknown): Promise<StandardResponse> {
 		logger.info('Storing memory...');
 
 		// Validate workspace if provided
-		if (input.metadata?.workspace && !workspaceDetector.isValidWorkspace(input.metadata.workspace)) {
+		if (input.metadata?.workspace !== undefined && input.metadata.workspace !== null && !workspaceDetector.isValidWorkspace(input.metadata.workspace)) {
 			return validationError('Invalid workspace name');
 		}
 
@@ -659,6 +659,11 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 					}
 					const newIds = batchResult.successfulIds;
 
+					// Validate that we have results before proceeding with deletion
+					if (newIds.length === 0) {
+						return errorResponse('Chunk update produced no results', 'EXECUTION_ERROR');
+					}
+
 					// Delete old chunks only after successful upsert of new chunks
 					if (siblingIds.length > 0) {
 						try {
@@ -673,10 +678,6 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 					}
 
 					logger.info(`Chunked memory updated: re-stored ${newIds.length} chunks (deleted ${siblingIds.length} old chunks)`);
-
-					if (newIds.length === 0) {
-						return errorResponse('Chunk update produced no results', 'EXECUTION_ERROR');
-					}
 
 					return successResponse(
 						'Chunked memory updated and re-stored',

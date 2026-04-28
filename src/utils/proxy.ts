@@ -137,10 +137,11 @@ if (_initialProxyUrl !== null) {
 	): ReturnType<typeof fetch> => {
 		// init may contain dispatcher from Qdrant client; replace it with our proxy-aware agent.
 		if (init !== undefined && typeof init === 'object' && 'dispatcher' in init) {
+			// RequestInit doesn't include dispatcher; this is an undici extension
 			return _originalFetch(input, { ...init, dispatcher: agent } as unknown as Parameters<typeof _originalFetch>[1]);
 		}
 		return _originalFetch(input, init as unknown as Parameters<typeof _originalFetch>[1]);
-	}) as unknown as typeof globalThis.fetch;
+	}) as unknown as typeof globalThis.fetch; // Cast required: custom overload signature is compatible but not structurally assignable
 }
 
 /**
