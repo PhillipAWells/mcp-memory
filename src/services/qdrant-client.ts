@@ -109,6 +109,36 @@ function isHybridSearchParams(p: SearchParams): p is HybridSearchParams {
 }
 
 /**
+ * Normalizes optimizer status from various Qdrant API response shapes into a string.
+ *
+ * The optimizer_status can be a string, an error object, or an ok object.
+ * This function safely extracts a normalized string representation.
+ *
+ * @param status - The raw optimizer_status value from Qdrant API response.
+ * @returns A normalized string representation of the optimizer status.
+ * @example
+ * ```typescript
+ * const normalized = normalizeOptimizerStatus(info.optimizer_status);
+ * console.log(normalized); // 'ok' or 'error: ...' or 'running' etc.
+ * ```
+ */
+function normalizeOptimizerStatus(status: unknown): string {
+	if (typeof status === 'string') {
+		return status;
+	}
+	if (typeof status === 'object' && status !== null) {
+		const obj = status as Record<string, unknown>;
+		if ('error' in obj && typeof obj.error === 'string') {
+			return `error: ${obj.error}`;
+		}
+		if ('ok' in obj) {
+			return 'ok';
+		}
+	}
+	return 'unknown';
+}
+
+/**
  * Represents a single point in the Qdrant vector database.
  * @internal
  */
@@ -296,7 +326,9 @@ export class QdrantService {
 			);
 		}
 
-		const namedVectors = vectors as unknown as Record<string, { size?: number; distance?: string }>;
+		const namedVectors = typeof vectors === 'object' && vectors !== null
+			? (vectors as Record<string, { size?: number; distance?: string }>)
+			: {};
 
 		const { dense, dense_large: denseLarge } = namedVectors;
 
@@ -736,15 +768,15 @@ export class QdrantService {
 		// Apply RRF: score = sum(alpha * 1 / (k + rank) for vector + (1 - alpha) * 1 / (k + rank) for text)
 		const alpha = params.hybridAlpha ?? DEFAULT_HYBRID_ALPHA; // Default: equal weighting between dense and text
 		const rrfScores = new Map<string, number>();
-		// Qdrant points have arbitrary payload structure; using Record<string, unknown> for type safety
-		const pointsById = new Map<string, Record<string, unknown>>();
+		// Store payloads directly (not whole result objects) for cleaner access
+		const payloadsById = new Map<string, Record<string, unknown> | null | undefined>();
 
 		// Add vector search results (weighted by alpha)
 		vectorResults.forEach((result, index) => {
 			const id = String(result.id);
 			const rank = index + 1;
 			rrfScores.set(id, (rrfScores.get(id) ?? 0) + alpha * (1 / (k + rank)));
-			pointsById.set(id, result);
+			payloadsById.set(id, result.payload as Record<string, unknown>);
 		});
 
 		// Add text search results (weighted by 1 - alpha)
@@ -752,8 +784,8 @@ export class QdrantService {
 			const id = String(result.id);
 			const rank = index + 1;
 			rrfScores.set(id, (rrfScores.get(id) ?? 0) + (1 - alpha) * (1 / (k + rank)));
-			if (!pointsById.has(id)) {
-				pointsById.set(id, result);
+			if (!payloadsById.has(id)) {
+				payloadsById.set(id, result.payload as Record<string, unknown>);
 			}
 		});
 
@@ -763,9 +795,9 @@ export class QdrantService {
 			.sort((a, b) => b[1] - a[1])
 			.slice(0, limit)
 			.flatMap(([id, score]) => {
-				const point = pointsById.get(id);
-				if (!point) return [];
-				const payload = this.toQdrantPayload(point.payload) ?? {
+				const rawPayload = payloadsById.get(id);
+				if (!rawPayload) return [];
+				const payload = this.toQdrantPayload(rawPayload) ?? {
 					content: '',
 					created_at: new Date().toISOString(),
 					updated_at: new Date().toISOString(),
@@ -960,11 +992,7 @@ export class QdrantService {
 			points_count: info.points_count ?? 0,
 			segments_count: info.segments_count ?? 0,
 			status: info.status,
-			optimizer_status: typeof info.optimizer_status === 'string'
-				? info.optimizer_status
-				: 'error' in info.optimizer_status
-					? 'error'
-					: 'ok',
+			optimizer_status: normalizeOptimizerStatus(info.optimizer_status),
 			config: info.config,
 			access_tracking_failures: this.accessTrackingFailureCount,
 		};

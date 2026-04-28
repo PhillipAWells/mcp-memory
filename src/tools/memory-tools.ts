@@ -668,6 +668,10 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 
 					logger.info(`Chunked memory updated: re-stored ${newIds.length} chunks (deleted ${siblingIds.length} old chunks)`);
 
+					if (newIds.length === 0) {
+						return errorResponse('Chunk update produced no results', 'EXECUTION_ERROR');
+					}
+
 					return successResponse(
 						'Chunked memory updated and re-stored',
 						{
@@ -720,9 +724,17 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 				const metadataToUpdateSiblings = { ...(input.metadata ?? {}) };
 				normalizeWorkspaceInMetadata(metadataToUpdateSiblings);
 
-				await Promise.all(
+				const results = await Promise.allSettled(
 					siblings.map(sibling => qdrantService.updatePayload(sibling.id, metadataToUpdateSiblings)),
 				);
+				const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+				if (failures.length > 0) {
+					logger.warn('Some sibling chunk metadata updates failed', {
+						failedCount: failures.length,
+						totalSiblings: siblings.length,
+						errors: failures.map(f => String(f.reason)),
+					});
+				}
 
 				logger.info(`Updated metadata across ${siblings.length} chunk siblings`);
 
