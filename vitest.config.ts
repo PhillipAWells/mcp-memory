@@ -23,8 +23,6 @@ export default defineConfig({
 				'**/*.test.ts',
 				'**/*.spec.ts',
 				'**/types/**',
-				'src/index.ts', // entry point — tested via integration tests only
-				'src/schemas/**',
 			],
 			thresholds: {
 				lines: 80,
