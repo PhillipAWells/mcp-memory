@@ -12,7 +12,22 @@
 
 import { z } from 'zod';
 
-/** Reusable workspace field: nullable optional string matching `[a-zA-Z0-9_-]+`. */
+/**
+ * Reusable workspace field schema for memory tools.
+ *
+ * Validates optional workspace identifier: a nullable, optional string
+ * matching the pattern `[a-zA-Z0-9_-]+` (alphanumeric, underscore, hyphen).
+ * Used to filter or tag memories by workspace.
+ *
+ * @example
+ * ```typescript
+ * // Typical usage in Zod schema definitions
+ * const schema = z.object({
+ *   workspace: workspaceFieldSchema, // Optional workspace override
+ *   content: z.string(),
+ * });
+ * ```
+ */
 const workspaceFieldSchema = z.string().regex(/^[a-zA-Z0-9_-]+$/).nullable().optional();
 
 const TAG_MAX_LENGTH = 50;
@@ -26,6 +41,9 @@ const HNSW_EF_MIN = 64;
 const HNSW_EF_MAX = 512;
 const DEFAULT_RESULT_LIMIT = 10;
 const BATCH_DELETE_MAX = 100;
+const METADATA_PASSTHROUGH_MAX_SIZE = 5000;
+/** Default balance between vector similarity and keyword search in hybrid mode (0 = keyword-only, 1 = vector-only). */
+const DEFAULT_HYBRID_ALPHA = 0.5;
 
 /**
  * Zod enum for the three supported memory classification types.
@@ -44,6 +62,9 @@ const MemoryTypeSchema = z.enum([
  *
  * `.passthrough()` allows callers to include arbitrary custom fields beyond
  * the defined properties, which are forwarded verbatim to Qdrant.
+ *
+ * Validates that total passthrough metadata (custom fields beyond the known
+ * fields) does not exceed 5KB to prevent bypassing content size limits.
  */
 const MetadataInputSchema = z
 	.object({
@@ -58,7 +79,26 @@ const MetadataInputSchema = z
 		/** Up to 20 searchable tags; each tag is 1–50 characters. */
 		tags: z.array(z.string().min(1).max(TAG_MAX_LENGTH)).max(TAGS_MAX_COUNT).optional(),
 	})
-	.passthrough(); // Allow additional custom fields
+	.passthrough() // Allow additional custom fields
+	.refine(
+		(metadata) => {
+			// Create a shallow copy and remove known fields to isolate passthrough metadata
+			const passthrough = { ...metadata };
+			delete passthrough.memory_type;
+			delete passthrough.workspace;
+			delete passthrough.tags;
+			delete passthrough.confidence;
+			delete passthrough.expires_at;
+
+			// Calculate total size of passthrough metadata
+			const size = JSON.stringify(passthrough).length;
+			return size <= METADATA_PASSTHROUGH_MAX_SIZE;
+		},
+		{
+			message: 'Total metadata size exceeds 5KB limit',
+			path: ['metadata'],
+		},
+	);
 
 /**
  * Input schema for the `memory-store` tool.
@@ -120,7 +160,7 @@ export const MemoryQueryInputSchema = z.object({
    * Weight between dense vector (1.0) and full-text (0.0) scoring in hybrid
    * mode (default 0.5).  Ignored when `use_hybrid_search` is `false`.
    */
-	hybrid_alpha: z.number().min(0.0).max(1.0).optional(),
+	hybrid_alpha: z.number().min(0.0).max(1.0).optional().default(DEFAULT_HYBRID_ALPHA),
 });
 
 /** Type-safe input for the `memory-query` tool, inferred from {@link MemoryQueryInputSchema}. */
@@ -218,9 +258,7 @@ export const MemoryBatchDeleteInputSchema = z.object({
 });
 
 /** Type-safe input for the `memory-batch-delete` tool, inferred from {@link MemoryBatchDeleteInputSchema}. */
-export type MemoryBatchDeleteInput = z.infer<
-  typeof MemoryBatchDeleteInputSchema
->;
+export type MemoryBatchDeleteInput = z.infer<typeof MemoryBatchDeleteInputSchema>;
 
 /**
  * Input schema for the `memory-status` tool.
@@ -262,6 +300,14 @@ export type MemoryCountInput = z.infer<typeof MemoryCountInputSchema>;
  * Generated from the Zod schemas via Zod v4's built-in `z.toJSONSchema()` and
  * passed directly to the MCP server during tool registration so the protocol
  * layer can validate incoming requests before handlers are invoked.
+ *
+ * @example
+ * ```typescript
+ * // Used for MCP tool registration
+ * const schema = memorySchemas['memory-store'];
+ * console.log(schema.$schema); // 'http://json-schema.org/draft/...'
+ * console.log(schema.properties); // Input parameter definitions
+ * ```
  */
 export const memorySchemas = {
 	'memory-store': z.toJSONSchema(MemoryStoreInputSchema),

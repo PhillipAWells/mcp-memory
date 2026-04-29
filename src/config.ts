@@ -12,6 +12,18 @@ import { z } from 'zod';
 // variables are injected directly (CI, Docker, production).
 dotenv.config({ quiet: true });
 
+/**
+ * Coerces an empty string environment variable value to `undefined`.
+ * Uses `||` deliberately (not `??`) so both `undefined` and `""` produce `undefined`.
+ *
+ * @param value - The raw environment variable value.
+ * @returns The value if truthy, otherwise `undefined`.
+ */
+function coerceEnvToUndefined(value: string | undefined): string | undefined {
+	// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+	return value || undefined;
+}
+
 /** Default Qdrant request timeout in milliseconds. */
 const DEFAULT_QDRANT_TIMEOUT_MS = 30000;
 /** Default memory chunk size in characters. */
@@ -70,7 +82,7 @@ export function parseIntEnv(raw: string | undefined, fallback: number, name: str
 	if (isNaN(parsed) || !isFinite(parsed)) {
 		throw new Error(
 			`Invalid environment variable ${name}="${raw}": expected an integer, got "${raw}". ` +
-      `Using the default (${fallback}) requires unsetting the variable.`,
+			`Using the default (${fallback}) requires unsetting the variable.`,
 		);
 	}
 	return parsed;
@@ -136,6 +148,20 @@ const ConfigSchema = z.object({
 /**
  * Fully-resolved, type-safe application configuration.
  * Inferred from {@link ConfigSchema} — see that schema for field documentation.
+ *
+ * @example
+ * ```typescript
+ * type MyConfig = Config;
+ * const cfg: MyConfig = {
+ *   openai: { apiKey: 'sk-...' },
+ *   embedding: { smallDimensions: 1536, largeDimensions: 3072 },
+ *   qdrant: { url: 'http://localhost:6333', collection: 'mcp-memory', timeout: 30000 },
+ *   server: { logLevel: 'info' },
+ *   memory: { chunkSize: 1000, chunkOverlap: 200 },
+ *   workspace: { autoDetect: true, default: null, cacheTTL: 60000 },
+ *   rules: { copyClaudeRules: true },
+ * };
+ * ```
  */
 export type Config = z.infer<typeof ConfigSchema>;
 
@@ -154,8 +180,7 @@ export type Config = z.infer<typeof ConfigSchema>;
  * const config = loadConfig();
  */
 export function loadConfig(): Config {
-	// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-	const apiKey = process.env.OPENAI_API_KEY || undefined; // || intentional: coerce empty string to undefined
+	const apiKey = coerceEnvToUndefined(process.env.OPENAI_API_KEY);
 
 	const smallDimensions = parseIntEnv(process.env.SMALL_EMBEDDING_DIMENSIONS, DEFAULT_SMALL_EMBEDDING_DIMENSIONS, 'SMALL_EMBEDDING_DIMENSIONS');
 	const largeDimensions = parseIntEnv(process.env.LARGE_EMBEDDING_DIMENSIONS, DEFAULT_OPENAI_LARGE_EMBEDDING_DIMENSIONS, 'LARGE_EMBEDDING_DIMENSIONS');
@@ -170,9 +195,7 @@ export function loadConfig(): Config {
 		},
 		qdrant: {
 			url: process.env.QDRANT_URL ?? 'http://localhost:6333',
-			// Coerce empty string to undefined so Zod treats it as absent
-			// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-			apiKey: process.env.QDRANT_API_KEY || undefined,
+			apiKey: coerceEnvToUndefined(process.env.QDRANT_API_KEY),
 			collection: process.env.QDRANT_COLLECTION ?? 'mcp-memory',
 			timeout: parseIntEnv(process.env.QDRANT_TIMEOUT, DEFAULT_QDRANT_TIMEOUT_MS, 'QDRANT_TIMEOUT'),
 		},
@@ -185,7 +208,7 @@ export function loadConfig(): Config {
 		},
 		workspace: {
 			autoDetect: parseBoolEnv(process.env.WORKSPACE_AUTO_DETECT, true),
-			default: process.env.WORKSPACE_DEFAULT ?? null,
+			default: coerceEnvToUndefined(process.env.WORKSPACE_DEFAULT) ?? null,
 			cacheTTL: parseIntEnv(process.env.WORKSPACE_CACHE_TTL, DEFAULT_WORKSPACE_CACHE_TTL_MS, 'WORKSPACE_CACHE_TTL'),
 		},
 		rules: {
@@ -196,6 +219,7 @@ export function loadConfig(): Config {
 	try {
 		return ConfigSchema.parse(rawConfig);
 	} catch (error) {
+		/* v8 ignore else */
 		if (error instanceof z.ZodError) {
 			// Chicken-and-egg: logger depends on config being loaded, so we must use
 			// console.error here even though we use structured logging elsewhere.
@@ -212,5 +236,12 @@ export function loadConfig(): Config {
  * Application-wide configuration singleton.
  * Loaded and validated once at module initialisation time.
  * Import this object wherever configuration values are needed.
+ *
+ * @example
+ * ```typescript
+ * import { config } from './config.js';
+ * const apiKey = config.openai.apiKey;
+ * const qdrantUrl = config.qdrant.url;
+ * ```
  */
 export const config = loadConfig();

@@ -36,14 +36,14 @@ import { EmbeddingService } from '../embedding-service.js';
 
 function makeSmallResponse(dims = 1536) {
 	return {
-		data: [{ embedding: new Array(dims).fill(0.1) }],
+		data: [{ index: 0, embedding: new Array(dims).fill(0.1) }],
 		usage: { total_tokens: 10 },
 	};
 }
 
 function makeLargeResponse(dims = 3072) {
 	return {
-		data: [{ embedding: new Array(dims).fill(0.2) }],
+		data: [{ index: 0, embedding: new Array(dims).fill(0.2) }],
 		usage: { total_tokens: 10 },
 	};
 }
@@ -99,6 +99,17 @@ describe('EmbeddingService.generateEmbedding', () => {
 		expect(stats.totalEmbeddings).toBe(3);
 		expect(stats.cacheHits).toBe(1);
 		expect(stats.cacheMisses).toBe(2);
+	});
+
+	it('throws when OpenAI returns an embedding with wrong dimensions', async () => {
+		// Return a 100-dim embedding where 1536 is expected
+		mockCreate.mockResolvedValue({
+			data: [{ index: 0, embedding: new Array(100).fill(0.1) }],
+			usage: { total_tokens: 10 },
+		});
+		await expect(service.generateEmbedding('test text')).rejects.toThrow(
+			'Invalid embedding received from OpenAI',
+		);
 	});
 });
 
@@ -168,7 +179,7 @@ describe('EmbeddingService LRU cache eviction', () => {
 	it('evicts the least-recently-used entry when cache is full', async () => {
 		mockCreate.mockResolvedValue(makeSmallResponse());
 		const service = makeService();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 		(service as any).maxCacheSize = 2;
 
 		vi.clearAllMocks();
@@ -243,7 +254,6 @@ describe('EmbeddingService.validateEmbedding', () => {
 	});
 
 	it('returns false for non-array', () => {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		expect(service.validateEmbedding('not an array' as any)).toBe(false);
 	});
 
@@ -332,8 +342,8 @@ describe('EmbeddingService.generateBatchEmbeddings', () => {
 	it('returns embeddings array for batch of texts', async () => {
 		mockCreate.mockResolvedValue({
 			data: [
-				{ embedding: new Array(1536).fill(0.1) },
-				{ embedding: new Array(1536).fill(0.2) },
+				{ index: 0, embedding: new Array(1536).fill(0.1) },
+				{ index: 1, embedding: new Array(1536).fill(0.2) },
 			],
 			usage: { total_tokens: 20 },
 		});
@@ -347,8 +357,8 @@ describe('EmbeddingService.generateBatchEmbeddings', () => {
 	it('increments totalEmbeddings counter for each batch item', async () => {
 		mockCreate.mockResolvedValue({
 			data: [
-				{ embedding: new Array(1536).fill(0.1) },
-				{ embedding: new Array(1536).fill(0.2) },
+				{ index: 0, embedding: new Array(1536).fill(0.1) },
+				{ index: 1, embedding: new Array(1536).fill(0.2) },
 			],
 			usage: { total_tokens: 20 },
 		});
@@ -362,8 +372,8 @@ describe('EmbeddingService.generateBatchEmbeddings', () => {
 	it('counts cache hits when batch items are already cached', async () => {
 		mockCreate.mockResolvedValueOnce({
 			data: [
-				{ embedding: new Array(1536).fill(0.1) },
-				{ embedding: new Array(1536).fill(0.2) },
+				{ index: 0, embedding: new Array(1536).fill(0.1) },
+				{ index: 1, embedding: new Array(1536).fill(0.2) },
 			],
 			usage: { total_tokens: 20 },
 		});
@@ -376,6 +386,63 @@ describe('EmbeddingService.generateBatchEmbeddings', () => {
 		const stats = service.getStats();
 		expect(stats.cacheHits).toBe(2);
 		expect(stats.cacheMisses).toBe(2);
+	});
+
+	it('skips embeddings with out-of-bounds index from OpenAI response', async () => {
+		mockCreate.mockResolvedValue({
+			data: [
+				{ index: 0, embedding: new Array(1536).fill(0.1) },
+				{ index: 99, embedding: new Array(1536).fill(0.9) }, // out-of-bounds for 2-item batch
+			],
+			usage: { total_tokens: 20 },
+		});
+
+		// Only 1 of 2 texts gets an embedding (index 99 is skipped)
+		// The remaining result[1] stays null → should throw
+		await expect(service.generateBatchEmbeddings(['text 1', 'text 2'])).rejects.toThrow(
+			'Embedding generation failed',
+		);
+	});
+});
+
+// ── generateBatchLargeEmbeddings ──────────────────────────────────────────────
+
+describe('EmbeddingService.generateBatchLargeEmbeddings', () => {
+	let service: EmbeddingService;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		service = makeService();
+	});
+
+	it('returns large embeddings array for batch of texts', async () => {
+		mockCreate.mockResolvedValue({
+			data: [
+				{ index: 0, embedding: new Array(3072).fill(0.3) },
+				{ index: 1, embedding: new Array(3072).fill(0.4) },
+			],
+			usage: { total_tokens: 20 },
+		});
+
+		const results = await service.generateBatchLargeEmbeddings(['text 1', 'text 2']);
+		expect(results).toHaveLength(2);
+		expect(results[0]).toHaveLength(3072);
+		expect(results[1]).toHaveLength(3072);
+	});
+
+	it('increments totalEmbeddings counter for each large batch item', async () => {
+		mockCreate.mockResolvedValue({
+			data: [
+				{ index: 0, embedding: new Array(3072).fill(0.3) },
+				{ index: 1, embedding: new Array(3072).fill(0.4) },
+			],
+			usage: { total_tokens: 20 },
+		});
+
+		const before = service.getStats();
+		await service.generateBatchLargeEmbeddings(['text 1', 'text 2']);
+		const after = service.getStats();
+		expect(after.totalEmbeddings).toBe(before.totalEmbeddings + 2);
 	});
 });
 
@@ -392,7 +459,7 @@ describe('EmbeddingService.generateChunkedEmbeddings', () => {
 	it('returns array of chunks with embeddings for long content', async () => {
 		mockCreate.mockImplementation(({ input }: { input: string[] }) => {
 			return Promise.resolve({
-				data: input.map(() => ({ embedding: new Array(1536).fill(0.1) })),
+				data: input.map((_, idx) => ({ index: idx, embedding: new Array(1536).fill(0.1) })),
 				usage: { total_tokens: 10 * input.length },
 			});
 		});
@@ -412,7 +479,7 @@ describe('EmbeddingService.generateChunkedEmbeddings', () => {
 	it('increments totalEmbeddings counter for each chunk', async () => {
 		mockCreate.mockImplementation(({ input }: { input: string[] }) => {
 			return Promise.resolve({
-				data: input.map(() => ({ embedding: new Array(1536).fill(0.1) })),
+				data: input.map((_, idx) => ({ index: idx, embedding: new Array(1536).fill(0.1) })),
 				usage: { total_tokens: 10 * input.length },
 			});
 		});

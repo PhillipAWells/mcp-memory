@@ -4,9 +4,10 @@
  * Manages copying of rules to Claude's rules directory
  */
 
-import { existsSync, mkdirSync, readdirSync, copyFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { existsSync, mkdirSync, readdirSync, copyFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 
@@ -20,6 +21,12 @@ import { logger } from '../utils/logger.js';
  * rather than crashing the server.
  *
  * Controlled by the `COPY_CLAUDE_RULES` environment variable (default `true`).
+ *
+ * @example
+ * ```typescript
+ * const rulesManager = new RulesManagerService();
+ * rulesManager.initialize(); // Copies rules/*.md to .claude/rules/
+ * ```
  */
 export class RulesManagerService {
 	private readonly sourceDir: string;
@@ -47,8 +54,19 @@ export class RulesManagerService {
 	}
 
 	/**
-   * Initialize rules - copy to Claude directory if enabled
-   */
+	 * Copy rule files from the source `rules/` directory to `.claude/rules/` if enabled.
+	 *
+	 * Controlled by the `COPY_CLAUDE_RULES` environment variable (default `true`).
+	 * Errors are logged as warnings rather than crashing the server; this operation
+	 * is non-critical and must not block startup.
+	 *
+	 * @throws Does not throw; errors are logged as warnings and operation continues.
+	 * @example
+	 * ```typescript
+	 * rulesManager.initialize();
+	 * // Copies rules/*.md into .claude/rules/ at startup
+	 * ```
+	 */
 	public initialize(): void {
 		if (!config.rules.copyClaudeRules) {
 			logger.info('Rule copying disabled (COPY_CLAUDE_RULES=false)');
@@ -84,7 +102,8 @@ export class RulesManagerService {
 	/**
    * Copy every file and subdirectory from {@link sourceDir} to {@link targetDir}.
    *
-   * @returns The total number of files successfully copied.
+   * @returns number - The total number of files successfully copied.
+   * @throws Does not throw; individual file copy failures are logged and counted.
    */
 	private copyRules(): number {
 		let copiedCount = 0;
@@ -119,7 +138,8 @@ export class RulesManagerService {
    *
    * @param source - Absolute path to the source directory.
    * @param target - Absolute path to the destination directory (created if absent).
-   * @returns The number of files copied in this subtree.
+   * @returns number - The number of files copied in this subtree.
+   * @throws Does not throw; individual file copy failures are logged and counted.
    */
 	private copyDirectory(source: string, target: string): number {
 		let copiedCount = 0;
@@ -156,6 +176,7 @@ export class RulesManagerService {
    * Create `dirPath` and any missing parent directories if it does not exist.
    *
    * @param dirPath - Absolute path of the directory to ensure.
+   * @throws {Error} If mkdirSync fails (e.g., permission denied).
    */
 	private ensureDirectoryExists(dirPath: string): void {
 		if (!existsSync(dirPath)) {
@@ -165,9 +186,18 @@ export class RulesManagerService {
 	}
 
 	/**
-   * Return a summary of the rules manager configuration and directory state.
-   * Useful for diagnostics and the `memory-status` tool.
-   */
+	 * Return a summary of the rules manager configuration and directory state.
+	 * Useful for diagnostics and the `memory-status` tool.
+	 *
+	 * @returns Object containing resolved source and target directory paths, existence
+	 *   flags for both directories, and whether rule copying is enabled.
+	 * @example
+	 * ```typescript
+	 * const info = rulesManager.getInfo();
+	 * console.log('Source exists:', info.sourceExists);
+	 * console.log('Copy enabled:', info.copyEnabled);
+	 * ```
+	 */
 	public getInfo(): {
 		sourceDir: string;
 		targetDir: string;
@@ -185,9 +215,17 @@ export class RulesManagerService {
 	}
 
 	/**
-   * Return the names of all files and directories in the source `rules/` directory.
-   * Returns an empty array if the source directory does not exist.
-   */
+	 * Return the names of all files and directories in the source `rules/` directory.
+	 * Returns an empty array if the source directory does not exist.
+	 *
+	 * @returns Array of entry names (filenames and subdirectory names) in the source
+	 *   rules directory, or an empty array if the directory is absent or unreadable.
+	 * @example
+	 * ```typescript
+	 * const rules = rulesManager.listSourceRules();
+	 * console.log('Available rules:', rules); // ['memory.md', 'workflow.md']
+	 * ```
+	 */
 	public listSourceRules(): string[] {
 		if (!existsSync(this.sourceDir)) {
 			return [];
@@ -205,9 +243,17 @@ export class RulesManagerService {
 	}
 
 	/**
-   * Return the names of all files and directories in the target `.claude/rules/` directory.
-   * Returns an empty array if the target directory does not yet exist.
-   */
+	 * Return the names of all files and directories in the target `.claude/rules/` directory.
+	 * Returns an empty array if the target directory does not yet exist.
+	 *
+	 * @returns Array of entry names installed in the target `.claude/rules/` directory,
+	 *   or an empty array if the directory has not been created yet or is unreadable.
+	 * @example
+	 * ```typescript
+	 * const installed = rulesManager.listTargetRules();
+	 * console.log('Installed rules:', installed); // ['memory.md']
+	 * ```
+	 */
 	public listTargetRules(): string[] {
 		if (!existsSync(this.targetDir)) {
 			return [];

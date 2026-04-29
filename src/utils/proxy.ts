@@ -35,6 +35,21 @@ export const DEFAULT_NO_PROXY = 'localhost,127.0.0.1,::1';
 /**
  * Resolve the active proxy URL from the standard environment variables.
  * Returns the first non-empty value found in priority order, or null.
+ *
+ * Prefers uppercase forms (HTTPS_PROXY, HTTP_PROXY) as the canonical environment
+ * variables, with lowercase (https_proxy, http_proxy) as fallbacks. This ensures
+ * correct behavior on case-sensitive systems (Linux/macOS) where both can coexist,
+ * and graceful behavior on case-insensitive systems (Windows) where the last
+ * assignment takes precedence.
+ *
+ * @returns The proxy URL string from the environment, or `null` if no proxy is configured.
+ * @example
+ * ```typescript
+ * // With HTTPS_PROXY=http://proxy.corp:8080 set
+ * const url = getActiveProxyUrl(); // 'http://proxy.corp:8080'
+ * // With no proxy env vars set
+ * const url = getActiveProxyUrl(); // null
+ * ```
  */
 export function getActiveProxyUrl(): string | null {
 	return (
@@ -47,36 +62,63 @@ export function getActiveProxyUrl(): string | null {
 }
 
 /**
- * The EnvHttpProxyAgent installed as the global dispatcher, or null if no
- * proxy is configured. Exposed for test introspection.
+ * The EnvHttpProxyAgent installed as the global dispatcher, or `null` if no
+ * proxy is configured.
+ *
+ * Exposed for test introspection so tests can verify proxy installation without
+ * triggering real network calls.
+ *
+ * @example
+ * ```typescript
+ * import { activeProxyAgent } from './proxy.js';
+ * if (activeProxyAgent !== null) {
+ *   console.log('Proxy agent is active');
+ * }
+ * ```
  */
 export let activeProxyAgent: Dispatcher | null = null;
 
 /**
- * True if NO_PROXY was automatically set to DEFAULT_NO_PROXY by this module
- * (i.e. the user did not supply their own value). Used by initProxy() for
- * accurate startup logging, and by resetProxy() for clean test teardown.
+ * `true` if `NO_PROXY` was automatically set to {@link DEFAULT_NO_PROXY} by this
+ * module because the user did not supply their own value.
+ *
+ * Used by {@link initProxy} for accurate startup logging and by {@link resetProxy}
+ * for clean test teardown — the auto-defaulted value must be removed so it does not
+ * bleed into subsequent tests.
+ *
+ * @example
+ * ```typescript
+ * import { noProxyDefaulted } from './proxy.js';
+ * if (noProxyDefaulted) {
+ *   console.log('NO_PROXY was auto-defaulted to localhost exclusions');
+ * }
+ * ```
  */
 export let noProxyDefaulted = false;
 
 // --- Module-level side effect ---
 // Runs synchronously when this module is first evaluated (at import time).
 // The proxy import in src/index.ts must appear before all other imports.
-const _proxyUrl = getActiveProxyUrl();
+const _initialProxyUrl = getActiveProxyUrl();
 
-if (_proxyUrl !== null) {
+if (_initialProxyUrl !== null) {
 	// If NO_PROXY is absent or empty, apply the safe default before constructing
 	// the EnvHttpProxyAgent (which reads NO_PROXY at construction/request time).
 	// This prevents local services such as Qdrant (localhost:6333) from being
 	// accidentally routed through the corporate proxy.
+	//
+	// On case-sensitive systems (Linux/macOS), NO_PROXY and no_proxy are separate
+	// variables. Check both to see if either was set by the user. On case-insensitive
+	// systems (Windows), they refer to the same variable, so checking both is harmless.
+	// Default to DEFAULT_NO_PROXY only if neither form is set by the user.
 	if (!process.env.NO_PROXY && !process.env.no_proxy) {
 		process.env.NO_PROXY = DEFAULT_NO_PROXY;
 		noProxyDefaulted = true;
 	}
 
 	const agent = new EnvHttpProxyAgent();
-	setGlobalDispatcher(agent as unknown as Parameters<typeof setGlobalDispatcher>[0]);
-	activeProxyAgent = agent as unknown as Dispatcher;
+	setGlobalDispatcher(agent);
+	activeProxyAgent = agent;
 
 	// The Qdrant JS client passes its own undici Agent instance as `dispatcher`
 	// on every fetch call, which silently overrides the global dispatcher above.
@@ -91,14 +133,17 @@ if (_proxyUrl !== null) {
 	// and replace the dispatcher with our proxy-aware agent.
 	globalThis.fetch = ((
 		input: Parameters<typeof fetch>[0],
-		init?: Record<string, unknown> & { dispatcher?: Dispatcher },
+		init?: Record<string, unknown> & { dispatcher?: unknown },
 	): ReturnType<typeof fetch> => {
-		// init may contain dispatcher from Qdrant client; replace it with our proxy-aware agent
+		// init may contain dispatcher from Qdrant client; replace it with our proxy-aware agent.
 		if (init !== undefined && typeof init === 'object' && 'dispatcher' in init) {
-			return _originalFetch(input, { ...init, dispatcher: agent });
+			// RequestInit doesn't include dispatcher; this is an undici extension.
+			// Dispatcher extends RequestInit for undici; cast bridges standard/undici type boundary.
+			return _originalFetch(input, { ...init, dispatcher: agent } as unknown as Parameters<typeof _originalFetch>[1]);
 		}
-		return _originalFetch(input, init);
-	}) as unknown as typeof globalThis.fetch;
+		// Custom fetch overload signature requires runtime bridge via unknown intermediate.
+		return _originalFetch(input, init as unknown as Parameters<typeof _originalFetch>[1]);
+	}) as unknown as typeof globalThis.fetch; // Custom overload signature is compatible but not structurally assignable
 }
 
 /**
@@ -107,6 +152,16 @@ if (_proxyUrl !== null) {
  *
  * The global dispatcher is already installed by the time this function is
  * called (the side effect above ran at import time).
+ *
+ * @param log - Minimal logger interface with `info` and `warn` methods. Accepts
+ *   the application logger or any compatible object (useful in tests).
+ * @example
+ * ```typescript
+ * import { initProxy } from './utils/proxy.js';
+ * import { logger } from './utils/logger.js';
+ * // Call once at startup, after the logger is ready
+ * initProxy(logger);
+ * ```
  */
 export function initProxy(log: { info: (msg: string) => void; warn: (msg: string) => void }): void {
 	const url = getActiveProxyUrl();
@@ -132,9 +187,16 @@ export function initProxy(log: { info: (msg: string) => void; warn: (msg: string
 
 /**
  * Reset the global dispatcher to a new default Agent and clear all proxy state.
- * Also removes NO_PROXY from the environment if it was auto-defaulted.
+ * Also removes `NO_PROXY` from the environment if it was auto-defaulted.
  *
- * @internal — For use in tests only. Do not call in production code.
+ * @internal For use in tests only. Do not call in production code.
+ * @example
+ * ```typescript
+ * // In a test afterEach hook
+ * afterEach(() => {
+ *   resetProxy();
+ * });
+ * ```
  */
 export function resetProxy(): void {
 	if (noProxyDefaulted) {

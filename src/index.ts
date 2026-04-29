@@ -12,15 +12,19 @@
 // Proxy MUST be the first import — sets the global fetch dispatcher before any HTTP client module initialises.
 import { initProxy } from './utils/proxy.js';
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+import { Server } from '@modelcontextprotocol/sdk/server';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import type {
+	CallToolRequest,
+} from '@modelcontextprotocol/sdk/types.js';
 import {
 	CallToolRequestSchema,
 	ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
 
 import { config } from './config.js';
 import { logger } from './utils/logger.js';
@@ -29,12 +33,25 @@ import { rulesManager } from './services/rules-manager.js';
 import { extractErrorMessage } from './utils/errors.js';
 
 /**
- * Initialize and start the MCP server
+ * Initializes and starts the mcp-memory MCP server.
+ *
+ * Sets up stdio transport, registers all 9 memory management tools,
+ * starts the RulesManager to synchronize rules, and begins listening
+ * for MCP protocol messages. Handles graceful shutdown on SIGINT/SIGTERM.
+ *
+ * @returns Resolves when the server is ready to accept connections; rejects on fatal startup errors.
+ * @throws {Error} If the MCP server fails to initialize, cannot read package.json version, or fails to connect to stdio transport.
+ * @example
+ * ```typescript
+ * // Typically invoked as the entry point when the package is run directly
+ * await main();
+ * // Server logs: "MCP Memory Server started successfully"
+ * ```
  */
 async function main(): Promise<void> {
 	logger.info('Starting MCP Memory Server...');
 
-	// Initialize proxy configuration (if any proxy env vars are set)
+	// Log proxy configuration status (dispatcher installed at module load time via proxy.ts)
 	initProxy(logger);
 
 	// Sanitize config to prevent logging sensitive information
@@ -54,14 +71,36 @@ async function main(): Promise<void> {
 	// Initialize rules (copy to Claude directory if enabled)
 	rulesManager.initialize();
 
+	/**
+	 * Type guard for package.json with version string.
+	 *
+	 * @param value - The value to check
+	 * @returns True if value is an object with version property that's a string
+	 * @example
+	 * ```typescript
+	 * const data = JSON.parse(content);
+	 * if (isPackageJsonWithVersion(data)) {
+	 *   console.log(data.version); // TypeScript knows this is string
+	 * }
+	 * ```
+	 */
+	function isPackageJsonWithVersion(value: unknown): value is { version: string } {
+		return (
+			typeof value === 'object' &&
+			value !== null &&
+			'version' in value &&
+			typeof (value as Record<string, unknown>).version === 'string'
+		);
+	}
+
 	// Read server version from package.json
 	let serverVersion = 'unknown';
 	try {
-		const packageJson = JSON.parse(
+		const parsed: unknown = JSON.parse(
 			readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../package.json'), 'utf-8'),
-		) as { version?: string };
-		if (packageJson.version !== undefined) {
-			serverVersion = packageJson.version;
+		);
+		if (isPackageJsonWithVersion(parsed)) {
+			serverVersion = parsed.version;
 		}
 	} catch (cause) {
 		logger.warn(
@@ -95,7 +134,7 @@ async function main(): Promise<void> {
 	});
 
 	// Handler: Execute tool
-	server.setRequestHandler(CallToolRequestSchema, async (request) => {
+	server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest) => {
 		const { name, arguments: args } = request.params;
 
 		logger.info(`Executing tool: ${name}`);

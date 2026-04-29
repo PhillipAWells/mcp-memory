@@ -7,9 +7,22 @@ import { logger } from './logger.js';
 /**
  * Configuration options for {@link withRetry}.
  * All fields are optional; unset fields fall back to {@link DEFAULT_OPTIONS}.
+ *
+ * @example
+ * ```typescript
+ * const options: RetryOptions = {
+ *   maxRetries: 5,
+ *   initialDelay: 500,
+ *   maxDelay: 60000,
+ *   backoffFactor: 2,
+ *   retryableErrors: ['ECONNRESET', 'ETIMEDOUT'],
+ *   retryableStatusCodes: [502, 503],
+ * };
+ * const result = await withRetry(() => fetchData(), options);
+ * ```
  */
 export interface RetryOptions {
-	/** Maximum number of attempts before giving up (default: 3). */
+	/** Maximum number of attempts (including the first). A value of `3` means one initial attempt plus two retries (default: 3). */
 	maxRetries?: number;
 	/** Delay in milliseconds before the first retry (default: 1000). */
 	initialDelay?: number;
@@ -58,13 +71,15 @@ const DEFAULT_OPTIONS: Required<RetryOptions> = {
  * or HTTP status code. Non-retryable errors propagate immediately.
  *
  * @param operation - Async function to attempt. Must be idempotent.
- * @param options - Override defaults for retry behaviour.
+ * @param options - Override defaults for retry behaviour (maxRetries is the maximum number of total attempts, including the first).
  * @returns The value resolved by `operation` on success.
  * @throws The last error thrown by `operation` after all retries are exhausted,
  *         or immediately for non-retryable errors.
  *
  * @example
+ * ```typescript
  * const data = await withRetry(() => fetch('https://api.example.com/data'));
+ * ```
  */
 export async function withRetry<T>(
 	operation: () => Promise<T>,
@@ -76,27 +91,33 @@ export async function withRetry<T>(
 		throw new Error(`backoffFactor must be a positive number, got ${opts.backoffFactor}`);
 	}
 
-	let lastError: Error | undefined;
+	let lastError: unknown;
 
 	for (let attempt = 1; attempt <= opts.maxRetries; attempt++) {
 		try {
 			return await operation();
 		} catch (error) {
-			// Properly handle different error types
+			lastError = error;
+
+			// Convert to Error for logging and proper error handling
+			let errorToLog: Error;
 			if (error instanceof Error) {
-				lastError = error;
+				errorToLog = error;
 			} else if (typeof error === 'object' && error !== null && 'message' in error) {
-				lastError = new Error(String(error.message));
+				errorToLog = new Error(String(error.message), { cause: error });
 			} else {
-				lastError = new Error(String(error));
+				errorToLog = new Error(String(error));
 			}
 
 			// Check if error is retryable
 			const isRetryable = isRetryableError(error, opts);
 
 			if (!isRetryable || attempt === opts.maxRetries) {
-				logger.error(`Operation failed after ${attempt} attempt(s):`, lastError);
-				throw lastError;
+				logger.error(`Operation failed after ${attempt} attempt(s):`, errorToLog);
+				if (error instanceof Error) {
+					throw error;
+				}
+				throw errorToLog;
 			}
 
 			// Calculate delay with exponential backoff
@@ -107,14 +128,18 @@ export async function withRetry<T>(
 
 			logger.warn(
 				`Attempt ${attempt}/${opts.maxRetries} failed, retrying in ${delay}ms:`,
-				lastError.message,
+				errorToLog.message,
 			);
 
 			await sleep(delay);
 		}
 	}
 
-	throw lastError ?? new Error('Operation failed with unknown error');
+	// This should never be reached, but throw with the original error as cause if it does
+	if (lastError instanceof Error) {
+		throw lastError;
+	}
+	throw new Error('Operation failed with unknown error', { cause: lastError });
 }
 
 /**
@@ -125,7 +150,15 @@ export async function withRetry<T>(
  *
  * @param error - The error value thrown by the operation.
  * @param options - Resolved retry configuration.
- * @returns `true` if the operation should be retried.
+ * @returns `true` if the operation should be retried, `false` otherwise.
+ *
+ * @example
+ * ```typescript
+ * const error = new Error('Connection reset');
+ * (error as Record<string, unknown>).code = 'ECONNRESET';
+ * const shouldRetry = isRetryableError(error, options);
+ * console.log(shouldRetry); // true
+ * ```
  */
 function isRetryableError(error: unknown, options: Required<RetryOptions>): boolean {
 	if (typeof error !== 'object' || error === null) return false;
@@ -144,7 +177,17 @@ function isRetryableError(error: unknown, options: Required<RetryOptions>): bool
 }
 
 /**
- * Sleep for specified milliseconds
+ * Sleep for a given number of milliseconds.
+ *
+ * @param ms - Duration to sleep in milliseconds.
+ * @returns {Promise<void>} A promise that resolves after the specified duration.
+ *
+ * @example
+ * ```typescript
+ * await sleep(1000); // Sleep for 1 second
+ * ```
+ *
+ * @internal
  */
 async function sleep(ms: number): Promise<void> {
 	await new Promise(resolve => setTimeout(resolve, ms));

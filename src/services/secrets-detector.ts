@@ -11,6 +11,17 @@
  * @property found - Whether any secrets were detected.
  * @property secrets - Array of detected secret instances.
  * @property sanitized - Optional sanitized version of content with secrets replaced by placeholders.
+ *
+ * @example
+ * ```typescript
+ * const result: SecretDetection = {
+ *   found: true,
+ *   secrets: [
+ *     { type: 'api_key', pattern: 'OpenAI API key format', confidence: 'high', location: { start: 10, end: 30 }, context: '...sk-[REDACTED]...' }
+ *   ],
+ *   sanitized: 'My API key is [REDACTED] for testing'
+ * };
+ * ```
  */
 export interface SecretDetection {
 	found: boolean;
@@ -26,6 +37,17 @@ export interface SecretDetection {
  * @property location - Character indices of the detected secret in the original content.
  * @property context - Surrounding context with the secret redacted.
  * @property confidence - Confidence level: high/medium/low.
+ *
+ * @example
+ * ```typescript
+ * const secret: DetectedSecret = {
+ *   type: 'api_key',
+ *   pattern: 'OpenAI API key format (sk-...)',
+ *   location: { start: 15, end: 35 },
+ *   context: '...my key is [REDACTED] here...',
+ *   confidence: 'high',
+ * };
+ * ```
  */
 export interface DetectedSecret {
 	type: SecretType;
@@ -43,27 +65,39 @@ export interface DetectedSecret {
  *
  * Includes API keys, tokens (JWT, OAuth, Bearer), credentials (AWS, GCP, Azure),
  * database URLs, private keys, and PII (email, phone, SSN, credit cards).
+ *
+ * @example
+ * ```typescript
+ * const secretTypes: SecretType[] = [
+ *   'api_key',
+ *   'jwt_token',
+ *   'aws_credentials',
+ *   'password',
+ *   'private_key',
+ *   'database_url',
+ * ];
+ * ```
  */
 export type SecretType =
-  | 'api_key'
-  | 'bearer_token'
-  | 'jwt_token'
-  | 'oauth_token'
-  | 'password'
-  | 'private_key'
-  | 'database_url'
-  | 'aws_credentials'
-  | 'gcp_credentials'
-  | 'azure_credentials'
-  | 'github_token'
-  | 'slack_token'
-  | 'stripe_key'
-  | 'openai_key'
-  | 'email'
-  | 'phone_number'
-  | 'credit_card'
-  | 'ssn'
-  | 'generic_secret';
+	| 'api_key'
+	| 'bearer_token'
+	| 'jwt_token'
+	| 'oauth_token'
+	| 'password'
+	| 'private_key'
+	| 'database_url'
+	| 'aws_credentials'
+	| 'gcp_credentials'
+	| 'azure_credentials'
+	| 'github_token'
+	| 'slack_token'
+	| 'stripe_key'
+	| 'openai_key'
+	| 'email'
+	| 'phone_number'
+	| 'credit_card'
+	| 'ssn'
+	| 'generic_secret';
 
 interface SecretPattern {
 	type: SecretType;
@@ -72,10 +106,6 @@ interface SecretPattern {
 	description: string;
 }
 
-/**
- * Luhn algorithm check for credit card numbers.
- * Returns true if the number passes the Luhn check.
- */
 /** Minimum digits for a valid credit card number. */
 const LUHN_MIN_DIGITS = 13;
 /** Luhn algorithm: a doubled digit above this needs subtraction. */
@@ -95,6 +125,20 @@ const MEDIUM_CONFIDENCE_BLOCK_THRESHOLD = 3;
 /** Confidence ordering for deduplication. */
 const CONFIDENCE_ORDER = { high: 3, medium: 2, low: 1 } as const;
 
+/**
+ * Luhn algorithm check for credit card numbers.
+ *
+ * Extracts digits from the input, calculates the Luhn checksum, and returns true if valid.
+ * Strings shorter than {@link LUHN_MIN_DIGITS} digits are rejected immediately.
+ *
+ * @param numStr - A string containing digits and potentially non-digit characters.
+ * @returns boolean - True if the string passes the Luhn checksum, false otherwise.
+ * @example
+ * ```typescript
+ * const valid = luhnCheck('4532015112830366'); // A valid card number format
+ * console.log(valid); // true
+ * ```
+ */
 function luhnCheck(numStr: string): boolean {
 	const digits = numStr.replace(/\D/g, '');
 	if (digits.length < LUHN_MIN_DIGITS) return false;
@@ -281,9 +325,20 @@ const SECRET_PATTERNS: SecretPattern[] = [
 ];
 
 /**
- * Internal helper: replace detected secrets in content with redaction placeholders.
+ * Replace detected secrets in content with redaction placeholders.
+ *
  * Operates end-to-start to preserve indices during replacement.
  * Does NOT call detectSecrets — avoids mutual recursion.
+ *
+ * @param content - The original content string to sanitize.
+ * @param secrets - Array of detected secrets with location information.
+ * @returns string - The sanitized content with secrets replaced by placeholders.
+ * @example
+ * ```typescript
+ * const secrets = [{ type: 'api_key', pattern: 'sk-...', confidence: 'high', location: { start: 5, end: 20 }, context: '' }];
+ * const sanitized = applySanitization('My sk-12345 key', secrets);
+ * console.log(sanitized); // 'My [REDACTED_API_KEY] key'
+ * ```
  */
 function applySanitization(content: string, secrets: DetectedSecret[]): string {
 	let sanitized = content;
@@ -308,11 +363,13 @@ function applySanitization(content: string, secrets: DetectedSecret[]): string {
  * @param content - The text to scan for secrets.
  * @returns Detection result with found flag, list of secrets, and sanitized content.
  * @example
+ * ```typescript
  * const detection = detectSecrets('API key: sk-abc123');
  * if (detection.found) {
  *   console.log('Secrets detected:', detection.secrets.length);
  *   console.log('Sanitized:', detection.sanitized);
  * }
+ * ```
  */
 export function detectSecrets(content: string): SecretDetection {
 	const secrets: DetectedSecret[] = [];
@@ -328,6 +385,9 @@ export function detectSecrets(content: string): SecretDetection {
 				continue;
 			}
 
+			// Note: context field includes surrounding content (max 10 chars each side) for debugging.
+			// The secret itself is redacted, only adjacent context is leaked. This is acceptable because
+			// the error is only returned when storage is blocked, and context helps developers debug issues.
 			// Extract context (SECRET_CONTEXT_CHARS chars before and after, redacted)
 			const start = Math.max(0, match.index - SECRET_CONTEXT_CHARS);
 			const end = Math.min(content.length, match.index + match[0].length + SECRET_CONTEXT_CHARS);
@@ -406,8 +466,10 @@ export function detectSecrets(content: string): SecretDetection {
  * @param content - The text to sanitize.
  * @returns Sanitized content with secrets replaced by placeholders.
  * @example
+ * ```typescript
  * const sanitized = sanitizeContent('password: secret123');
  * // Returns: 'password: [REDACTED_PASSWORD]'
+ * ```
  */
 export function sanitizeContent(content: string): string {
 	const detection = detectSecrets(content);
@@ -425,10 +487,12 @@ export function sanitizeContent(content: string): string {
  * @returns Object with safe flag, optional reason, detected secrets, and full detection result.
  * @throws {never} Does not throw; always returns a result object.
  * @example
+ * ```typescript
  * const result = isSafeToStore('Database URL: postgres://user:pass@host/db');
  * if (!result.safe) {
  *   console.error('Cannot store:', result.reason);
  * }
+ * ```
  */
 export function isSafeToStore(content: string): {
 	safe: boolean;
@@ -488,9 +552,11 @@ export function isSafeToStore(content: string): {
  * @param detection - The result from detectSecrets().
  * @returns Human-readable summary string (e.g., "Detected: 2 api_key(s), 1 jwt_token(s) (1 high confidence)").
  * @example
+ * ```typescript
  * const detection = detectSecrets(content);
  * console.log(getSecretsSummary(detection));
- * // Output: "No secrets detected" or "Detected: 1 api_key(s) (1 high confidence)"
+ * // Output: "No secrets detected" or "Detected: 1 api key(s) (1 high confidence)"
+ * ```
  */
 export function getSecretsSummary(detection: SecretDetection): string {
 	if (!detection.found) {

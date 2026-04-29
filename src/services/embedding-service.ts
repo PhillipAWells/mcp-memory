@@ -5,8 +5,10 @@
  * with LRU caching and cost tracking.
  */
 
+import { createHash } from 'node:crypto';
+
 import OpenAI from 'openai';
-import { createHash } from 'crypto';
+
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { withRetry } from '../utils/retry.js';
@@ -51,24 +53,33 @@ const HTTP_STATUS_BAD_GATEWAY = 502;
 const HTTP_STATUS_SERVICE_UNAVAILABLE = 503;
 /** HTTP 504 Gateway Timeout — upstream timeout, safe to retry. */
 const HTTP_STATUS_GATEWAY_TIMEOUT = 504;
+/** OpenAI text-embedding-3-small model identifier. */
+const SMALL_MODEL = 'text-embedding-3-small';
+/** OpenAI text-embedding-3-large model identifier. */
+const LARGE_MODEL = 'text-embedding-3-large';
 
 /**
  * Embedding Service
  *
  * Generates embeddings using OpenAI text-embedding-3-small and
  * text-embedding-3-large with LRU caching and cost tracking.
+ *
+ * @example
+ * ```typescript
+ * import { embeddingService } from './embedding-service.js';
+ * const { small, large } = await embeddingService.generateDualEmbeddings('search query text');
+ * console.log(`Small: ${small.length}d, Large: ${large.length}d`);
+ * ```
  */
 export class EmbeddingService {
 	private readonly client: OpenAI;
 	private readonly cache: Map<string, CacheEntry>;
 	private readonly maxCacheSize: number = MAX_CACHE_SIZE;
 
-	private readonly SMALL_MODEL = 'text-embedding-3-small';
-	private readonly LARGE_MODEL = 'text-embedding-3-large';
 	private readonly SMALL_DIMENSIONS: number;
 	private readonly LARGE_DIMENSIONS: number;
 
-	// Usage statistics
+	// Mutable: incremented by embedding operations for cost tracking
 	private totalEmbeddings: number = 0;
 	private cacheHits: number = 0;
 	private cacheMisses: number = 0;
@@ -80,7 +91,7 @@ export class EmbeddingService {
 		this.LARGE_DIMENSIONS = config.embedding.largeDimensions;
 		this.cache = new Map();
 		this.client = new OpenAI({ apiKey: config.openai.apiKey });
-		logger.info(`Embedding service initialized (model: ${this.SMALL_MODEL})`);
+		logger.info(`Embedding service initialized (model: ${SMALL_MODEL})`);
 		logger.debug(`Max cache size: ${this.maxCacheSize}`);
 	}
 
@@ -118,7 +129,7 @@ export class EmbeddingService {
 		this.cacheMisses++;
 		logger.debug(`Generating embedding for text: "${this.truncate(text, DEBUG_TRUNCATE_LEN)}"`);
 
-		const embedding = await this.generateOpenAIEmbedding(text, this.SMALL_MODEL, this.SMALL_DIMENSIONS);
+		const embedding = await this.generateOpenAIEmbedding(text, SMALL_MODEL, this.SMALL_DIMENSIONS);
 
 		this.addToCache(cacheKey, embedding);
 		return embedding;
@@ -138,7 +149,6 @@ export class EmbeddingService {
 	 * console.log(embedding.length); // 3072
 	 * ```
 	 */
-
 	public async generateLargeEmbedding(text: string): Promise<number[]> {
 		this.totalEmbeddings++;
 
@@ -159,7 +169,7 @@ export class EmbeddingService {
 		this.cacheMisses++;
 		logger.debug(`Generating large embedding for text: "${this.truncate(text, DEBUG_TRUNCATE_LEN)}"`);
 
-		const embedding = await this.generateOpenAIEmbedding(text, this.LARGE_MODEL, this.LARGE_DIMENSIONS);
+		const embedding = await this.generateOpenAIEmbedding(text, LARGE_MODEL, this.LARGE_DIMENSIONS);
 
 		this.addToCache(cacheKey, embedding);
 		return embedding;
@@ -203,16 +213,16 @@ export class EmbeddingService {
 	 * console.log(embeddings.length); // 3
 	 * ```
 	 */
-
 	public async generateBatchEmbeddings(texts: string[]): Promise<number[][]> {
 		logger.info(`Generating batch embeddings: ${texts.length} texts`);
+		this.totalEmbeddings += texts.length;
 
 		const embeddings: number[][] = [];
 		for (let i = 0; i < texts.length; i += BATCH_SIZE) {
 			const batch = texts.slice(i, i + BATCH_SIZE);
 			const batchResults = await this.generateOpenAIBatch(
 				batch,
-				this.SMALL_MODEL,
+				SMALL_MODEL,
 				this.SMALL_DIMENSIONS,
 				'small',
 			);
@@ -227,9 +237,50 @@ export class EmbeddingService {
 	}
 
 	/**
+	 * Generates embeddings for multiple texts using text-embedding-3-large.
+	 *
+	 * Processes texts in batches of up to 100 per OpenAI API call. Checks the cache first for each text; only uncached texts are sent to the API.
+	 *
+	 * @param texts - Array of texts to embed.
+	 * @returns Array of embedding vectors (one per input text) in the same order as `texts`. Each vector has dimensions matching `LARGE_DIMENSIONS`.
+	 * @throws {Error} If the OpenAI API returns an error after all retry attempts are exhausted, or if embedding generation is incomplete.
+	 * @example
+	 * ```typescript
+	 * const embeddings = await embeddingService.generateBatchLargeEmbeddings(['Text 1', 'Text 2', 'Text 3']);
+	 * console.log(embeddings.length); // 3
+	 * ```
+	 */
+	public async generateBatchLargeEmbeddings(texts: string[]): Promise<number[][]> {
+		logger.info(`Generating batch large embeddings: ${texts.length} texts`);
+		this.totalEmbeddings += texts.length;
+
+		const embeddings: number[][] = [];
+		for (let i = 0; i < texts.length; i += BATCH_SIZE) {
+			const batch = texts.slice(i, i + BATCH_SIZE);
+			const batchResults = await this.generateOpenAIBatch(
+				batch,
+				LARGE_MODEL,
+				this.LARGE_DIMENSIONS,
+				'large',
+			);
+			embeddings.push(...batchResults);
+			logger.debug(
+				`Batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(texts.length / BATCH_SIZE)} completed (large)`,
+			);
+		}
+
+		logger.info(`Batch large embeddings completed: ${embeddings.length} embeddings`);
+		return embeddings;
+	}
+
+	/**
 	 * Returns embedding usage statistics.
 	 *
 	 * @returns Object with `totalEmbeddings` (count), `cacheHits`, `cacheMisses`, `totalTokens`, `totalCost` (USD), and `cacheHitRate` (0–1).
+	 *
+	 * Note: `totalEmbeddings` counts individual API calls, not unique texts. `generateDualEmbeddings` increments
+	 * the counter twice (once per model) for a single text. `cacheHitRate` is calculated as `cacheHits / totalEmbeddings`
+	 * where `hits + misses = totalEmbeddings`.
 	 * @example
 	 * ```typescript
 	 * const stats = embeddingService.getStats();
@@ -261,7 +312,6 @@ export class EmbeddingService {
 	 * console.log(`Cache: ${cacheStats.size}/${cacheStats.maxSize} entries (${cacheStats.utilizationPercent.toFixed(1)}%)`);
 	 * ```
 	 */
-
 	public getCacheStats(): {
 		size: number;
 		maxSize: number;
@@ -290,10 +340,13 @@ export class EmbeddingService {
 	 *
 	 * @example
 	 * ```typescript
+	 * const stats = embeddingService.getStats();
+	 * console.log(stats.totalCost); // e.g., 0.0042
 	 * embeddingService.resetStats();
+	 * const resetStats = embeddingService.getStats();
+	 * console.log(resetStats.totalCost); // 0
 	 * ```
 	 */
-
 	public resetStats(): void {
 		this.totalEmbeddings = 0;
 		this.cacheHits = 0;
@@ -311,7 +364,6 @@ export class EmbeddingService {
 	 * embeddingService.clearCache();
 	 * ```
 	 */
-
 	public clearCache(): void {
 		const previousSize = this.cache.size;
 		this.cache.clear();
@@ -325,13 +377,12 @@ export class EmbeddingService {
 	 *
 	 * @param embedding - The vector to validate.
 	 * @param variant - Which model's dimensions to validate against: `'small'` (default, 384d) or `'large'` (3072d).
-	 * @returns `true` if the embedding is valid, `false` otherwise. Invalid embeddings are logged.
+	 * @returns boolean - `true` if the embedding is valid, `false` otherwise. Invalid embeddings are logged.
 	 * @example
 	 * ```typescript
 	 * const isValid = embeddingService.validateEmbedding([0.1, 0.2, ...], 'small');
 	 * ```
 	 */
-
 	public validateEmbedding(embedding: number[], variant: 'small' | 'large' = 'small'): boolean {
 		if (!Array.isArray(embedding)) {
 			return false;
@@ -357,14 +408,13 @@ export class EmbeddingService {
 	 * Estimates token count for a text using a simple heuristic (text length / 4).
 	 *
 	 * @param text - The text to estimate tokens for.
-	 * @returns Approximate token count (not guaranteed to match OpenAI's tokenizer).
+	 * @returns number - Approximate token count (not guaranteed to match OpenAI's tokenizer).
 	 * @example
 	 * ```typescript
 	 * const tokens = embeddingService.estimateTokens('Hello world');
 	 * console.log(tokens); // ~3
 	 * ```
 	 */
-
 	public estimateTokens(text: string): number {
 		return Math.ceil(text.length / CHARS_PER_TOKEN);
 	}
@@ -375,14 +425,13 @@ export class EmbeddingService {
 	 * Cost = (estimated_tokens / 1,000,000) * $0.02.
 	 *
 	 * @param text - The text to estimate cost for.
-	 * @returns Estimated cost in USD (not guaranteed to match actual OpenAI billing).
+	 * @returns number - Estimated cost in USD (not guaranteed to match actual OpenAI billing).
 	 * @example
 	 * ```typescript
 	 * const cost = embeddingService.estimateCost('Hello world');
 	 * console.log(`Estimated cost: $${cost.toFixed(6)}`);
 	 * ```
 	 */
-
 	public estimateCost(text: string): number {
 		const tokens = this.estimateTokens(text);
 		return (tokens / TOKENS_PER_MILLION) * COST_PER_MILLION_TOKENS_SMALL;
@@ -450,7 +499,6 @@ export class EmbeddingService {
 	 * console.log(`${chunks.length} chunks embedded`);
 	 * ```
 	 */
-
 	public async generateChunkedEmbeddings(
 		text: string,
 		chunkSize?: number,
@@ -466,12 +514,14 @@ export class EmbeddingService {
 		const chunks = this.chunkText(text, chunkSize, overlap);
 		const embeddings = await this.generateBatchEmbeddings(chunks);
 
-		return chunks.map((chunk, index) => ({
-			chunk,
-			embedding: embeddings[index],
-			index,
-			total: chunks.length,
-		}));
+		return chunks.map((chunk, index) => {
+			const embedding = embeddings[index];
+			/* v8 ignore next 3 */
+			if (embedding === undefined) {
+				throw new Error(`Internal error: missing embedding for chunk ${index} of ${chunks.length}`);
+			}
+			return { chunk, embedding, index, total: chunks.length };
+		});
 	}
 
 	// ── Private helpers ────────────────────────────────────────────────────────
@@ -481,7 +531,7 @@ export class EmbeddingService {
 		model: string,
 		dimensions: number,
 	): Promise<number[]> {
-		const isLarge = model === this.LARGE_MODEL;
+		const isLarge = model === LARGE_MODEL;
 
 		const result = await withRetry(
 			() => this.client.embeddings.create({ model, input: text, dimensions }),
@@ -559,10 +609,7 @@ export class EmbeddingService {
 
 		if (uncachedIndices.length > 0) {
 			const uncachedTexts = uncachedIndices.map(i => texts[i]);
-			const isLarge = model === this.LARGE_MODEL;
-
-			// Count actual embedding requests (cache misses)
-			this.totalEmbeddings += uncachedIndices.length;
+			const isLarge = model === LARGE_MODEL;
 
 			const response = await withRetry(
 				() => this.client.embeddings.create({ model, input: uncachedTexts, dimensions: dims }),
@@ -584,8 +631,12 @@ export class EmbeddingService {
 			this.totalTokens += tokens;
 			this.totalCost += (tokens / TOKENS_PER_MILLION) * costPerM;
 
-			response.data.forEach((item, idx) => {
-				const originalIdx = uncachedIndices[idx];
+			response.data.forEach((item) => {
+				const originalIdx = uncachedIndices[item.index];
+				if (originalIdx === undefined) {
+					logger.warn(`OpenAI returned unexpected index ${item.index} (batch size: ${uncachedIndices.length}); skipping`);
+					return;
+				}
 				const key = this.getCacheKey(texts[originalIdx], variant);
 				this.addToCache(key, item.embedding);
 				results[originalIdx] = item.embedding;
@@ -604,9 +655,16 @@ export class EmbeddingService {
 		return typedResults;
 	}
 
+	/**
+	 * Generates a deterministic cache key from the model variant, dimensions, and text.
+	 *
+	 * @param text - The input text to hash.
+	 * @param variant - The embedding variant ('small' or 'large').
+	 * @returns A hex digest string used as the LRU cache key.
+	 */
 	private getCacheKey(text: string, variant: 'small' | 'large'): string {
 		const hash = createHash('sha256');
-		const model = variant === 'large' ? this.LARGE_MODEL : this.SMALL_MODEL;
+		const model = variant === 'large' ? LARGE_MODEL : SMALL_MODEL;
 		const dims = variant === 'large' ? this.LARGE_DIMENSIONS : this.SMALL_DIMENSIONS;
 		hash.update(model);
 		hash.update(String(dims));
@@ -614,6 +672,12 @@ export class EmbeddingService {
 		return hash.digest('hex');
 	}
 
+	/**
+	 * Adds an embedding to the LRU cache, evicting the least-recently-used entry if at capacity.
+	 *
+	 * @param key - The cache key returned by {@link getCacheKey}.
+	 * @param embedding - The embedding vector to store.
+	 */
 	private addToCache(key: string, embedding: number[]): void {
 		if (this.cache.size >= this.maxCacheSize) {
 			this.evictLRU();
@@ -626,6 +690,9 @@ export class EmbeddingService {
 		});
 	}
 
+	/**
+	 * Evicts the least-recently-used entry from the cache to free space.
+	 */
 	private evictLRU(): void {
 		// JavaScript's Map preserves insertion order.  Cache hits promote entries to
 		// the end via delete+re-insert (see generateEmbedding / generateLargeEmbedding),
@@ -642,5 +709,16 @@ export class EmbeddingService {
 	}
 }
 
-// Export singleton instance
+/**
+ * Singleton embedding service instance for the entire application.
+ *
+ * @example
+ * ```typescript
+ * import { embeddingService } from './services/embedding-service.js';
+ * const embedding = await embeddingService.generateEmbedding('Hello, world!');
+ * const largeEmbedding = await embeddingService.generateLargeEmbedding('Longer text here');
+ * const stats = embeddingService.getStats();
+ * console.log(`Cache hit rate: ${(stats.cacheHitRate * 100).toFixed(1)}%`);
+ * ```
+ */
 export const embeddingService = new EmbeddingService();

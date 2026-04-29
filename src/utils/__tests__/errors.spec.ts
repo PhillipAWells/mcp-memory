@@ -88,6 +88,32 @@ describe('extractErrorMessage', () => {
 		const outerError = { message: innerError.message, wrapped: innerError };
 		expect(extractErrorMessage(outerError)).toBe('Inner error');
 	});
+
+	it('includes cause message when error has a cause property', () => {
+		const inner = new Error('inner cause');
+		const outer = new Error('outer error', { cause: inner });
+		expect(extractErrorMessage(outer)).toBe('outer error (caused by: inner cause)');
+	});
+
+	it('stops traversing cause chains at MAX_CAUSE_DEPTH', () => {
+		// Build a chain 5 levels deep: e1 → e2 → e3 → e4 → e5
+		const e5 = new Error('level-5');
+		const e4 = new Error('level-4', { cause: e5 });
+		const e3 = new Error('level-3', { cause: e4 });
+		const e2 = new Error('level-2', { cause: e3 });
+		const e1 = new Error('level-1', { cause: e2 });
+		const result = extractErrorMessage(e1);
+		// Levels 1-4 should appear (depth 0-3 are within limit)
+		expect(result).toContain('level-1');
+		expect(result).toContain('level-4');
+		// Level 5 should NOT appear (depth 4 exceeds MAX_CAUSE_DEPTH=3)
+		expect(result).not.toContain('level-5');
+	});
+
+	it('returns empty string when called with depth exceeding MAX_CAUSE_DEPTH', () => {
+		// Direct test of the depth guard: depth=4 > MAX_CAUSE_DEPTH=3
+		expect(extractErrorMessage(new Error('any'), 4)).toBe('');
+	});
 });
 
 describe('MemoryError', () => {

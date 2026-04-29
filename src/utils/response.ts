@@ -15,6 +15,10 @@ import type { StandardResponse, ErrorType } from '../types/index.js';
  * @param data - Optional payload returned to the MCP client.
  * @param metadata - Optional key/value bag (e.g. `{ duration_ms: 42 }`).
  * @returns A `StandardResponse` with `success: true`.
+ * @example
+ * ```typescript
+ * return successResponse('Memory stored successfully', { id: 'abc-123' }, { duration_ms: 42 });
+ * ```
  */
 export function successResponse<T>(
 	message: string,
@@ -37,6 +41,10 @@ export function successResponse<T>(
  * @param error - Detailed error string or message (defaults to `message`).
  * @param metadata - Optional key/value bag with additional context.
  * @returns A `StandardResponse` with `success: false`.
+ * @example
+ * ```typescript
+ * return errorResponse('Qdrant connection failed', 'CONNECTION_ERROR', 'ECONNREFUSED');
+ * ```
  */
 export function errorResponse(
 	message: string,
@@ -59,6 +67,10 @@ export function errorResponse(
  * @param message - Description of the validation failure.
  * @param details - Structured details (e.g. Zod error array) attached under `validation_details`.
  * @returns A `StandardResponse` with `error_type: 'VALIDATION_ERROR'`.
+ * @example
+ * ```typescript
+ * return validationError('Content exceeds maximum length', zodError.issues);
+ * ```
  */
 export function validationError(message: string, details?: unknown): StandardResponse {
 	return errorResponse(
@@ -75,6 +87,10 @@ export function validationError(message: string, details?: unknown): StandardRes
  * @param resource - Human-readable name of the resource that was not found
  *   (e.g. `'Memory with ID abc-123'`).
  * @returns A `StandardResponse` with `error_type: 'NOT_FOUND_ERROR'`.
+ * @example
+ * ```typescript
+ * return notFoundError(`Memory with ID ${id}`);
+ * ```
  */
 export function notFoundError(resource: string): StandardResponse {
 	return errorResponse(

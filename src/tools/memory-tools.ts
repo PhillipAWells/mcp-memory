@@ -6,6 +6,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
+
 import type { MCPTool, StandardResponse, SearchResult } from '../types/index.js';
 import { successResponse, errorResponse, validationError, notFoundError } from '../utils/response.js';
 import { config } from '../config.js';
@@ -53,7 +54,8 @@ const MAX_IN_MEMORY_SORT_COUNT = 10000;
  *
  * @param content - The content string to check for sensitive patterns.
  * @param idContext - Optional memory ID for error reporting context.
- * @returns An error StandardResponse if unsafe content is detected (safe=false), null if storage is permitted.
+ * @returns StandardResponse | null - An error StandardResponse if unsafe content is detected (safe=false), null if storage is permitted.
+ * @throws Does not throw; all safety violations return an error response or null.
  * @example
  * ```typescript
  * const error = checkContentSecrets('API key: sk-abc123...');
@@ -92,6 +94,32 @@ function checkContentSecrets(content: string, idContext?: string): StandardRespo
 }
 
 /**
+ * Normalizes the workspace metadata field to lowercase for consistent storage.
+ *
+ * Mutates the input object in-place by normalizing the workspace field through
+ * WorkspaceDetector.normalize(). If workspace is null or undefined, it is left unchanged.
+ * Returns the mutated object for convenience in chaining operations.
+ *
+ * @param metadata - The metadata object to normalize in-place. The workspace property (if present) will be transformed to lowercase.
+ * @returns The same metadata object passed as input, with workspace normalized.
+ * @throws Does not throw; silently skips normalization if workspace is null or undefined.
+ * @example
+ * ```typescript
+ * const meta = { workspace: 'MyProject', memory_type: 'long-term' };
+ * const result = normalizeWorkspaceInMetadata(meta);
+ * // meta.workspace is now 'myproject' (mutated in-place)
+ * // result === meta (same reference)
+ * ```
+ */
+function normalizeWorkspaceInMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
+	const ws = metadata.workspace;
+	if (typeof ws === 'string' || ws === null) {
+		metadata.workspace = workspaceDetector.normalize(ws);
+	}
+	return metadata;
+}
+
+/**
  * Handles the memory-store MCP tool — embeds and stores a memory, with automatic chunking for large content.
  *
  * Validates input, checks for secrets, auto-detects workspace, applies expiry based on memory_type,
@@ -112,6 +140,11 @@ async function memoryStoreHandler(args: unknown): Promise<StandardResponse> {
 	try {
 		const input = MemoryStoreInputSchema.parse(args);
 		logger.info('Storing memory...');
+
+		// Validate workspace if provided
+		if (input.metadata?.workspace !== undefined && input.metadata.workspace !== null && !workspaceDetector.isValidWorkspace(input.metadata.workspace)) {
+			return validationError('Invalid workspace name');
+		}
 
 		// Check for secrets and sensitive information
 		const secretsError = checkContentSecrets(input.content);
@@ -159,9 +192,9 @@ async function memoryStoreHandler(args: unknown): Promise<StandardResponse> {
 			// All chunks share a common group ID so siblings can be found and managed together
 			const chunkGroupId = uuidv4();
 
-			// Parallelize large embedding generation across all chunks
-			const largeEmbeddings = await Promise.all(
-				chunked.map(({ chunk }) => embeddingService.generateLargeEmbedding(chunk)),
+			// Batch large embedding generation across all chunks
+			const largeEmbeddings = await embeddingService.generateBatchLargeEmbeddings(
+				chunked.map(({ chunk }) => chunk),
 			);
 
 			// Batch upsert all chunks in a single operation
@@ -174,10 +207,21 @@ async function memoryStoreHandler(args: unknown): Promise<StandardResponse> {
 
 			const batchResult = await qdrantService.batchUpsert(points);
 			if (batchResult.failedPoints.length > 0) {
+				// Best-effort cleanup to avoid orphaned chunks
+				if (batchResult.successfulIds.length > 0) {
+					try {
+						await qdrantService.batchDelete(batchResult.successfulIds);
+					} catch (cleanupError) {
+						logger.warn('Failed to clean up orphaned chunks after partial batch failure', {
+							cause: cleanupError,
+						});
+					}
+				}
 				return errorResponse(
-					`Failed to store ${batchResult.failedPoints.length} chunks`,
+					`Failed to store ${batchResult.failedPoints.length} of ${batchResult.totalProcessed} chunks`,
 					'EXECUTION_ERROR',
-					`Failed point IDs: ${batchResult.failedPoints.join(', ')}`,
+					`Batch store failed: ${batchResult.failedPoints.length} chunk(s) could not be written`,
+					{ successfulIds: batchResult.successfulIds, failed_count: batchResult.failedPoints.length },
 				);
 			}
 			const ids = batchResult.successfulIds;
@@ -235,7 +279,7 @@ async function memoryQueryHandler(args: unknown): Promise<StandardResponse> {
 		logger.info(`Querying memory: "${queryPreview}${truncationSuffix}"`);
 
 		// Hybrid search does not support pagination
-		if (input.use_hybrid_search && input.offset !== undefined && input.offset > 0) {
+		if (input.use_hybrid_search && input.offset > 0) {
 			return errorResponse(
 				'Hybrid search does not support pagination. Use standard search for pagination.',
 				'VALIDATION_ERROR',
@@ -245,9 +289,11 @@ async function memoryQueryHandler(args: unknown): Promise<StandardResponse> {
 		// Auto-inject workspace to filter if not explicitly provided (match store behavior)
 		const { filter } = input;
 		const detected = workspaceDetector.detect();
+		let normalizedWorkspace = detected.workspace;
 		if (filter?.workspace === undefined) {
 			if (detected.workspace !== null && detected.workspace !== undefined) {
-				logger.debug(`Auto-injecting workspace filter: ${detected.workspace}`);
+				normalizedWorkspace = workspaceDetector.normalize(detected.workspace);
+				logger.debug(`Auto-injecting workspace filter: ${normalizedWorkspace}`);
 			} else {
 				logger.warn('No workspace detected; query will be limited to memories with null workspace');
 			}
@@ -262,7 +308,13 @@ async function memoryQueryHandler(args: unknown): Promise<StandardResponse> {
 			filter: {
 				...filter,
 				...(filter?.workspace === undefined
-					? { workspace: detected.workspace }
+					? {
+						// When no workspace is detected and none was explicitly requested, filter for
+						// null-workspace memories. This is intentional: an undetected workspace implies
+						// the caller is operating without workspace context, so scoping to null-workspace
+						// memories avoids cross-contaminating results from other workspaces.
+						workspace: normalizedWorkspace,
+					}
 					: {}),
 			},
 			limit: input.limit,
@@ -383,8 +435,8 @@ async function memoryListHandler(args: unknown): Promise<StandardResponse> {
 
 			// Sort by requested field
 			const sortedResults = allResults.sort((a, b) => {
-				let aValue: number | string;
-				let bValue: number | string;
+				let aValue: number;
+				let bValue: number;
 
 				switch (input.sort_by) {
 					case 'updated_at':
@@ -392,13 +444,14 @@ async function memoryListHandler(args: unknown): Promise<StandardResponse> {
 						bValue = new Date(b.metadata?.updated_at ?? 0).getTime();
 						break;
 					case 'access_count':
-						aValue = a.metadata?.access_count ?? 0;
-						bValue = b.metadata?.access_count ?? 0;
+						aValue = typeof a.metadata?.access_count === 'number' ? a.metadata.access_count : 0;
+						bValue = typeof b.metadata?.access_count === 'number' ? b.metadata.access_count : 0;
 						break;
 					case 'confidence':
-						aValue = a.metadata?.confidence ?? 0;
-						bValue = b.metadata?.confidence ?? 0;
+						aValue = typeof a.metadata?.confidence === 'number' ? a.metadata.confidence : 0;
+						bValue = typeof b.metadata?.confidence === 'number' ? b.metadata.confidence : 0;
 						break;
+					/* v8 ignore next 3 */
 					default:
 						aValue = new Date(a.metadata?.created_at ?? 0).getTime();
 						bValue = new Date(b.metadata?.created_at ?? 0).getTime();
@@ -421,18 +474,25 @@ async function memoryListHandler(args: unknown): Promise<StandardResponse> {
       `(sorted by ${input.sort_by ?? 'created_at'} ${input.sort_order})`,
 		);
 
+		const effectiveTotalCount = Math.min(totalCount, MAX_IN_MEMORY_SORT_COUNT);
+		const isCapped = totalCount > MAX_IN_MEMORY_SORT_COUNT;
+
 		return successResponse(
 			`Listed ${results.length} memories`,
 			{
 				memories: results.map((r) => ({
 					id: r.id,
-					content: r.content.slice(0, CONTENT_PREVIEW_LENGTH), // Truncate for listing
+					// Truncate for listing; append ellipsis so callers know the content was cut
+					content: r.content.length > CONTENT_PREVIEW_LENGTH
+						? `${r.content.slice(0, CONTENT_PREVIEW_LENGTH)}...`
+						: r.content,
 					metadata: r.metadata,
 				})),
 				count: results.length,
-				total_count: totalCount,
+				total_count: effectiveTotalCount,
 				limit: input.limit,
 				offset: input.offset,
+				...(isCapped ? { capped: true, uncapped_count: totalCount } : {}),
 			},
 			{
 				duration_ms: Date.now() - startTime,
@@ -520,14 +580,20 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 		const input = MemoryUpdateInputSchema.parse(args);
 		logger.info(`Updating memory: ${input.id}`);
 
+		// Validate workspace if provided (check for non-null, non-undefined)
+		if (input.metadata?.workspace !== undefined && input.metadata.workspace !== null && !workspaceDetector.isValidWorkspace(input.metadata.workspace)) {
+			return validationError('Invalid workspace name');
+		}
+
 		// Validation: at least one of content or metadata must be provided
+		const hasContent = input.content !== undefined;
 		const hasMetadata = input.metadata && Object.keys(input.metadata).length > 0;
-		if (!input.content && !hasMetadata) {
+		if (!hasContent && !hasMetadata) {
 			return validationError('metadata must contain at least one field, or provide new content');
 		}
 
 		// Check for secrets if content is being updated
-		if (input.content) {
+		if (input.content !== undefined) {
 			const secretsError = checkContentSecrets(input.content, input.id);
 			if (secretsError) return secretsError;
 		}
@@ -543,7 +609,7 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 			const chunkGroupId = existing.metadata?.chunk_group_id;
 
 			// Case A: Content update - re-chunk and re-store all siblings
-			if (input.content) {
+			if (input.content !== undefined) {
 				// Find all siblings sharing the same chunk_group_id
 				const siblings = chunkGroupId
 					? await qdrantService.list({ metadata: { chunk_group_id: chunkGroupId } })
@@ -551,17 +617,12 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 
 				const siblingIds = siblings.map(s => s.id);
 
-				// Delete all old chunks
-				if (siblingIds.length > 0) {
-					await qdrantService.batchDelete(siblingIds);
-				}
-
 				// Re-chunk and re-store with new content
 				const baseMetadata = { ...existing.metadata };
 				// Strip chunk-specific fields from base before overlaying input metadata
-				delete baseMetadata.chunk_index;
-				delete baseMetadata.total_chunks;
-				delete baseMetadata.chunk_group_id;
+				baseMetadata.chunk_index = undefined;
+				baseMetadata.total_chunks = undefined;
+				baseMetadata.chunk_group_id = undefined;
 
 				const mergedMetadata = { ...baseMetadata, ...input.metadata };
 
@@ -575,9 +636,9 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 					const chunked = await embeddingService.generateChunkedEmbeddings(input.content);
 					const newChunkGroupId = uuidv4();
 
-					// Parallelize large embedding generation across all chunks
-					const largeEmbeddings = await Promise.all(
-						chunked.map(({ chunk }) => embeddingService.generateLargeEmbedding(chunk)),
+					// Batch large embedding generation across all chunks
+					const largeEmbeddings = await embeddingService.generateBatchLargeEmbeddings(
+						chunked.map(({ chunk }) => chunk),
 					);
 
 					// Batch upsert all chunks in a single operation
@@ -588,15 +649,36 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 						metadata: { ...mergedMetadata, chunk_index: index, total_chunks: total, chunk_group_id: newChunkGroupId },
 					}));
 
+					// Store new chunks BEFORE deleting old ones to prevent data loss if upsert fails
 					const batchResult = await qdrantService.batchUpsert(points);
 					if (batchResult.failedPoints.length > 0) {
 						return errorResponse(
-							`Failed to update ${batchResult.failedPoints.length} chunks`,
+							`Failed to update ${batchResult.failedPoints.length} of ${batchResult.totalProcessed} chunks`,
 							'EXECUTION_ERROR',
-							`Failed point IDs: ${batchResult.failedPoints.join(', ')}`,
+							`Batch update failed: ${batchResult.failedPoints.length} chunk(s) could not be written`,
+							{ successfulIds: batchResult.successfulIds, failed_count: batchResult.failedPoints.length },
 						);
 					}
 					const newIds = batchResult.successfulIds;
+
+					// Validate that we have results before proceeding with deletion
+					/* v8 ignore next 3 */
+					if (newIds.length === 0) {
+						return errorResponse('Chunk update produced no results', 'EXECUTION_ERROR');
+					}
+
+					// Delete old chunks only after successful upsert of new chunks
+					if (siblingIds.length > 0) {
+						try {
+							await qdrantService.batchDelete(siblingIds);
+						} catch (deleteError) {
+							// Log warning but still return success (new data is safe, old chunks become orphaned)
+							logger.warn('Failed to delete old chunks after successful update', {
+								cause: deleteError,
+								oldChunkIds: siblingIds,
+							});
+						}
+					}
 
 					logger.info(`Chunked memory updated: re-stored ${newIds.length} chunks (deleted ${siblingIds.length} old chunks)`);
 
@@ -617,6 +699,19 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 					const dual = await embeddingService.generateDualEmbeddings(input.content);
 					const newId = await qdrantService.upsert(input.content, dual.small, mergedMetadata, dual.large);
 
+					// Delete old chunks only after successful upsert of new memory
+					if (siblingIds.length > 0) {
+						try {
+							await qdrantService.batchDelete(siblingIds);
+						} catch (deleteError) {
+							// Log warning but still return success (new data is safe, old chunks become orphaned)
+							logger.warn('Failed to delete old chunks after successful update', {
+								cause: deleteError,
+								oldChunkIds: siblingIds,
+							});
+						}
+					}
+
 					logger.info(`Chunked memory updated: re-stored as single memory (deleted ${siblingIds.length} chunks)`);
 
 					return successResponse(
@@ -636,9 +731,20 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 			if (chunkGroupId) {
 				const siblings = await qdrantService.list({ metadata: { chunk_group_id: chunkGroupId } });
 
-				await Promise.all(
-					siblings.map(sibling => qdrantService.updatePayload(sibling.id, input.metadata ?? {})),
+				const metadataToUpdateSiblings = { ...(input.metadata ?? {}) };
+				normalizeWorkspaceInMetadata(metadataToUpdateSiblings);
+
+				const results = await Promise.allSettled(
+					siblings.map(sibling => qdrantService.updatePayload(sibling.id, metadataToUpdateSiblings)),
 				);
+				const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+				if (failures.length > 0) {
+					logger.warn('Some sibling chunk metadata updates failed', {
+						failedCount: failures.length,
+						totalSiblings: siblings.length,
+						errors: failures.map(f => String(f.reason)),
+					});
+				}
 
 				logger.info(`Updated metadata across ${siblings.length} chunk siblings`);
 
@@ -646,7 +752,7 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 					'Metadata updated across all chunk siblings',
 					{
 						id: input.id,
-						siblings_updated: siblings.length,
+						siblings_updated: siblings.length - failures.length,
 					},
 					{
 						duration_ms: Date.now() - startTime,
@@ -671,7 +777,7 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 		}
 
 		// Content update: always reindex
-		if (input.content) {
+		if (input.content !== undefined) {
 			logger.debug('Re-generating dual embeddings for updated content');
 			const dual = await embeddingService.generateDualEmbeddings(input.content);
 
@@ -683,6 +789,8 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 				id: input.id,
 			};
 
+			normalizeWorkspaceInMetadata(mergedMetadata);
+
 			await qdrantService.upsert(
 				input.content,
 				dual.small,
@@ -693,7 +801,9 @@ async function memoryUpdateHandler(args: unknown): Promise<StandardResponse> {
 			logger.info(`Memory updated and reindexed: ${input.id}`);
 		} else {
 			// Metadata-only update
-			await qdrantService.updatePayload(input.id, input.metadata ?? {});
+			const metadataToUpdate = { ...(input.metadata ?? {}) };
+			normalizeWorkspaceInMetadata(metadataToUpdate);
+			await qdrantService.updatePayload(input.id, metadataToUpdate);
 			logger.info(`Memory metadata updated: ${input.id}`);
 		}
 
@@ -943,7 +1053,18 @@ async function memoryCountHandler(args: unknown): Promise<StandardResponse> {
 }
 
 /**
- * Export all memory tools
+ * Array of all available MCP memory tools for tool registration.
+ *
+ * Includes 9 tools covering the full memory lifecycle: store, query, list, get,
+ * update, delete, batch-delete, status, and count operations.
+ *
+ * @example
+ * ```typescript
+ * // All tools are registered by the MCP server at startup
+ * memoryTools.forEach(tool => {
+ *   console.log(tool.name); // 'memory-store', 'memory-query', etc.
+ * });
+ * ```
  */
 export const memoryTools: MCPTool[] = [
 	{

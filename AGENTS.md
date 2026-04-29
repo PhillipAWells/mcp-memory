@@ -50,7 +50,7 @@ MCP Client (Claude Code) → MCP Server (src/index.ts)
 
 **Configuration** (`src/config.ts`): All environment variables are loaded and validated using Zod schemas. See `.env.example` for complete variable list. `OPENAI_API_KEY` and `QDRANT_URL` are required.
 
-**Types** (`src/types/index.ts`): Shared interfaces including `MemoryType`, `MemoryMetadata`, `SearchResult`, `StandardResponse<T>`, `ErrorType`, `MCPTool`, `EmbeddingStats`, `QdrantPayload`, and `SearchFilters`.
+**Types** (`src/types/index.ts`): Shared interfaces including `MemoryType`, `SearchResult`, `StandardResponse<T>`, `ErrorType`, `MCPTool`, `EmbeddingStats`, `QdrantPayload`, and `SearchFilters`.
 
 **Schemas** (`src/schemas/memory-schemas.ts`): Zod schemas for all tool inputs, automatically generating JSON Schema for MCP registration. Validates `memory-store`, `memory-query`, `memory-list`, `memory-get`, `memory-update`, `memory-delete`, `memory-batch-delete`, `memory-status`, and `memory-count` inputs.
 
@@ -95,7 +95,9 @@ Expired memories are automatically filtered from queries and listings.
 
 **Error handling**: Always return `successResponse()` or `errorResponse()` from tools. Use `validationError()` for schema violations and `notFoundError()` for missing memories — both produce the `StandardResponse` type expected by MCP clients.
 
-**Chunking**: Content longer than the configured `MEMORY_CHUNK_SIZE` (default 1,000 chars) is auto-split into overlapping chunks. All chunks share a `chunk_group_id` UUID in metadata. `memory-update` blocks updates to individual chunks — must update via the group.
+**Error Handling Note**: Service implementations currently throw generic `Error` for simplicity rather than always using `MemoryError`. This is an intentional deviation from pawells standards to reduce boilerplate. Future versions may adopt `MemoryError` consistently if callers need programmatic error distinction.
+
+**Chunking**: Content longer than the configured `MEMORY_CHUNK_SIZE` (default 1,000 chars) is auto-split into overlapping chunks. All chunks share a `chunk_group_id` UUID in metadata. `memory-update` blocks updates to individual chunks — must update via the group. When updating chunked content, new chunks are upserted first; old chunks are deleted only after the upsert succeeds, so a failed upsert leaves the original data intact. For `memory-store`, if a batch upsert partially fails, successfully stored chunks are cleaned up on a best-effort basis to avoid orphaning them.
 
 **Retry logic**: `src/utils/retry.ts` provides exponential backoff; used by both `QdrantService` and `EmbeddingService` for resilience against transient failures.
 
@@ -109,6 +111,8 @@ Expired memories are automatically filtered from queries and listings.
 Expired memories are automatically excluded from queries and listings.
 
 ## Public API
+
+**Note on src/index.ts**: The `src/index.ts` file serves as the **MCP server entry point only**, not as a barrel export for npm consumers. This is intentional — the package is published exclusively for use as an MCP server (started via `yarn start`), not as a library with deep imports. If future versions support programmatic library usage, a separate barrel export in `src/index.ts` will be added.
 
 The MCP server exposes 9 tools to clients. All tools return `StandardResponse<T>` which includes `success`, `message`, `data`, and a `metadata` bag containing `duration_ms`.
 
@@ -245,3 +249,57 @@ Queries use Qdrant's `indexed_only: true` setting to skip segments that are curr
 The `memory-list` tool loads up to 10,000 records into memory for sorting regardless of the sort field chosen (`created_at`, `updated_at`, `access_count`, or `confidence`). Qdrant's internal scroll order is not guaranteed to match any application-level sort order, so the server always fetches all matching records and sorts them in-process. For collections with many memories, this can consume significant memory.
 
 **Workaround**: Use the `workspace`, `memory_type`, or `tags` filters to narrow the result set before sorting; this reduces the number of records loaded into memory. If the built-in scroll order is acceptable for your use case, omit `sort_by` entirely — the tool will return results in Qdrant's internal order without a full fetch.
+
+### All Sorting Uses Approximate Count for fetchLimit
+
+The `memory-list` tool uses `qdrantService.count(exact: false)` to determine how many records to fetch before sorting. Qdrant's approximate counting is "close but not guaranteed" — for very large collections, the approximated count can be significantly lower than the actual count, potentially causing the sort to miss records beyond the approximated threshold.
+
+**Workaround**: Use the `workspace`, `memory_type`, or `tags` filters to narrow the result set before sorting; this reduces the number of records fetched and mitigates the approximation risk. If exact count is critical, use exact: true (slower but guaranteed).
+
+### Pagination Limits and the `capped` Flag
+
+The `memory-list` tool sorts results in-memory and is limited to a maximum of 10,000 records. When sorting a collection larger than this:
+
+- **`total_count`**: Returns the effective count (capped at 10,000), representing the maximum addressable records
+- **`capped`**: Set to `true` when results are truncated at the 10,000-record limit
+- **`uncapped_count`**: Optional field containing Qdrant's approximate full count (for reference only)
+
+Clients should use `total_count` for pagination calculations. The `uncapped_count` shows the true collection size if needed for analytics.
+
+**Workaround for larger collections**: Use `workspace`, `memory_type`, or `tags` filters to narrow the result set before sorting, reducing the number of records loaded and processed.
+
+### Metadata-Only Chunk Updates Have a Race Condition
+
+When updating only the metadata for a chunked memory (not changing content), the `memory-update` handler lists all sibling chunks and updates their payloads in a secondary operation. If a sibling chunk is deleted between the list and update phases, the `setPayload()` operation silently no-ops for that missing ID — Qdrant does not return an error.
+
+This is acceptable for eventual-consistency systems where transient inconsistency is tolerated, but callers should be aware that metadata updates to chunked memories may not apply to all siblings if concurrent deletes occur. In practice, this is rare (concurrent deletes of siblings are uncommon), but it's a known limitation of the current implementation.
+
+**Mitigation**: If metadata consistency across all chunks is critical, avoid concurrent operations on the same chunk group. The race window is narrow (milliseconds), but it exists.
+
+### Old Chunks May Be Orphaned When Deletion Fails After a Successful Update
+
+When `memory-update` replaces chunked content, new chunks are written first and old chunks are deleted afterward. If the deletion step fails (e.g., a transient Qdrant error), the operation still returns success because the new data is safely stored. The old chunk IDs are logged at `warn` level, but they remain in the collection as orphaned points — they are no longer reachable via `chunk_group_id` but do occupy storage and will appear in unfiltered listings.
+
+The same applies when updated content no longer requires chunking: the single replacement memory is written first, then the old chunks are deleted. A deletion failure leaves those old chunks orphaned.
+
+**Mitigation**: If orphaned chunks are detected (via `memory-list` showing unexpected extra chunks, or by inspecting `chunk_group_id` values), use `memory-batch-delete` with the orphaned IDs to clean them up manually. The logged `oldChunkIds` field in the warning message provides the IDs needed for cleanup.
+
+### WorkspaceDetector Uses Synchronous File I/O
+
+`WorkspaceDetector.findPackageJson()` uses synchronous filesystem calls (`existsSync` + `readFileSync`) to detect workspace configuration from package.json. While these calls block the event loop, the impact is mitigated by TTL caching (default `WORKSPACE_CACHE_TTL=60000`). If the cache expires under load, every request re-triggers filesystem I/O, which can cause event loop blocking.
+
+This is acceptable at current scale but worth documenting for future capacity planning. Under very high concurrency, synchronous I/O on a hot cache miss could cause latency spikes.
+
+**Mitigation for high concurrency**: Ensure `WORKSPACE_CACHE_TTL` is sufficiently high (e.g., 300000 for 5 minutes) to minimize cache expiry under normal load. Alternatively, set `WORKSPACE_AUTO_DETECT=false` and provide `WORKSPACE_DEFAULT` to skip detection entirely.
+
+### expires_at Now Uses Datetime Index
+
+Expiry filtering queries (`memory-query`, `memory-list`) previously scanned all payloads (O(n)) to filter expired memories. A datetime index on `expires_at` was added during this review, enabling indexed lookups that avoid full payload scans. This improves query performance significantly for large collections with many short-term or episodic memories.
+
+This is a performance bug fix and not a gotcha, but it's worth noting if you observe improved query latency on large collections after this change.
+
+### Workspace Scoping Behavior
+
+The `memory-query` tool automatically filters to the current workspace when no explicit workspace filter is provided. Other read operations (`memory-list`, `memory-count`, `memory-status`, `memory-get`) return ALL workspaces by default.
+
+This asymmetry exists because `memory-query` is the primary search operation and scoping queries to the current workspace is the safer default. Use explicit `filter: { workspace: null }` in `memory-query` to retrieve cross-workspace results, or specify a `workspace` in the filter for other operations.

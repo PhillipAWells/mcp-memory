@@ -235,7 +235,7 @@ describe('isSafeToStore', () => {
 		expect(result.safe).toBe(true);
 		expect(result.reason).toBeDefined(); // Warning reason present
 		expect(result.secrets).toBeDefined();
-		expect(result.secrets!.length).toBeGreaterThan(0);
+		expect(result.secrets?.length ?? 0).toBeGreaterThan(0);
 	});
 
 	it('returns safe:true for low-confidence only (email)', () => {

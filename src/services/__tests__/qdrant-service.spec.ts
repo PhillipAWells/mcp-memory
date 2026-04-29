@@ -133,31 +133,51 @@ describe('QdrantService.buildFilter (via count)', () => {
 		service = await createInitializedService();
 	});
 
-	it('passes undefined filter to Qdrant when no filter provided', async () => {
+	it('always applies expiry filter even when no filter is provided', async () => {
 		await service.count(undefined);
-		expect(mockClient.count).toHaveBeenCalledWith(
-			'test-collection',
-			expect.objectContaining({ filter: undefined }),
-		);
+		const [, args] = mockClient.count.mock.calls[0] as unknown[];
+
+		const { filter } = (args as any);
+		// The expiry condition must always be present — expired memories must be excluded
+		// even when the caller provides no other filter criteria.
+		expect(filter).toBeDefined();
+
+		const expiryCondition = filter.must.find((c: any) => 'should' in c);
+		expect(expiryCondition).toBeDefined();
+
+		const shouldClauses = expiryCondition.should as any[];
+		expect(shouldClauses.some((s: any) => s.is_null?.key === 'expires_at')).toBe(true);
+		expect(shouldClauses.some((s: any) => s.key === 'expires_at')).toBe(true);
 	});
 
 	it('includes workspace condition when workspace filter is set', async () => {
 		await service.count({ workspace: 'my-ws' });
 		const [, args] = mockClient.count.mock.calls[0] as unknown[];
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 		const conditions = (args as any).filter.must;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 		const workspaceCond = conditions.find((c: any) => c.key === 'workspace');
 		expect(workspaceCond).toBeDefined();
 		expect(workspaceCond.match.value).toBe('my-ws');
 	});
 
+	it('includes is_null condition when workspace filter is explicitly null', async () => {
+		await service.count({ workspace: null });
+		const [, args] = mockClient.count.mock.calls[0] as unknown[];
+
+		const conditions = (args as any).filter.must;
+
+		const workspaceNullCond = conditions.find((c: any) => c.is_null?.key === 'workspace');
+		expect(workspaceNullCond).toBeDefined();
+		expect(workspaceNullCond.is_null.key).toBe('workspace');
+	});
+
 	it('includes memory_type condition when filter is set', async () => {
 		await service.count({ memory_type: 'episodic' });
 		const [, args] = mockClient.count.mock.calls[0] as unknown[];
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 		const conditions = (args as any).filter.must;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 		const typeCond = conditions.find((c: any) => c.key === 'memory_type');
 		expect(typeCond?.match.value).toBe('episodic');
 	});
@@ -165,9 +185,9 @@ describe('QdrantService.buildFilter (via count)', () => {
 	it('includes min_confidence range condition', async () => {
 		await service.count({ min_confidence: 0.8 });
 		const [, args] = mockClient.count.mock.calls[0] as unknown[];
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 		const conditions = (args as any).filter.must;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 		const confCond = conditions.find((c: any) => c.key === 'confidence');
 		expect(confCond?.range.gte).toBe(0.8);
 	});
@@ -175,9 +195,9 @@ describe('QdrantService.buildFilter (via count)', () => {
 	it('includes tags any-match condition', async () => {
 		await service.count({ tags: ['foo', 'bar'] });
 		const [, args] = mockClient.count.mock.calls[0] as unknown[];
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 		const conditions = (args as any).filter.must;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 		const tagCond = conditions.find((c: any) => c.key === 'tags');
 		expect(tagCond?.match.any).toEqual(['foo', 'bar']);
 	});
@@ -185,9 +205,9 @@ describe('QdrantService.buildFilter (via count)', () => {
 	it('always adds expires_at exclusion condition', async () => {
 		await service.count({});
 		const [, args] = mockClient.count.mock.calls[0] as unknown[];
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 		const conditions = (args as any).filter.must;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 		const expiryCond = conditions.find((c: any) => 'should' in c);
 		expect(expiryCond).toBeDefined();
 		expect(expiryCond.should).toHaveLength(2);
@@ -196,9 +216,9 @@ describe('QdrantService.buildFilter (via count)', () => {
 	it('includes custom metadata key-value conditions', async () => {
 		await service.count({ metadata: { chunk_group_id: 'abc-123' } });
 		const [, args] = mockClient.count.mock.calls[0] as unknown[];
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 		const conditions = (args as any).filter.must;
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 		const metaCond = conditions.find((c: any) => c.key === 'chunk_group_id');
 		expect(metaCond?.match.value).toBe('abc-123');
 	});
@@ -284,6 +304,85 @@ describe('QdrantService.validateCollectionSchema', () => {
 		});
 		const service = new QdrantService();
 		await expect(service.initialize()).rejects.toThrow('missing vector');
+	});
+});
+
+// ── QdrantService.initialize — collection creation ────────────────────────────
+
+describe('QdrantService.initialize — collection creation', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		// Reset getCollection to a valid dual-vector schema (may have been contaminated by prior describe blocks)
+		mockClient.getCollection.mockResolvedValue({
+			config: {
+				params: {
+					vectors: {
+						dense: { size: 1536, distance: 'Cosine' },
+						dense_large: { size: 3072, distance: 'Cosine' },
+					},
+				},
+			},
+			points_count: 0,
+			indexed_vectors_count: 0,
+			segments_count: 1,
+			status: 'green',
+			optimizer_status: 'ok',
+		});
+		mockClient.createPayloadIndex.mockResolvedValue({});
+		mockClient.createCollection.mockResolvedValue({});
+	});
+
+	it('creates collection when it does not exist', async () => {
+		// Mock: collection list returns empty (collection does not exist)
+		mockClient.getCollections.mockResolvedValueOnce({ collections: [] });
+
+		const service = new QdrantService();
+		await service.initialize();
+
+		expect(mockClient.createCollection).toHaveBeenCalledWith(
+			'test-collection',
+			expect.objectContaining({ vectors: expect.any(Object) }),
+		);
+	});
+});
+
+describe('QdrantService.initialize — optional index creation failure', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		// Reset getCollection to a valid dual-vector schema (may have been contaminated by prior describe blocks)
+		mockClient.getCollections.mockResolvedValue({ collections: [{ name: 'test-collection' }] });
+		mockClient.getCollection.mockResolvedValue({
+			config: {
+				params: {
+					vectors: {
+						dense: { size: 1536, distance: 'Cosine' },
+						dense_large: { size: 3072, distance: 'Cosine' },
+					},
+				},
+			},
+			points_count: 0,
+			indexed_vectors_count: 0,
+			segments_count: 1,
+			status: 'green',
+			optimizer_status: 'ok',
+		});
+	});
+
+	it('logs warning but continues when optional payload index creation fails', async () => {
+		// Non-critical fields: created_at, updated_at, access_count, last_accessed_at, tags
+		// Fail only these — critical indexes must succeed for initialization to complete
+		const nonCritical = ['created_at', 'updated_at', 'access_count', 'last_accessed_at', 'tags'];
+		mockClient.createPayloadIndex.mockImplementation((...args: unknown[]) => {
+			const opts = args[1] as { field_name?: string } | undefined;
+			if (opts?.field_name && nonCritical.includes(opts.field_name)) {
+				return Promise.reject(new Error('optional index creation failed'));
+			}
+			return Promise.resolve({});
+		});
+
+		const service = new QdrantService();
+		// Should not throw — optional index failures are warned but not fatal
+		await expect(service.initialize()).resolves.not.toThrow();
 	});
 });
 
@@ -416,7 +515,7 @@ describe('QdrantService.get (access tracking)', () => {
 
 			// Verify setPayload includes a new last_accessed_at timestamp
 			const [, setPayloadArgs] = mockClient.setPayload.mock.calls[0] as unknown[];
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 			const payload = (setPayloadArgs as any).payload as any;
 
 			expect(payload.last_accessed_at).toBeDefined();
@@ -516,7 +615,7 @@ describe('QdrantService.upsert', () => {
 
 		const _afterCall = new Date().toISOString();
 		const calls = mockClient.upsert.mock.calls[0] as unknown[];
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 		const point = (calls[1] as any).points[0] as any;
 		const createdAt = point.payload.created_at;
 		const updatedAt = point.payload.updated_at;
@@ -533,7 +632,7 @@ describe('QdrantService.upsert', () => {
 		await service.upsert('content', vector, { updated_at: providedTimestamp });
 
 		const calls = mockClient.upsert.mock.calls[0] as unknown[];
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 		const point = (calls[1] as any).points[0] as any;
 		const actualUpdatedAt = point.payload.updated_at;
 
@@ -547,7 +646,7 @@ describe('QdrantService.upsert', () => {
 		await service.upsert('content', vector, {});
 
 		const calls = mockClient.upsert.mock.calls[0] as unknown[];
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 		const point = (calls[1] as any).points[0] as any;
 
 		expect(point.payload.memory_type).toBe('long-term');
@@ -823,7 +922,7 @@ describe('QdrantService.batchDelete', () => {
 
 		await service.batchDelete(ids);
 
-		expect(mockClient.delete).toHaveBeenCalled();
+		expect(mockClient.delete).not.toHaveBeenCalled();
 	});
 });
 
@@ -1193,14 +1292,14 @@ describe('QdrantService.createPayloadIndexes with existing indexes', () => {
 		await expect(service.initialize()).resolves.not.toThrow();
 	});
 
-	it('logs warning when payload index creation fails with non-exists error', async () => {
+	it('throws when critical payload index creation fails with non-exists error', async () => {
 		mockClient.createPayloadIndex.mockRejectedValueOnce(
 			new Error('unexpected error'),
 		);
 		mockClient.createPayloadIndex.mockResolvedValue({});
 
 		service = new QdrantService();
-		await expect(service.initialize()).resolves.not.toThrow();
+		await expect(service.initialize()).rejects.toThrow('unexpected error');
 	});
 });
 
@@ -1270,7 +1369,7 @@ describe('QdrantService access tracking with rate-limit guard', () => {
 			await vi.runAllTimersAsync();
 
 			const calls = mockClient.setPayload.mock.calls[0] as unknown[];
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 			const payload = (calls[1] as any).payload as any;
 
 			expect(payload.last_accessed_at).toBeDefined();
@@ -1327,5 +1426,78 @@ describe('QdrantService.validateCollectionSchema with distance mismatches', () =
 
 		const service = new QdrantService();
 		await expect(service.initialize()).rejects.toThrow('distance mismatch');
+	});
+});
+
+// ── QdrantService.getStats (normalizeOptimizerStatus branches) ───────────────
+
+describe('QdrantService.getStats', () => {
+	let service: QdrantService;
+
+	beforeEach(async () => {
+		service = await createInitializedService();
+	});
+
+	it('normalizes optimizer_status when it is an object with error property', async () => {
+		mockClient.getCollection.mockResolvedValue({
+			config: {
+				params: {
+					vectors: {
+						dense: { size: 1536, distance: 'Cosine' },
+						dense_large: { size: 3072, distance: 'Cosine' },
+					},
+				},
+			},
+			points_count: 100,
+			indexed_vectors_count: 100,
+			segments_count: 3,
+			status: 'green',
+			optimizer_status: { error: 'index overflow' },
+		});
+
+		const stats = await service.getStats();
+		expect(stats.optimizer_status).toBe('error: index overflow');
+	});
+
+	it('normalizes optimizer_status when it is an object with ok property', async () => {
+		mockClient.getCollection.mockResolvedValue({
+			config: {
+				params: {
+					vectors: {
+						dense: { size: 1536, distance: 'Cosine' },
+						dense_large: { size: 3072, distance: 'Cosine' },
+					},
+				},
+			},
+			points_count: 50,
+			indexed_vectors_count: 50,
+			segments_count: 2,
+			status: 'green',
+			optimizer_status: { ok: true },
+		});
+
+		const stats = await service.getStats();
+		expect(stats.optimizer_status).toBe('ok');
+	});
+
+	it('normalizes optimizer_status to "unknown" when null', async () => {
+		mockClient.getCollection.mockResolvedValue({
+			config: {
+				params: {
+					vectors: {
+						dense: { size: 1536, distance: 'Cosine' },
+						dense_large: { size: 3072, distance: 'Cosine' },
+					},
+				},
+			},
+			points_count: 75,
+			indexed_vectors_count: 75,
+			segments_count: 2,
+			status: 'green',
+			optimizer_status: null,
+		});
+
+		const stats = await service.getStats();
+		expect(stats.optimizer_status).toBe('unknown');
 	});
 });

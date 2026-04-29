@@ -7,9 +7,11 @@
 
 import { QdrantClient } from '@qdrant/js-client-rest';
 import { v4 as uuidv4 } from 'uuid';
+
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { withRetry } from '../utils/retry.js';
+import { MemoryError, extractErrorMessage } from '../utils/errors.js';
 import type {
 	QdrantPayload,
 	SearchFilters,
@@ -54,17 +56,24 @@ const PERCENT = 100;
 const ACCESS_TRACKING_WARNING_INTERVAL_MS = 10_000;
 /** Default HTTPS port. */
 const HTTPS_DEFAULT_PORT = 443;
+/** Default hybrid search alpha weighting (0.5 = equal weighting between vector and text). */
+const DEFAULT_HYBRID_ALPHA = 0.5;
 
 /**
- * Point structure for Qdrant upsert
- */
-/**
  * Type guard to check if a value is a valid QdrantPayload.
- * Validates required fields: content (string), created_at (string), updated_at (string).
+ *
+ * Validates required fields: `content` (string), `created_at` (string), `updated_at` (string).
  * Returns true only if the payload matches the expected structure.
  *
- * @param p - The value to check
- * @returns True if p is a valid QdrantPayload, false otherwise
+ * @param p - The value to check.
+ * @returns boolean - True if p is a valid QdrantPayload, false otherwise.
+ * @example
+ * ```typescript
+ * const payload = { content: 'hello', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' };
+ * if (isQdrantPayload(payload)) {
+ *   // payload is now narrowed to QdrantPayload type
+ * }
+ * ```
  */
 function isQdrantPayload(p: unknown): p is QdrantPayload {
 	return (
@@ -79,6 +88,61 @@ function isQdrantPayload(p: unknown): p is QdrantPayload {
 	);
 }
 
+/**
+ * Type guard to check if search parameters represent a hybrid search operation.
+ *
+ * Hybrid search requires both `useHybridSearch` to be true and `query` to be a non-empty string.
+ * Used to narrow `SearchParams` to `HybridSearchParams` before calling `hybridSearchWithRRF()`.
+ *
+ * @param p - The search parameters to check.
+ * @returns boolean - True if p is configured for hybrid search, false otherwise.
+ * @example
+ * ```typescript
+ * const params: SearchParams = { vector: [...], query: 'text', useHybridSearch: true };
+ * if (isHybridSearchParams(params)) {
+ *   // params is now narrowed to HybridSearchParams
+ *   await service.hybridSearchWithRRF(params, filter);
+ * }
+ * ```
+ */
+function isHybridSearchParams(p: SearchParams): p is HybridSearchParams {
+	return typeof p.query === 'string' && p.query.length > 0 && p.useHybridSearch === true;
+}
+
+/**
+ * Normalizes optimizer status from various Qdrant API response shapes into a string.
+ *
+ * The optimizer_status can be a string, an error object, or an ok object.
+ * This function safely extracts a normalized string representation.
+ *
+ * @param status - The raw optimizer_status value from Qdrant API response.
+ * @returns A normalized string representation of the optimizer status.
+ * @example
+ * ```typescript
+ * const normalized = normalizeOptimizerStatus(info.optimizer_status);
+ * console.log(normalized); // 'ok' or 'error: ...' or 'running' etc.
+ * ```
+ */
+function normalizeOptimizerStatus(status: unknown): string {
+	if (typeof status === 'string') {
+		return status;
+	}
+	if (typeof status === 'object' && status !== null) {
+		const obj = status as Record<string, unknown>;
+		if ('error' in obj && typeof obj.error === 'string') {
+			return `error: ${obj.error}`;
+		}
+		if ('ok' in obj) {
+			return 'ok';
+		}
+	}
+	return 'unknown';
+}
+
+/**
+ * Represents a single point in the Qdrant vector database.
+ * @internal
+ */
 interface QdrantPoint {
 	id: string;
 	vector: { dense: number[]; dense_large?: number[] };
@@ -86,7 +150,11 @@ interface QdrantPoint {
 }
 
 /**
- * Batch upsert result
+ * Result of a batch upsert operation to Qdrant.
+ *
+ * @property successfulIds - Array of point IDs that were successfully upserted.
+ * @property failedPoints - Array of points that failed to upsert, with error details.
+ * @property totalProcessed - Total number of points processed (successful + failed).
  */
 interface BatchUpsertResult {
 	successfulIds: string[];
@@ -115,7 +183,22 @@ interface SearchParams {
 }
 
 /**
- * Collection statistics
+ * Internal interface for hybrid search parameters, ensuring query is required.
+ */
+interface HybridSearchParams extends SearchParams {
+	query: string; // Required for hybrid search
+}
+
+/**
+ * Collection statistics from Qdrant.
+ *
+ * @property indexed_vectors_count - Number of vectors that have been indexed in HNSW.
+ * @property points_count - Total number of points in the collection.
+ * @property segments_count - Number of collection segments.
+ * @property status - Collection status (e.g., 'green', 'yellow', 'red').
+ * @property optimizer_status - Status of the background optimizer.
+ * @property config - Collection configuration object (structure varies by Qdrant version).
+ * @property access_tracking_failures - Cumulative count of access-tracking update failures since service start.
  */
 interface CollectionStats {
 	indexed_vectors_count: number;
@@ -124,7 +207,6 @@ interface CollectionStats {
 	status: string;
 	optimizer_status: string;
 	config: unknown;
-	/** Cumulative count of access-tracking update failures since service start. */
 	access_tracking_failures: number;
 }
 
@@ -134,14 +216,24 @@ interface CollectionStats {
  * Manages vector database operations with optimized configuration.
  * Note: The underlying QdrantClient does not support explicit connection closing;
  * connections are automatically managed by the HTTP client.
+ *
+ * @example
+ * ```typescript
+ * const service = new QdrantService();
+ * await service.initialize(); // Create/validate collection
+ * const results = await service.search({ vector: [0.1, 0.2, 0.3], limit: 5 });
+ * await service.upsert('text', [0.1, 0.2, 0.3], { memory_type: 'long-term' });
+ * await service.delete('uuid');
+ * ```
  */
 export class QdrantService {
 	private readonly client: QdrantClient;
 	private readonly collectionName: string;
-	private initialized: boolean = false;
-	/** Running count of access-tracking update failures for diagnostics. */
+	// Mutable: one-time initialization guard, reset to undefined only during reconnection
+	private initPromise: Promise<void> | undefined;
+	// Mutable: incremented on each failed access tracking operation
 	private accessTrackingFailureCount: number = 0;
-	/** Timestamp of the last access tracking warning log (for rate-limiting). */
+	// Mutable: updated on each access tracking warning log for rate-limiting
 	private lastTrackingWarningTime: number = 0;
 
 	constructor() {
@@ -179,35 +271,37 @@ export class QdrantService {
 	 * ```
 	 */
 	public async initialize(): Promise<void> {
-		if (this.initialized) {
-			logger.debug('Qdrant service already initialized');
+		if (this.initPromise) {
+			await this.initPromise;
 			return;
 		}
+		this.initPromise = (async () => {
+			try {
+				// Check if collection exists
+				const collections = await this.client.getCollections();
+				const exists = collections.collections.some(
+					(c) => c.name === this.collectionName,
+				);
 
-		try {
-			// Check if collection exists
-			const collections = await this.client.getCollections();
-			const exists = collections.collections.some(
-				(c) => c.name === this.collectionName,
-			);
+				if (!exists) {
+					logger.info(`Creating collection: ${this.collectionName}`);
+					await this.createCollection();
+				} else {
+					logger.info(`Collection already exists: ${this.collectionName}`);
+					await this.validateCollectionSchema();
+				}
 
-			if (!exists) {
-				logger.info(`Creating collection: ${this.collectionName}`);
-				await this.createCollection();
-			} else {
-				logger.info(`Collection already exists: ${this.collectionName}`);
-				await this.validateCollectionSchema();
+				// Create payload indexes
+				await this.createPayloadIndexes();
+
+				logger.info('Qdrant service initialized successfully');
+			} catch (error) {
+				logger.error('Failed to initialize Qdrant service:', error);
+				this.initPromise = undefined;
+				throw error;
 			}
-
-			// Create payload indexes
-			await this.createPayloadIndexes();
-
-			this.initialized = true;
-			logger.info('Qdrant service initialized successfully');
-		} catch (error) {
-			logger.error('Failed to initialize Qdrant service:', error);
-			throw error;
-		}
+		})();
+		await this.initPromise;
 	}
 
 	/**
@@ -225,6 +319,7 @@ export class QdrantService {
 		// Named-vector collections have an object keyed by vector name.
 		// A flat {size, distance} object means the collection was created with a
 		// single unnamed vector and is incompatible.
+		// Qdrant "simple" (unnamed) vector config — incompatible with named-vector schema
 		if (!vectors || typeof vectors !== 'object' || 'size' in vectors) {
 			throw new Error(
 				`Collection "${this.collectionName}" uses a single unnamed vector and is incompatible ` +
@@ -233,7 +328,9 @@ export class QdrantService {
 			);
 		}
 
-		const namedVectors = vectors as unknown as Record<string, { size?: number; distance?: string }>;
+		const namedVectors = typeof vectors === 'object' && vectors !== null
+			? (vectors as unknown as Record<string, { size?: number; distance?: string }>)
+			: {};
 
 		const { dense, dense_large: denseLarge } = namedVectors;
 
@@ -273,10 +370,9 @@ export class QdrantService {
 	}
 
 	/**
-   * Create collection with production-optimized configuration
-   * Supports hybrid search via text index + vector search with manual RRF
-   * Supports dual embeddings (small + large) when enabled
-   */
+	 * Creates a Qdrant collection with dual named vectors (dense and dense_large) and the configured distance metric.
+	 * Initializes HNSW indexes, quantization, and optimizer settings for production use.
+	 */
 	private async createCollection(): Promise<void> {
 		await withRetry(() => this.client.createCollection(this.collectionName, {
 			vectors: {
@@ -315,25 +411,27 @@ export class QdrantService {
 	}
 
 	/**
-   * Create payload indexes for all filterable fields
-   */
+	 * Creates payload field indexes for filtering (workspace, memory_type, tags, expires_at, chunk_group_id).
+	 * Includes text index on content field for hybrid full-text search.
+	 */
 	private async createPayloadIndexes(): Promise<void> {
 		const indexes = [
 			// Core indexes (used in most queries)
-			{ field: 'workspace', schema: 'keyword' as const },
-			{ field: 'memory_type', schema: 'keyword' as const },
-			{ field: 'confidence', schema: 'float' as const },
-			{ field: 'created_at', schema: 'datetime' as const },
-			{ field: 'updated_at', schema: 'datetime' as const },
+			{ field: 'workspace', schema: 'keyword' as const, critical: true },
+			{ field: 'memory_type', schema: 'keyword' as const, critical: true },
+			{ field: 'confidence', schema: 'float' as const, critical: true },
+			{ field: 'created_at', schema: 'datetime' as const, critical: false },
+			{ field: 'updated_at', schema: 'datetime' as const, critical: false },
+			{ field: 'expires_at', schema: 'datetime' as const, critical: true },
 
 			// Optional indexes (for analytics)
-			{ field: 'access_count', schema: 'integer' as const },
-			{ field: 'last_accessed_at', schema: 'datetime' as const },
-			{ field: 'tags', schema: 'keyword' as const },
-			{ field: 'chunk_group_id', schema: 'keyword' as const },
+			{ field: 'access_count', schema: 'integer' as const, critical: false },
+			{ field: 'last_accessed_at', schema: 'datetime' as const, critical: false },
+			{ field: 'tags', schema: 'keyword' as const, critical: false },
+			{ field: 'chunk_group_id', schema: 'keyword' as const, critical: true },
 
 			// Text index for full-text search
-			{ field: 'content', schema: 'text' as const },
+			{ field: 'content', schema: 'text' as const, critical: true },
 		];
 
 		logger.info('Creating payload indexes...');
@@ -358,8 +456,13 @@ export class QdrantService {
 				// Ignore if index already exists
 				if (error instanceof Error && error.message.includes('already exists')) {
 					logger.debug(`Index already exists for field: ${index.field}`);
+				} else if (index.critical) {
+					// Critical indexes must succeed; propagate errors for these
+					logger.error(`Failed to create critical index for ${index.field}:`, error);
+					throw error;
 				} else {
-					logger.warn(`Failed to create index for ${index.field}:`, error);
+					// Optional indexes can be skipped; log as warning only
+					logger.warn(`Failed to create optional index for ${index.field}:`, error);
 				}
 			}
 		}
@@ -386,7 +489,6 @@ export class QdrantService {
 	 * );
 	 * ```
 	 */
-
 	public async upsert(
 		content: string,
 		vector: number[],
@@ -411,7 +513,7 @@ export class QdrantService {
 			updated_at: metadata.updated_at ?? now,
 		};
 
-		const vectorData = { dense: vector, dense_large: vectorLarge };
+		const vectorData = { dense: vector, ...(vectorLarge && { dense_large: vectorLarge }) };
 
 		const point: QdrantPoint = {
 			id,
@@ -419,10 +521,14 @@ export class QdrantService {
 			payload,
 		};
 
-		await withRetry(() => this.client.upsert(this.collectionName, {
-			wait: true,
-			points: [point],
-		}));
+		try {
+			await withRetry(() => this.client.upsert(this.collectionName, {
+				wait: true,
+				points: [point],
+			}));
+		} catch (error) {
+			throw new MemoryError('STORAGE_FAILED', `Failed to upsert points to Qdrant: ${extractErrorMessage(error)}`, { cause: error });
+		}
 
 		const embeddingType = vectorLarge ? 'dual' : 'single';
 		logger.debug(`Upserted point with ${embeddingType} embedding: ${id}`);
@@ -446,7 +552,6 @@ export class QdrantService {
 	 * console.log(`${result.successfulIds.length}/${result.totalProcessed} succeeded`);
 	 * ```
 	 */
-
 	public async batchUpsert(
 		points: Array<{
 			content: string;
@@ -483,7 +588,7 @@ export class QdrantService {
 					updated_at: p.metadata?.updated_at ?? now,
 				};
 
-				const vectorData = { dense: p.vector, dense_large: p.vectorLarge };
+				const vectorData = { dense: p.vector, ...(p.vectorLarge && { dense_large: p.vectorLarge }) };
 
 				return {
 					id,
@@ -505,11 +610,12 @@ export class QdrantService {
 				logger.debug(`Upserted batch ${i / UPSERT_BATCH_SIZE + 1}: ${batch.length} points`);
 			} catch (error) {
 				// Entire batch failed - record all as failures
+				const errorMessage = error instanceof Error ? error.message : String(error);
 				qdrantPoints.forEach((point, idx) => {
 					result.failedPoints.push({
 						index: i + idx,
 						id: point.id,
-						error: error instanceof Error ? error.message : String(error),
+						error: errorMessage,
 					});
 				});
 				result.totalProcessed += batch.length;
@@ -550,14 +656,13 @@ export class QdrantService {
 	 * });
 	 * ```
 	 */
-
 	public async search(params: SearchParams): Promise<SearchResult[]> {
 		await this.ensureInitialized();
 
 		const filter = this.buildFilter(params.filter);
 
 		// Use hybrid search with RRF if query text is provided and explicitly enabled
-		if (params.useHybridSearch && params.query) {
+		if (isHybridSearchParams(params)) {
 			return this.hybridSearchWithRRF(params, filter);
 		}
 
@@ -612,7 +717,7 @@ export class QdrantService {
    * "Hybrid" here means vector + full-text fusion via RRF, not dense + sparse vectors.
    */
 	private async hybridSearchWithRRF(
-		params: SearchParams,
+		params: HybridSearchParams,
 		filter?: Record<string, unknown>,
 	): Promise<SearchResult[]> {
 		// Pagination is not supported in hybrid search because it requires
@@ -644,14 +749,13 @@ export class QdrantService {
 		}));
 
 		// Perform text-based search using the text index on content field
-		const queryText = params.query as string;
 		const textFilter = {
-			...filter,
+			...(filter ?? {}),
 			must: [
 				...(Array.isArray(filter?.must) ? filter.must : []),
 				{
 					key: 'content',
-					match: { text: queryText },
+					match: { text: params.query },
 				},
 			],
 		};
@@ -664,18 +768,17 @@ export class QdrantService {
 		}));
 
 		// Apply RRF: score = sum(alpha * 1 / (k + rank) for vector + (1 - alpha) * 1 / (k + rank) for text)
-		// eslint-disable-next-line no-magic-numbers
-		const alpha = params.hybridAlpha ?? 0.5; // Default: equal weighting between dense and text
+		const alpha = params.hybridAlpha ?? DEFAULT_HYBRID_ALPHA; // Default: equal weighting between dense and text
 		const rrfScores = new Map<string, number>();
-		// Qdrant points have arbitrary payload structure; using Record<string, unknown> for type safety
-		const pointsById = new Map<string, Record<string, unknown>>();
+		// Store payloads directly (not whole result objects) for cleaner access
+		const payloadsById = new Map<string, Record<string, unknown> | null | undefined>();
 
 		// Add vector search results (weighted by alpha)
 		vectorResults.forEach((result, index) => {
 			const id = String(result.id);
 			const rank = index + 1;
 			rrfScores.set(id, (rrfScores.get(id) ?? 0) + alpha * (1 / (k + rank)));
-			pointsById.set(id, result);
+			payloadsById.set(id, result.payload as Record<string, unknown>);
 		});
 
 		// Add text search results (weighted by 1 - alpha)
@@ -683,8 +786,8 @@ export class QdrantService {
 			const id = String(result.id);
 			const rank = index + 1;
 			rrfScores.set(id, (rrfScores.get(id) ?? 0) + (1 - alpha) * (1 / (k + rank)));
-			if (!pointsById.has(id)) {
-				pointsById.set(id, result);
+			if (!payloadsById.has(id)) {
+				payloadsById.set(id, result.payload as Record<string, unknown>);
 			}
 		});
 
@@ -694,9 +797,10 @@ export class QdrantService {
 			.sort((a, b) => b[1] - a[1])
 			.slice(0, limit)
 			.flatMap(([id, score]) => {
-				const point = pointsById.get(id);
-				if (!point) return [];
-				const payload = this.toQdrantPayload(point.payload) ?? {
+				const rawPayload = payloadsById.get(id);
+				/* v8 ignore next */
+				if (!rawPayload) return [];
+				const payload = this.toQdrantPayload(rawPayload) ?? {
 					content: '',
 					created_at: new Date().toISOString(),
 					updated_at: new Date().toISOString(),
@@ -802,6 +906,10 @@ export class QdrantService {
 	 * ```
 	 */
 	public async batchDelete(ids: string[]): Promise<void> {
+		if (ids.length === 0) {
+			return;
+		}
+
 		await this.ensureInitialized();
 
 		await withRetry(() => this.client.delete(this.collectionName, {
@@ -887,11 +995,7 @@ export class QdrantService {
 			points_count: info.points_count ?? 0,
 			segments_count: info.segments_count ?? 0,
 			status: info.status,
-			optimizer_status: typeof info.optimizer_status === 'string'
-				? info.optimizer_status
-				: 'error' in info.optimizer_status
-					? 'error'
-					: 'ok',
+			optimizer_status: normalizeOptimizerStatus(info.optimizer_status),
 			config: info.config,
 			access_tracking_failures: this.accessTrackingFailureCount,
 		};
@@ -960,45 +1064,72 @@ export class QdrantService {
 	}
 
 	/**
-   * Build Qdrant filter from SearchFilters
-   */
-	private buildFilter(filter?: SearchFilters): Record<string, unknown> | undefined {
-		if (!filter) return undefined;
-
+	 * Builds a Qdrant filter from application-level {@link SearchFilters}.
+	 *
+	 * The expiry condition (`expires_at` is null OR > now) is **always** appended,
+	 * even when `filter` is `undefined`, so expired memories are excluded from
+	 * every `list`, `count`, and `search` call regardless of whether the caller
+	 * supplies other filter criteria.
+	 *
+	 * @param filter - Optional caller-supplied filter criteria.
+	 * @returns A Qdrant `must` filter object (always includes at minimum the expiry condition).
+	 */
+	private buildFilter(filter?: SearchFilters): Record<string, unknown> {
 		const conditions: Array<Record<string, unknown>> = [];
 
-		// Workspace filter
-		if (filter.workspace !== undefined) {
-			if (filter.workspace === null) {
-				// When workspace is explicitly null, match memories with no workspace
+		if (filter) {
+			// Workspace filter
+			if (filter.workspace !== undefined) {
+				if (filter.workspace === null) {
+					// When workspace is explicitly null, match memories with no workspace
+					conditions.push({
+						is_null: { key: 'workspace' },
+					});
+				} else {
+					conditions.push({
+						key: 'workspace',
+						match: { value: filter.workspace },
+					});
+				}
+			}
+
+			// Memory type filter
+			if (filter.memory_type) {
 				conditions.push({
-					is_null: { key: 'workspace' },
+					key: 'memory_type',
+					match: { value: filter.memory_type },
 				});
-			} else {
+			}
+
+			// Confidence filter (minimum threshold)
+			if (filter.min_confidence !== undefined) {
 				conditions.push({
-					key: 'workspace',
-					match: { value: filter.workspace },
+					key: 'confidence',
+					range: { gte: filter.min_confidence },
 				});
+			}
+
+			// Tags filter (match any)
+			if (filter.tags && filter.tags.length > 0) {
+				conditions.push({
+					key: 'tags',
+					match: { any: filter.tags },
+				});
+			}
+
+			// Custom metadata filters
+			if (filter.metadata) {
+				for (const [key, value] of Object.entries(filter.metadata)) {
+					conditions.push({
+						key,
+						match: { value },
+					});
+				}
 			}
 		}
 
-		// Memory type filter
-		if (filter.memory_type) {
-			conditions.push({
-				key: 'memory_type',
-				match: { value: filter.memory_type },
-			});
-		}
-
-		// Confidence filter (minimum threshold)
-		if (filter.min_confidence !== undefined) {
-			conditions.push({
-				key: 'confidence',
-				range: { gte: filter.min_confidence },
-			});
-		}
-
-		// Always exclude expired memories
+		// Always exclude expired memories — this condition is unconditional so that
+		// callers that pass no filter still see only non-expired memories.
 		const now = new Date().toISOString();
 		conditions.push({
 			should: [
@@ -1007,25 +1138,7 @@ export class QdrantService {
 			],
 		});
 
-		// Tags filter (match any)
-		if (filter.tags && filter.tags.length > 0) {
-			conditions.push({
-				key: 'tags',
-				match: { any: filter.tags },
-			});
-		}
-
-		// Custom metadata filters
-		if (filter.metadata) {
-			for (const [key, value] of Object.entries(filter.metadata)) {
-				conditions.push({
-					key,
-					match: { value },
-				});
-			}
-		}
-
-		return conditions.length > 0 ? { must: conditions } : undefined;
+		return { must: conditions };
 	}
 
 	/**
@@ -1036,8 +1149,9 @@ export class QdrantService {
 	 * may be undercounted, but access_count is an analytic field and eventual
 	 * consistency is acceptable.
 	 *
-	 * @param ids - Array of point IDs to update
-	 * @throws {Error} If setPayload fails during update
+	 * @param ids - Array of point IDs to update.
+	 * @returns Promise<void>
+	 * @throws {Error} If setPayload fails during update.
 	 * @example
 	 * ```typescript
 	 * // Called internally after point retrieval
@@ -1084,13 +1198,22 @@ export class QdrantService {
 			}),
 		);
 	}
+
 	/**
 	 * Convert a Qdrant point payload to the typed QdrantPayload shape.
 	 * Safely narrows from unknown to the expected structure, returning null
 	 * if the payload is missing or invalid.
 	 *
-	 * @param payload - The raw payload from a Qdrant point (may be any type)
-	 * @returns The typed payload, or null if narrowing fails
+	 * @param payload - The raw payload from a Qdrant point (may be any type).
+	 * @returns QdrantPayload | null - The typed payload, or null if narrowing fails.
+	 * @example
+	 * ```typescript
+	 * const payload = point.payload;
+	 * const typed = service.toQdrantPayload(payload);
+	 * if (typed !== null) {
+	 *   console.log(typed.content);
+	 * }
+	 * ```
 	 */
 	private toQdrantPayload(payload: unknown): QdrantPayload | null {
 		if (!isQdrantPayload(payload)) {
@@ -1107,7 +1230,8 @@ export class QdrantService {
 	 * without blocking the caller. Failures are logged at most once per
 	 * {@link ACCESS_TRACKING_WARNING_INTERVAL_MS} to avoid log spam.
 	 *
-	 * @param ids - Array of point IDs to track
+	 * @param ids - Array of point IDs to track.
+	 * @throws Does not throw; errors are caught and logged internally.
 	 */
 	private trackAccess(ids: string[]): void {
 		if (ids.length === 0) return;
@@ -1127,14 +1251,23 @@ export class QdrantService {
 	}
 
 	/**
-	 * Ensure service is initialized
+	 * Ensures the service is initialized before use.
+	 * Delegates to `initialize()` which is idempotent.
 	 */
 	private async ensureInitialized(): Promise<void> {
-		if (!this.initialized) {
-			await this.initialize();
-		}
+		await this.initialize();
 	}
 }
 
-// Export singleton instance
+/**
+ * Singleton Qdrant service instance for the entire application.
+ *
+ * @example
+ * ```typescript
+ * import { qdrantService } from './services/qdrant-client.js';
+ * await qdrantService.initialize();
+ * const searchResults = await qdrantService.search({ vector: embedding, limit: 10 });
+ * await qdrantService.upsert('memory content', embedding, { memory_type: 'long-term' });
+ * ```
+ */
 export const qdrantService = new QdrantService();

@@ -367,7 +367,7 @@ __metadata:
     "@typescript-eslint/parser": "npm:^8.59.0"
     "@vitest/coverage-v8": "npm:^4.1.5"
     "@vitest/ui": "npm:^4.1.5"
-    dotenv: "npm:^16.0.0"
+    dotenv: "npm:^17.4.2"
     eslint: "npm:^10.2.1"
     eslint-import-resolver-typescript: "npm:^4.4.4"
     eslint-plugin-import: "npm:^2.32.0"
@@ -376,7 +376,8 @@ __metadata:
     husky: "npm:^9.1.7"
     openai: "npm:^6.34.0"
     typescript: "npm:~6.0.0"
-    undici: "npm:^6.0.0"
+    undici: "npm:^8.1.0"
+    undici-types: "npm:^8.1.0"
     uuid: "npm:^14.0.0"
     vitest: "npm:^4.1.5"
     zod: "npm:^4.3.6"
@@ -1519,10 +1520,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"dotenv@npm:^16.0.0":
-  version: 16.6.1
-  resolution: "dotenv@npm:16.6.1"
-  checksum: 10c0/15ce56608326ea0d1d9414a5c8ee6dcf0fffc79d2c16422b4ac2268e7e2d76ff5a572d37ffe747c377de12005f14b3cc22361e79fc7f1061cce81f77d2c973dc
+"dotenv@npm:^17.4.2":
+  version: 17.4.2
+  resolution: "dotenv@npm:17.4.2"
+  checksum: 10c0/164f8e77a646c8446867d5b588d26ea6005c8ea7c5eb41cf926f6113d23f2191355f6e0cfd95ea9bab98394a5b0a3f1e51a8399711b666fe55cc7b0bd745f942
   languageName: node
   linkType: hard
 
@@ -4308,6 +4309,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"undici-types@npm:^8.1.0":
+  version: 8.1.0
+  resolution: "undici-types@npm:8.1.0"
+  checksum: 10c0/07d56cffe5153eac8a9ee40db32407bda7b3d8193d7327fc2bde1bb4f3c828f9f63ba6777e8d433bd5c01ebd9407f2bc87441443477f0e1def4f0ddb537c6ccf
+  languageName: node
+  linkType: hard
+
 "undici-types@npm:~6.21.0":
   version: 6.21.0
   resolution: "undici-types@npm:6.21.0"
@@ -4315,17 +4323,17 @@ __metadata:
   languageName: node
   linkType: hard
 
-"undici@npm:^6.0.0":
-  version: 6.25.0
-  resolution: "undici@npm:6.25.0"
-  checksum: 10c0/2597cc6689bdb02c210c557b1f85febbfda65becae6e6fc1061508e2f33734d25207f81cd8af56ada9956329eb3a7bd7431e87dcfeceba20ee87059b57dcf985
-  languageName: node
-  linkType: hard
-
 "undici@npm:^6.23.0":
   version: 6.24.1
   resolution: "undici@npm:6.24.1"
   checksum: 10c0/53fdbaa357139a2c12deed34f67d67fc6ad269630ba85a1507e7717f53ad2d3a02c95fbd17d3ab321e34c60b6f0a716cdc2f7e2eca1e07178702dc89cc3a73c4
+  languageName: node
+  linkType: hard
+
+"undici@npm:^8.1.0":
+  version: 8.1.0
+  resolution: "undici@npm:8.1.0"
+  checksum: 10c0/c55ad57f10efb9b55ab683104dde1c6f620496b9facde640ba26cffdc53a53694c12a8c3f7196069017c5c1b5031ef0843e232d9c04dcc834b3baa046d3ea678
   languageName: node
   linkType: hard
 

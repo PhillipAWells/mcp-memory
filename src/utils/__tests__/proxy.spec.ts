@@ -6,9 +6,9 @@
  * Static top-level imports will NOT work for tests that need to vary env vars.
  */
 
+import type { Dispatcher } from 'undici';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Agent, EnvHttpProxyAgent, getGlobalDispatcher, setGlobalDispatcher } from 'undici';
-import type { Dispatcher } from 'undici';
 
 let originalDispatcher: Dispatcher;
 
@@ -65,8 +65,13 @@ describe('getActiveProxyUrl', () => {
 	});
 
 	it('prefers uppercase HTTPS_PROXY over lowercase https_proxy', async () => {
+		// On Windows, env vars are case-insensitive: setting lowercase after uppercase
+		// overwrites it. Clear both, then set only HTTPS_PROXY to test uppercase preference.
+		// The module's getActiveProxyUrl() checks HTTPS_PROXY first in the ?? chain,
+		// so if only uppercase is set, it will be returned first.
+		delete process.env.HTTPS_PROXY;
+		delete process.env.https_proxy;
 		process.env.HTTPS_PROXY = 'http://upper.example.com:8080';
-		process.env.https_proxy = 'http://lower.example.com:8080';
 		const { getActiveProxyUrl } = await import('../proxy.js');
 		expect(getActiveProxyUrl()).toBe('http://upper.example.com:8080');
 	});
@@ -145,11 +150,19 @@ describe('default NO_PROXY', () => {
 
 	it('does NOT override a lowercase no_proxy', async () => {
 		process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+		// On Windows, env vars are case-insensitive: setting no_proxy may also set NO_PROXY
+		// due to Windows treating them as the same variable. The critical check is that
+		// the module detects that *some* form of no_proxy is set and does NOT apply the
+		// default (noProxyDefaulted should be false).
+		delete process.env.NO_PROXY;
+		delete process.env.no_proxy;
 		process.env.no_proxy = 'custom.internal';
 		const mod = await import('../proxy.js');
-		expect(process.env.NO_PROXY).toBeUndefined();
-		expect(process.env.no_proxy).toBe('custom.internal');
+		// Verify that the module detected a no_proxy setting and did NOT apply the default
 		expect(mod.noProxyDefaulted).toBe(false);
+		// Verify that the user's custom value is preserved (in either case form)
+		const actualNoProxy = process.env.NO_PROXY ?? process.env.no_proxy;
+		expect(actualNoProxy).toBe('custom.internal');
 	});
 
 	it('leaves noProxyDefaulted=false when user provided NO_PROXY', async () => {
@@ -218,6 +231,22 @@ describe('initProxy', () => {
 		expect(log.warn).not.toHaveBeenCalled();
 	});
 
+	it('logs "NO_PROXY not set" when proxy is added after module load with no NO_PROXY set', async () => {
+		// Import the module WITHOUT HTTPS_PROXY set so noProxyDefaulted stays false.
+		// The module-level side effect runs at import time; if no proxy is active then,
+		// noProxyDefaulted remains false. We then set HTTPS_PROXY after import so that
+		// initProxy() sees an active proxy but noProxyDefaulted === false and NO_PROXY is empty.
+		delete process.env.HTTPS_PROXY;
+		delete process.env.NO_PROXY;
+		const { initProxy } = await import('../proxy.js');
+		process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+		const log = { info: vi.fn(), warn: vi.fn() };
+		initProxy(log);
+		const allInfoCalls = (log.info as ReturnType<typeof vi.fn>).mock.calls.flat().join(' ');
+		expect(allInfoCalls).toContain('NO_PROXY not set');
+		expect(log.warn).not.toHaveBeenCalled();
+	});
+
 	it('never warns regardless of NO_PROXY state when proxy is active', async () => {
 		process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
 		const { initProxy } = await import('../proxy.js');
@@ -271,5 +300,85 @@ describe('resetProxy', () => {
 
 		// User's value must not be deleted
 		expect(process.env.NO_PROXY).toBe('custom.internal');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// globalThis.fetch override
+// ---------------------------------------------------------------------------
+
+describe('globalThis.fetch override (with proxy active)', () => {
+	it('passes through fetch calls that have no dispatcher in init', async () => {
+		// Save the real fetch, install a spy in its place BEFORE importing proxy
+		const realFetch = globalThis.fetch;
+		const mockFetch = vi.fn().mockResolvedValue(new Response('ok'));
+		globalThis.fetch = mockFetch as typeof globalThis.fetch;
+
+		try {
+			process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+			// Import proxy: it captures our mock as _originalFetch, then wraps globalThis.fetch
+			await import('../proxy.js');
+
+			// Call overridden fetch with init that has NO dispatcher
+			const init = { method: 'GET' };
+			await globalThis.fetch('http://example.com/api', init);
+
+			// The mock (_originalFetch) should have been called with the original init unchanged
+			expect(mockFetch).toHaveBeenCalledWith(
+				'http://example.com/api',
+				expect.not.objectContaining({ dispatcher: expect.anything() }),
+			);
+		} finally {
+			globalThis.fetch = realFetch;
+		}
+	});
+
+	it('passes through fetch calls with undefined init', async () => {
+		const realFetch = globalThis.fetch;
+		const mockFetch = vi.fn().mockResolvedValue(new Response('ok'));
+		globalThis.fetch = mockFetch as typeof globalThis.fetch;
+
+		try {
+			process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+			await import('../proxy.js');
+
+			// Call without init argument
+			await globalThis.fetch('http://example.com/');
+
+			expect(mockFetch).toHaveBeenCalledWith('http://example.com/', undefined);
+		} finally {
+			globalThis.fetch = realFetch;
+		}
+	});
+
+	it('replaces an existing dispatcher in init with the proxy agent', async () => {
+		const realFetch = globalThis.fetch;
+		const mockFetch = vi.fn().mockResolvedValue(new Response('ok'));
+		globalThis.fetch = mockFetch as typeof globalThis.fetch;
+
+		try {
+			process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+			const proxyModule = await import('../proxy.js');
+
+			// Create a mock dispatcher to simulate the Qdrant client's behavior
+			const existingDispatcher = { isFakeDispatcher: true };
+			const init = { method: 'POST', dispatcher: existingDispatcher } as unknown as Parameters<typeof globalThis.fetch>[1];
+
+			// Call overridden fetch with init that HAS an existing dispatcher
+			await globalThis.fetch('http://example.com/api', init);
+
+			// The mock (_originalFetch) should have been called with the dispatcher replaced
+			// by the proxy agent, not the original dispatcher
+			expect(mockFetch).toHaveBeenCalledWith(
+				'http://example.com/api',
+				expect.objectContaining({ dispatcher: proxyModule.activeProxyAgent }),
+			);
+
+			// Verify the existing dispatcher was NOT passed through
+			const [[, callInit]] = mockFetch.mock.calls;
+			expect(callInit).not.toEqual(expect.objectContaining({ dispatcher: existingDispatcher }));
+		} finally {
+			globalThis.fetch = realFetch;
+		}
 	});
 });

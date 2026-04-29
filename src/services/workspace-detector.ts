@@ -4,19 +4,41 @@
  * Auto-detect workspace from package.json or directory name
  */
 
-import { readFileSync, existsSync } from 'fs';
-import { join, dirname, basename } from 'path';
+import { readFileSync, existsSync } from 'node:fs';
+import { join, dirname, basename } from 'node:path';
+
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 
 /**
  * Workspace detection result
+ *
+ * @example
+ * ```typescript
+ * const result: WorkspaceDetectionResult = {
+ *   workspace: 'mcp-memory',
+ *   source: 'package.json',
+ *   path: '/workspace/mcp-memory/package.json',
+ * };
+ * ```
  */
 export interface WorkspaceDetectionResult {
 	workspace: string | null;
 	source: 'explicit' | 'package.json' | 'directory' | 'default' | 'none';
 	path?: string;
 }
+
+/** Maximum allowed workspace name length. */
+const MAX_WORKSPACE_NAME_LENGTH = 100;
+/** Number of parent directories to search for package.json. */
+const PACKAGE_JSON_SEARCH_LEVELS = 5;
+/**
+ * Names reserved for internal use.  Storing memories under these names could
+ * cause confusion in logs and error messages, so they are rejected at validation time.
+ */
+const RESERVED_WORKSPACE_NAMES = new Set([
+	'system', 'metadata', 'admin', 'internal', 'default', 'null', 'undefined', 'root',
+]);
 
 /**
  * Detects the current workspace name from environmental context.
@@ -31,20 +53,17 @@ export interface WorkspaceDetectionResult {
  *
  * Workspace names must match `[a-zA-Z0-9_-]+` (max 100 characters).
  * Scoped npm package names like `@scope/name` are normalised to `name`.
+ *
+ * @example
+ * ```typescript
+ * const service = new WorkspaceDetectorService();
+ * const result = service.detect();
+ * console.log(result.workspace); // 'mcp-memory' or null
+ * console.log(result.source);    // 'package.json' or 'directory'
+ * ```
  */
-/** Maximum allowed workspace name length. */
-const MAX_WORKSPACE_NAME_LENGTH = 100;
-/** Number of parent directories to search for package.json. */
-const PACKAGE_JSON_SEARCH_LEVELS = 5;
-/**
- * Names reserved for internal use.  Storing memories under these names could
- * cause confusion in logs and error messages, so they are rejected at validation time.
- */
-const RESERVED_WORKSPACE_NAMES = new Set([
-	'system', 'metadata', 'admin', 'internal', 'default', 'null', 'undefined', 'root',
-]);
-
 export class WorkspaceDetectorService {
+	// Mutable: cache entries updated on workspace detection
 	private cachedWorkspace: string | null = null;
 	private cachedSource: WorkspaceDetectionResult['source'] = 'none';
 	private cacheTimestamp: number = 0;
@@ -66,6 +85,14 @@ export class WorkspaceDetectorService {
    * @param currentDir - Directory to start the `package.json` search from
    *   (defaults to `process.cwd()`).
    * @returns The detected workspace name and the source that produced it.
+   * @example
+   * ```typescript
+   * const detector = new WorkspaceDetectorService();
+   * const result = detector.detect();
+   * // result.workspace may be 'my-project' (from package.json) or null
+   * const explicit = detector.detect('my-workspace');
+   * // explicit.workspace === 'my-workspace', explicit.source === 'explicit'
+   * ```
    */
 	public detect(
 		explicitWorkspace?: string | null,
@@ -83,7 +110,7 @@ export class WorkspaceDetectorService {
 				return { workspace: explicitWorkspace, source: 'explicit' };
 			}
 			// Invalid explicit workspace: fall through to auto-detection
-			logger.debug(`Invalid explicit workspace "${explicitWorkspace}", falling through to auto-detection`);
+			logger.warn('Workspace validation failed, falling through to auto-detection');
 		}
 
 		// 2. Check cache (only valid when autoDetect is still enabled)
@@ -142,12 +169,46 @@ export class WorkspaceDetectorService {
 	}
 
 	/**
+	 * Type guard for package.json with name string.
+	 *
+	 * @param value - The value to check
+	 * @returns True if value is an object with name property that's a string
+	 * @example
+	 * ```typescript
+	 * const data = JSON.parse(content);
+	 * if (isPackageJsonWithName(data)) {
+	 *   console.log(data.name); // TypeScript knows this is string
+	 * }
+	 * ```
+	 */
+	private isPackageJsonWithName(value: unknown): value is { name: string } {
+		return (
+			typeof value === 'object' &&
+			value !== null &&
+			'name' in value &&
+			typeof (value as Record<string, unknown>).name === 'string'
+		);
+	}
+
+	/**
    * Walk up the directory tree looking for a `package.json` with a `name` field.
+   *
+   * Traverses up to `maxLevels` parent directories. Returns immediately on
+   * first successful read with a valid package name. Stops if `package.json`
+   * cannot be parsed or if the `name` field is empty.
    *
    * @param startDir - Directory to begin the search.
    * @param maxLevels - Maximum number of parent directories to traverse (default 5).
-   * @returns A detection result derived from the package name, or `null` if
+   * @returns WorkspaceDetectionResult | null - A detection result derived from the package name, or `null` if
    *   no suitable `package.json` was found within the traversal limit.
+   * @throws Does not throw; parse errors are logged and traversal continues.
+   * @example
+   * ```typescript
+   * const result = detector.findPackageJson(process.cwd(), 5);
+   * if (result) {
+   *   console.log(result.workspace); // Workspace name from package.json
+   * }
+   * ```
    */
 	private findPackageJson(
 		startDir: string,
@@ -160,11 +221,11 @@ export class WorkspaceDetectorService {
 
 			if (existsSync(packageJsonPath)) {
 				try {
-					const packageJson = JSON.parse(
+					const packageJson: unknown = JSON.parse(
 						readFileSync(packageJsonPath, 'utf-8'),
 					);
 
-					if (packageJson.name && typeof packageJson.name === 'string') {
+					if (this.isPackageJsonWithName(packageJson)) {
 						// Extract workspace name from package name
 						// Handle scoped packages: @scope/name -> scope-name or just name
 						let workspaceName = packageJson.name;
@@ -215,13 +276,21 @@ export class WorkspaceDetectorService {
    * not a reserved internal name.
    *
    * @param name - Candidate workspace name.
+   * @returns `true` if the name is a valid workspace slug, `false` otherwise.
+   * @example
+   * ```typescript
+   * detector.isValidWorkspace('my-project');   // true
+   * detector.isValidWorkspace('system');        // false (reserved)
+   * detector.isValidWorkspace('@scope/name');   // false (invalid characters)
+   * detector.isValidWorkspace('');              // false (empty)
+   * ```
    */
 	public isValidWorkspace(name: string): boolean {
-		if (!name || typeof name !== 'string') {
+		if (!name) {
 			return false;
 		}
 
-		if (name.length === 0 || name.length > MAX_WORKSPACE_NAME_LENGTH) {
+		if (name.length > MAX_WORKSPACE_NAME_LENGTH) {
 			return false;
 		}
 
@@ -244,7 +313,13 @@ export class WorkspaceDetectorService {
    * with hyphens, and collapses repeated hyphens.
    *
    * @param name - Raw name string to clean.
-   * @returns The cleaned name (may still fail {@link isValidWorkspace} if empty after cleaning).
+   * @returns string - The cleaned name (may still fail {@link isValidWorkspace} if empty after cleaning).
+   * @example
+   * ```typescript
+   * const clean1 = cleanWorkspaceName('@scope/my-app');    // 'my-app'
+   * const clean2 = cleanWorkspaceName('mcp-memory');       // 'memory'
+   * const clean3 = cleanWorkspaceName('My_App@123');       // 'My_App-123'
+   * ```
    */
 	private cleanWorkspaceName(name: string): string {
 		return name
@@ -258,7 +333,12 @@ export class WorkspaceDetectorService {
    * Store `workspace` in the in-memory cache and reset the TTL timer.
    *
    * @param workspace - Resolved workspace name, or `null` when none was found.
-   * @param source    - The detection source to report on cache hits.
+   * @param source - The detection source to report on cache hits (default `'package.json'`).
+   * @example
+   * ```typescript
+   * detector.updateCache('my-project', 'package.json');
+   * // Cache now stores 'my-project' and will be valid for WORKSPACE_CACHE_TTL ms
+   * ```
    */
 	private updateCache(workspace: string | null, source: WorkspaceDetectionResult['source'] = 'package.json'): void {
 		this.cachedWorkspace = workspace;
@@ -270,6 +350,13 @@ export class WorkspaceDetectorService {
 	/**
    * Invalidate the in-memory workspace cache.
    * The next call to {@link detect} will perform a fresh auto-detection.
+   *
+   * @example
+   * ```typescript
+   * detector.clearCache();
+   * // Next call to detect() will re-read package.json / directory
+   * const fresh = detector.detect();
+   * ```
    */
 	public clearCache(): void {
 		this.cachedWorkspace = null;
@@ -287,14 +374,16 @@ export class WorkspaceDetectorService {
 	 *
 	 * @returns Object with `workspace` (cached value or null) and `cached` (true if cache was valid).
 	 * @example
+	 * ```typescript
 	 * const result = detector.getCached();
 	 * if (result.cached) {
 	 *   console.log('Using cached workspace:', result.workspace);
 	 * } else if (result.workspace === null) {
-	 *   console.log('Never detected');
+	 *   console.log('Cache never populated');
 	 * } else {
-	 *   console.log('Cache expired');
+	 *   console.log('Cache expired, last value was:', result.workspace);
 	 * }
+	 * ```
 	 */
 	public getCached(): { workspace: string | null, cached: boolean } {
 		if (!this.cachePopulated) {
@@ -312,6 +401,11 @@ export class WorkspaceDetectorService {
    *
    * @param workspace - Workspace name, or `null`.
    * @returns Lowercase trimmed name, or `null` if the input was `null`.
+   * @example
+   * ```typescript
+   * detector.normalize('MyProject');  // 'myproject'
+   * detector.normalize(null);         // null
+   * ```
    */
 	public normalize(workspace: string | null): string | null {
 		if (workspace === null) {
@@ -324,7 +418,15 @@ export class WorkspaceDetectorService {
 	/**
    * Compare two workspace names for equality, ignoring case.
    *
+   * @param a - First workspace name or `null`.
+   * @param b - Second workspace name or `null`.
    * @returns `true` when both names normalise to the same string.
+   * @example
+   * ```typescript
+   * detector.equals('MyProject', 'myproject'); // true
+   * detector.equals('ProjectA', 'ProjectB');   // false
+   * detector.equals(null, null);               // true
+   * ```
    */
 	public equals(a: string | null, b: string | null): boolean {
 		return this.normalize(a) === this.normalize(b);
@@ -335,7 +437,16 @@ export class WorkspaceDetectorService {
    * Useful for debugging workspace resolution in complex monorepos.
    *
    * @param currentDir - Directory to run detection from (defaults to `process.cwd()`).
+   * @returns Snapshot object with `detected` (current workspace result), `config` (auto-detect
+   *   settings), and `cache` (current cache age and validity).
    * @remarks This method calls `detect()` internally, which may update the workspace cache on first call.
+   * @example
+   * ```typescript
+   * const info = detector.getInfo();
+   * console.log('Workspace:', info.detected.workspace);
+   * console.log('Cache age (ms):', info.cache.age);
+   * console.log('Cache valid:', info.cache.valid);
+   * ```
    */
 	public getInfo(currentDir: string = process.cwd()): {
 		detected: WorkspaceDetectionResult;
@@ -367,5 +478,15 @@ export class WorkspaceDetectorService {
 	}
 }
 
-/** Singleton {@link WorkspaceDetectorService} instance used throughout the application. */
+/**
+ * Singleton {@link WorkspaceDetectorService} instance used throughout the application.
+ *
+ * @example
+ * ```typescript
+ * import { workspaceDetector } from './services/workspace-detector.js';
+ * const result = workspaceDetector.detect();
+ * console.log(result.workspace); // 'mcp-memory' or null
+ * console.log(result.source);    // 'package.json', 'directory', etc.
+ * ```
+ */
 export const workspaceDetector = new WorkspaceDetectorService();

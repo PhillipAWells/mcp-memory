@@ -2,10 +2,11 @@
  * Tests for WorkspaceDetectorService
  */
 
-import { mkdtempSync, writeFileSync, rmSync } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { config } from '../../config.js';
 import { WorkspaceDetectorService } from '../workspace-detector.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -20,7 +21,7 @@ describe('WorkspaceDetectorService.isValidWorkspace', () => {
 	let detector: WorkspaceDetectorService;
 
 	beforeEach(() => {
-		detector = makeDetector(); 
+		detector = makeDetector();
 	});
 
 	it('accepts a simple alphanumeric name', () => {
@@ -87,7 +88,7 @@ describe('WorkspaceDetectorService.normalize', () => {
 	let detector: WorkspaceDetectorService;
 
 	beforeEach(() => {
-		detector = makeDetector(); 
+		detector = makeDetector();
 	});
 
 	it('returns null for null input', () => {
@@ -110,7 +111,7 @@ describe('WorkspaceDetectorService.equals', () => {
 	let detector: WorkspaceDetectorService;
 
 	beforeEach(() => {
-		detector = makeDetector(); 
+		detector = makeDetector();
 	});
 
 	it('returns true for identical names', () => {
@@ -144,7 +145,7 @@ describe('WorkspaceDetectorService cache', () => {
 	let detector: WorkspaceDetectorService;
 
 	beforeEach(() => {
-		detector = makeDetector(); 
+		detector = makeDetector();
 	});
 
 	it('clearCache makes getCached return uncached result', () => {
@@ -181,7 +182,7 @@ describe('WorkspaceDetectorService.detect — explicit workspace', () => {
 	let detector: WorkspaceDetectorService;
 
 	beforeEach(() => {
-		detector = makeDetector(); 
+		detector = makeDetector();
 	});
 
 	it('returns explicit workspace with source explicit', () => {
@@ -210,7 +211,7 @@ describe('WorkspaceDetectorService.detect — package.json', () => {
 	let detector: WorkspaceDetectorService;
 
 	beforeEach(() => {
-		detector = makeDetector(); 
+		detector = makeDetector();
 	});
 
 	it('detects workspace from the repository package.json', () => {
@@ -246,7 +247,7 @@ describe('WorkspaceDetectorService.detect — scoped package names', () => {
 	let detector: WorkspaceDetectorService;
 
 	beforeEach(() => {
-		detector = makeDetector(); 
+		detector = makeDetector();
 	});
 
 	it('strips @scope/ prefix from scoped package name and mcp- prefix', () => {
@@ -296,5 +297,241 @@ describe('WorkspaceDetectorService.detect — malformed package.json recovery', 
 		} finally {
 			rmSync(tmpDir2, { recursive: true, force: true });
 		}
+	});
+});
+
+// ── detect — unscoped and invalid package names ───────────────────────────────
+
+describe('WorkspaceDetectorService.detect — unscoped package names', () => {
+	it('detects workspace from package.json with unscoped name', () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'mcp-test-unscoped-'));
+		writeFileSync(join(tmpDir, 'package.json'), JSON.stringify({ name: 'my-app' }));
+		try {
+			const detector = new WorkspaceDetectorService();
+			const result = detector.detect(undefined, tmpDir);
+			expect(result.workspace).toBe('my-app');
+			expect(result.source).toBe('package.json');
+		} finally {
+			rmSync(tmpDir, { recursive: true, force: true });
+		}
+	});
+
+	it('falls through to directory name when package.json name is reserved', () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'my-valid-app-'));
+		// 'system' is a reserved workspace name and will be rejected
+		writeFileSync(join(tmpDir, 'package.json'), JSON.stringify({ name: 'system' }));
+		try {
+			const detector = new WorkspaceDetectorService();
+			const result = detector.detect(undefined, tmpDir);
+			// Falls through to directory name since 'system' is invalid
+			expect(result.source).toBe('directory');
+			expect(result.workspace).not.toBe('system');
+		} finally {
+			rmSync(tmpDir, { recursive: true, force: true });
+		}
+	});
+});
+
+// ── getInfo without arguments ─────────────────────────────────────────────────
+
+describe('WorkspaceDetectorService.getInfo default argument', () => {
+	it('uses process.cwd() as default directory when called without arguments', () => {
+		const detector = new WorkspaceDetectorService();
+		// Call without args — exercises the default parameter branch
+		const info = detector.getInfo();
+		// Should return an object with detected, config, and cache properties
+		expect(info).toHaveProperty('detected');
+		expect(info.detected).toHaveProperty('workspace');
+		expect(info.detected).toHaveProperty('source');
+	});
+});
+
+// ── cache TTL expiry ──────────────────────────────────────────────────────────
+
+describe('WorkspaceDetectorService cache TTL expiry', () => {
+	let detector: WorkspaceDetectorService;
+
+	beforeEach(() => {
+		detector = makeDetector();
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it('returns cached result when TTL has not expired', () => {
+		// Prime cache with explicit workspace
+		detector.detect('test-ws');
+		expect(detector.getCached().cached).toBe(true);
+
+		// Advance time by 1 second (less than TTL)
+		vi.advanceTimersByTime(1000);
+		const result = detector.getCached();
+		expect(result.cached).toBe(true);
+		expect(result.workspace).toBe('test-ws');
+	});
+
+	it('returns uncached when TTL has expired', () => {
+		// Prime cache
+		detector.detect('test-ws');
+		expect(detector.getCached().cached).toBe(true);
+
+		// Advance time beyond TTL (default 60000ms)
+		vi.advanceTimersByTime(65000);
+		const result = detector.getCached();
+		expect(result.cached).toBe(false);
+		// Workspace value is still there, but marked as uncached
+		expect(result.workspace).toBe('test-ws');
+	});
+
+	it('detect() bypasses expired cache and re-detects', () => {
+		// Prime cache with explicit workspace
+		detector.detect('test-ws-1');
+		expect(detector.getCached().workspace).toBe('test-ws-1');
+
+		// Advance time beyond TTL
+		vi.advanceTimersByTime(65000);
+
+		// Call detect with explicit workspace; should update cache
+		const result = detector.detect('test-ws-2');
+		expect(result.workspace).toBe('test-ws-2');
+		expect(result.source).toBe('explicit');
+
+		// Cache should now have the new workspace
+		expect(detector.getCached().workspace).toBe('test-ws-2');
+		expect(detector.getCached().cached).toBe(true);
+	});
+
+	it('getInfo() reports cache age correctly', () => {
+		detector.detect('test-ws');
+		const info = detector.getInfo();
+		expect(info.cache.valid).toBe(true);
+		expect(info.cache.age).toBeLessThan(1000); // Just created
+
+		// Advance time
+		vi.advanceTimersByTime(30000);
+		// Don't call detect() here - directly access cache state
+		// by using getCached() to check age without triggering re-detection
+		const cached = detector.getCached();
+		expect(cached.cached).toBe(true); // Still valid (30s < 60s TTL)
+	});
+});
+
+// ── getCached edge cases ──────────────────────────────────────────────────────
+
+describe('WorkspaceDetectorService.getCached edge cases', () => {
+	let detector: WorkspaceDetectorService;
+
+	beforeEach(() => {
+		detector = makeDetector();
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it('returns uncached=false and workspace=null before any detection', () => {
+		const result = detector.getCached();
+		expect(result.cached).toBe(false);
+		expect(result.workspace).toBeNull();
+	});
+
+	it('distinguishes between never-detected (cachePopulated=false) and expired cache', () => {
+		// Before any detection: cachePopulated is false
+		let result = detector.getCached();
+		expect(result.cached).toBe(false);
+		expect(result.workspace).toBeNull();
+
+		// After detection: cachePopulated is true
+		detector.detect('test-ws');
+		result = detector.getCached();
+		expect(result.cached).toBe(true);
+		expect(result.workspace).toBe('test-ws');
+
+		// After TTL expiry: cachePopulated is still true, but cached is false
+		vi.advanceTimersByTime(65000);
+		result = detector.getCached();
+		expect(result.cached).toBe(false);
+		expect(result.workspace).toBe('test-ws'); // Workspace is still in cache
+	});
+
+	it('cache respects exactly at TTL boundary', () => {
+		detector.detect('test-ws');
+		// Advance exactly to TTL (60000ms)
+		vi.advanceTimersByTime(60000);
+		const result = detector.getCached();
+		// At exactly TTL, cache IS expired (using >= comparison)
+		expect(result.cached).toBe(false); // >=  boundary means expired
+	});
+});
+
+// ── cache invalidation and re-population ──────────────────────────────────────
+
+describe('WorkspaceDetectorService cache invalidation', () => {
+	let detector: WorkspaceDetectorService;
+
+	beforeEach(() => {
+		detector = makeDetector();
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it('clearCache() marks cache as unpopulated', () => {
+		detector.detect('test-ws');
+		expect(detector.getCached().cached).toBe(true);
+
+		detector.clearCache();
+		const result = detector.getCached();
+		expect(result.cached).toBe(false);
+		expect(result.workspace).toBeNull();
+	});
+
+	it('detect() with explicit workspace repopulates cache after clearing', () => {
+		detector.detect('test-ws-1');
+		detector.clearCache();
+
+		detector.detect('test-ws-2');
+		const result = detector.getCached();
+		expect(result.cached).toBe(true);
+		expect(result.workspace).toBe('test-ws-2');
+	});
+});
+
+// ── autoDetect disabled ───────────────────────────────────────────────────────
+
+describe('WorkspaceDetectorService.detect — autoDetect disabled', () => {
+	let detector: WorkspaceDetectorService;
+	let originalAutoDetect: boolean;
+	let originalDefault: string | null;
+
+	beforeEach(() => {
+		originalAutoDetect = config.workspace.autoDetect;
+		originalDefault = config.workspace.default;
+		Object.assign(config.workspace, { autoDetect: false });
+		config.workspace.default = null;
+		detector = makeDetector();
+	});
+
+	afterEach(() => {
+		Object.assign(config.workspace, { autoDetect: originalAutoDetect });
+		config.workspace.default = originalDefault;
+	});
+
+	it('returns null workspace when autoDetect is false and no default is configured', () => {
+		const result = detector.detect(undefined, process.cwd());
+		expect(result.workspace).toBeNull();
+		expect(result.source).toBe('default');
+	});
+
+	it('returns configured default when autoDetect is false and default is set', () => {
+		Object.assign(config.workspace, { default: 'my-default' });
+		const result = detector.detect(undefined, process.cwd());
+		expect(result.workspace).toBe('my-default');
+		expect(result.source).toBe('default');
 	});
 });

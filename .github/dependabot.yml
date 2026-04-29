@@ -27,6 +27,19 @@ updates:
         patterns:
           - "@modelcontextprotocol/*"
         update-types: ["patch"]
+      runtime-dependencies:
+        dependency-type: production
+        patterns:
+          - "openai"
+          - "@qdrant/js-client-rest"
+          - "uuid"
+          - "undici"
+          - "zod"
+          - "dotenv"
+          - "@pawells/logger"
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: github-actions
     directory: /
