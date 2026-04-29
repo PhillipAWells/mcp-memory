@@ -71,19 +71,36 @@ async function main(): Promise<void> {
 	// Initialize rules (copy to Claude directory if enabled)
 	rulesManager.initialize();
 
+	/**
+	 * Type guard for package.json with version string.
+	 *
+	 * @param value - The value to check
+	 * @returns True if value is an object with version property that's a string
+	 * @example
+	 * ```typescript
+	 * const data = JSON.parse(content);
+	 * if (isPackageJsonWithVersion(data)) {
+	 *   console.log(data.version); // TypeScript knows this is string
+	 * }
+	 * ```
+	 */
+	function isPackageJsonWithVersion(value: unknown): value is { version: string } {
+		return (
+			typeof value === 'object' &&
+			value !== null &&
+			'version' in value &&
+			typeof (value as Record<string, unknown>).version === 'string'
+		);
+	}
+
 	// Read server version from package.json
 	let serverVersion = 'unknown';
 	try {
 		const parsed: unknown = JSON.parse(
 			readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../package.json'), 'utf-8'),
 		);
-		if (
-			typeof parsed === 'object' &&
-			parsed !== null &&
-			'version' in parsed &&
-			typeof (parsed as { version?: unknown }).version === 'string'
-		) {
-			serverVersion = (parsed as { version: string }).version;
+		if (isPackageJsonWithVersion(parsed)) {
+			serverVersion = parsed.version;
 		}
 	} catch (cause) {
 		logger.warn(

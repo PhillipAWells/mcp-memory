@@ -168,6 +168,28 @@ export class WorkspaceDetectorService {
 	}
 
 	/**
+	 * Type guard for package.json with name string.
+	 *
+	 * @param value - The value to check
+	 * @returns True if value is an object with name property that's a string
+	 * @example
+	 * ```typescript
+	 * const data = JSON.parse(content);
+	 * if (isPackageJsonWithName(data)) {
+	 *   console.log(data.name); // TypeScript knows this is string
+	 * }
+	 * ```
+	 */
+	private isPackageJsonWithName(value: unknown): value is { name: string } {
+		return (
+			typeof value === 'object' &&
+			value !== null &&
+			'name' in value &&
+			typeof (value as Record<string, unknown>).name === 'string'
+		);
+	}
+
+	/**
    * Walk up the directory tree looking for a `package.json` with a `name` field.
    *
    * Traverses up to `maxLevels` parent directories. Returns immediately on
@@ -202,15 +224,10 @@ export class WorkspaceDetectorService {
 						readFileSync(packageJsonPath, 'utf-8'),
 					);
 
-					if (
-						typeof packageJson === 'object' &&
-						packageJson !== null &&
-						'name' in packageJson &&
-						typeof (packageJson as { name?: unknown }).name === 'string'
-					) {
+					if (this.isPackageJsonWithName(packageJson)) {
 						// Extract workspace name from package name
 						// Handle scoped packages: @scope/name -> scope-name or just name
-						let workspaceName = (packageJson as { name: string }).name;
+						let workspaceName = packageJson.name;
 
 						if (workspaceName.startsWith('@')) {
 							// @scope/name -> name (simple approach)
