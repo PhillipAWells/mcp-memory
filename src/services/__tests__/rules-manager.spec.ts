@@ -35,16 +35,18 @@ vi.mock('node:fs', async () => {
 			}
 			return actual.copyFileSync(source, dest, mode);
 		},
-		readdirSync: ((dirPath: string, options?: any) => {
+		readdirSync: ((dirPath: string, options?: unknown) => {
 			if (mockFsMode === 'readdirSync-error') {
 				throw new Error('EACCES: permission denied');
 			}
+			// @ts-expect-error - unknown is cast to match actual function signature
 			return actual.readdirSync(dirPath, options);
 		}) as typeof actual.readdirSync,
-		mkdirSync: ((dirPath: string, options?: any) => {
+		mkdirSync: ((dirPath: string, options?: unknown) => {
 			if (mockFsMode === 'mkdirSync-error') {
 				throw new Error('EACCES: permission denied');
 			}
+			// @ts-expect-error - unknown is cast to match actual function signature
 			return actual.mkdirSync(dirPath, options);
 		}) as typeof actual.mkdirSync,
 	};
@@ -59,10 +61,10 @@ import { config } from '../../config.js';
 function makeServiceWithDirs(sourceDir: string, targetDir: string): RulesManagerService {
 	const service = new RulesManagerService();
 	// Override the private dirs via type cast to test with our temp dirs
-
-	(service as any).sourceDir = sourceDir;
-
-	(service as any).targetDir = targetDir;
+	// @ts-expect-error - intentionally accessing private properties for testing
+	(service as Record<string, unknown>).sourceDir = sourceDir;
+	// @ts-expect-error - intentionally accessing private properties for testing
+	(service as Record<string, unknown>).targetDir = targetDir;
 	return service;
 }
 

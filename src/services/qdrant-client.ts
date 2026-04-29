@@ -329,7 +329,7 @@ export class QdrantService {
 		}
 
 		const namedVectors = typeof vectors === 'object' && vectors !== null
-			? (vectors as Record<string, { size?: number; distance?: string }>)
+			? (vectors as unknown as Record<string, { size?: number; distance?: string }>)
 			: {};
 
 		const { dense, dense_large: denseLarge } = namedVectors;
