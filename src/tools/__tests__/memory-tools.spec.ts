@@ -299,7 +299,7 @@ describe('memory-list', () => {
 		}));
 		mockQdrant.count.mockResolvedValueOnce(20);
 		mockQdrant.list.mockResolvedValueOnce(memories);
-		
+
 		const result = await getTool('memory-list').handler(MemoryListInputSchema.parse({ limit: 5, offset: 10 }));
 		expect(mockQdrant.count).toHaveBeenCalledWith(undefined);
 		// For created_at sorting, fetches all records (up to 10000) with offset 0, then slices

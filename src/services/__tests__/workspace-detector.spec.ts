@@ -21,7 +21,7 @@ describe('WorkspaceDetectorService.isValidWorkspace', () => {
 	let detector: WorkspaceDetectorService;
 
 	beforeEach(() => {
-		detector = makeDetector(); 
+		detector = makeDetector();
 	});
 
 	it('accepts a simple alphanumeric name', () => {
@@ -88,7 +88,7 @@ describe('WorkspaceDetectorService.normalize', () => {
 	let detector: WorkspaceDetectorService;
 
 	beforeEach(() => {
-		detector = makeDetector(); 
+		detector = makeDetector();
 	});
 
 	it('returns null for null input', () => {
@@ -111,7 +111,7 @@ describe('WorkspaceDetectorService.equals', () => {
 	let detector: WorkspaceDetectorService;
 
 	beforeEach(() => {
-		detector = makeDetector(); 
+		detector = makeDetector();
 	});
 
 	it('returns true for identical names', () => {
@@ -145,7 +145,7 @@ describe('WorkspaceDetectorService cache', () => {
 	let detector: WorkspaceDetectorService;
 
 	beforeEach(() => {
-		detector = makeDetector(); 
+		detector = makeDetector();
 	});
 
 	it('clearCache makes getCached return uncached result', () => {
@@ -182,7 +182,7 @@ describe('WorkspaceDetectorService.detect — explicit workspace', () => {
 	let detector: WorkspaceDetectorService;
 
 	beforeEach(() => {
-		detector = makeDetector(); 
+		detector = makeDetector();
 	});
 
 	it('returns explicit workspace with source explicit', () => {
@@ -211,7 +211,7 @@ describe('WorkspaceDetectorService.detect — package.json', () => {
 	let detector: WorkspaceDetectorService;
 
 	beforeEach(() => {
-		detector = makeDetector(); 
+		detector = makeDetector();
 	});
 
 	it('detects workspace from the repository package.json', () => {
@@ -247,7 +247,7 @@ describe('WorkspaceDetectorService.detect — scoped package names', () => {
 	let detector: WorkspaceDetectorService;
 
 	beforeEach(() => {
-		detector = makeDetector(); 
+		detector = makeDetector();
 	});
 
 	it('strips @scope/ prefix from scoped package name and mcp- prefix', () => {
