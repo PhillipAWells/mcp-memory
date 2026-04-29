@@ -41,6 +41,7 @@ const HNSW_EF_MIN = 64;
 const HNSW_EF_MAX = 512;
 const DEFAULT_RESULT_LIMIT = 10;
 const BATCH_DELETE_MAX = 100;
+const METADATA_PASSTHROUGH_MAX_SIZE = 5000;
 /** Default balance between vector similarity and keyword search in hybrid mode (0 = keyword-only, 1 = vector-only). */
 const DEFAULT_HYBRID_ALPHA = 0.5;
 
@@ -61,6 +62,9 @@ const MemoryTypeSchema = z.enum([
  *
  * `.passthrough()` allows callers to include arbitrary custom fields beyond
  * the defined properties, which are forwarded verbatim to Qdrant.
+ *
+ * Validates that total passthrough metadata (custom fields beyond the known
+ * fields) does not exceed 5KB to prevent bypassing content size limits.
  */
 const MetadataInputSchema = z
 	.object({
@@ -75,7 +79,26 @@ const MetadataInputSchema = z
 		/** Up to 20 searchable tags; each tag is 1–50 characters. */
 		tags: z.array(z.string().min(1).max(TAG_MAX_LENGTH)).max(TAGS_MAX_COUNT).optional(),
 	})
-	.passthrough(); // Allow additional custom fields
+	.passthrough() // Allow additional custom fields
+	.refine(
+		(metadata) => {
+			// Create a shallow copy and remove known fields to isolate passthrough metadata
+			const passthrough = { ...metadata };
+			delete passthrough.memory_type;
+			delete passthrough.workspace;
+			delete passthrough.tags;
+			delete passthrough.confidence;
+			delete passthrough.expires_at;
+
+			// Calculate total size of passthrough metadata
+			const size = JSON.stringify(passthrough).length;
+			return size <= METADATA_PASSTHROUGH_MAX_SIZE;
+		},
+		{
+			message: 'Total metadata size exceeds 5KB limit',
+			path: ['metadata'],
+		},
+	);
 
 /**
  * Input schema for the `memory-store` tool.

@@ -385,6 +385,9 @@ export function detectSecrets(content: string): SecretDetection {
 				continue;
 			}
 
+			// Note: context field includes surrounding content (max 10 chars each side) for debugging.
+			// The secret itself is redacted, only adjacent context is leaked. This is acceptable because
+			// the error is only returned when storage is blocked, and context helps developers debug issues.
 			// Extract context (SECRET_CONTEXT_CHARS chars before and after, redacted)
 			const start = Math.max(0, match.index - SECRET_CONTEXT_CHARS);
 			const end = Math.min(content.length, match.index + match[0].length + SECRET_CONTEXT_CHARS);
