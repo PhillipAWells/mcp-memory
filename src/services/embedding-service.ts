@@ -8,6 +8,7 @@
 import { createHash } from 'node:crypto';
 
 import OpenAI from 'openai';
+
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { withRetry } from '../utils/retry.js';

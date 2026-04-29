@@ -7,6 +7,7 @@
  */
 
 import { Logger, LogLevel, StderrTransport } from '@pawells/logger';
+
 import { config } from '../config.js';
 
 /**
