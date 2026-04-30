@@ -302,4 +302,3 @@ describe('resetProxy', () => {
 		expect(process.env.NO_PROXY).toBe('custom.internal');
 	});
 });
-
