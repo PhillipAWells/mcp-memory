@@ -11,6 +11,7 @@ import OpenAI from 'openai';
 
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
+import { getProxyAwareFetch } from '../utils/proxy.js';
 import { withRetry } from '../utils/retry.js';
 import type { EmbeddingStats } from '../types/index.js';
 
@@ -90,7 +91,10 @@ export class EmbeddingService {
 		this.SMALL_DIMENSIONS = config.embedding.smallDimensions;
 		this.LARGE_DIMENSIONS = config.embedding.largeDimensions;
 		this.cache = new Map();
-		this.client = new OpenAI({ apiKey: config.openai.apiKey });
+		this.client = new OpenAI({
+			apiKey: config.openai.apiKey,
+			fetch: getProxyAwareFetch(),
+		});
 		logger.info(`Embedding service initialized (model: ${SMALL_MODEL})`);
 		logger.debug(`Max cache size: ${this.maxCacheSize}`);
 	}

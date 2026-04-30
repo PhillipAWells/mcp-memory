@@ -12,6 +12,7 @@ import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { withRetry } from '../utils/retry.js';
 import { MemoryError, extractErrorMessage } from '../utils/errors.js';
+import { activeProxyAgent } from '../utils/proxy.js';
 import type {
 	QdrantPayload,
 	SearchFilters,
@@ -248,11 +249,15 @@ export class QdrantService {
 		const port = explicitPort ?? httpsDefaultPort;
 
 		// Initialize Qdrant client
+		// Note: QdrantClientParams type doesn't expose 'dispatcher' in public API,
+		// but the SDK accepts it internally via the Fetcher configuration.
+		// This ensures Qdrant respects the global proxy configuration.
 		this.client = new QdrantClient({
 			url: config.qdrant.url,
 			...(port !== undefined && { port }),
 			apiKey: config.qdrant.apiKey,
 			timeout: config.qdrant.timeout,
+			...(activeProxyAgent !== null && { dispatcher: activeProxyAgent as unknown as undefined }),
 		});
 
 		logger.info(`Qdrant client initialized: ${config.qdrant.url}`);

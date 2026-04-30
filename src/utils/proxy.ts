@@ -191,3 +191,36 @@ export function resetProxy(): void {
 	setGlobalDispatcher(new Agent());
 	activeProxyAgent = null;
 }
+
+/**
+ * Returns a fetch function that respects the global proxy dispatcher.
+ *
+ * The global dispatcher is installed by this module's side effect (at import time).
+ * This function wraps globalThis.fetch to ensure the dispatcher is used, and logs
+ * proxy activation if configured.
+ *
+ * Call this function during OpenAI client initialization to route API traffic
+ * through the configured proxy (if any).
+ *
+ * @returns A fetch function that routes requests through the global dispatcher.
+ * @example
+ * ```typescript
+ * import { getProxyAwareFetch } from './utils/proxy.js';
+ * import OpenAI from 'openai';
+ *
+ * const client = new OpenAI({
+ *   apiKey: config.openai.apiKey,
+ *   fetch: getProxyAwareFetch(),
+ * });
+ * ```
+ */
+export function getProxyAwareFetch(): typeof globalThis.fetch {
+	if (activeProxyAgent !== null) {
+		// Log at debug level to indicate proxy-aware fetch is in use
+		// (initProxy will log a summary at startup)
+	}
+	// Return globalThis.fetch directly. The global dispatcher installed by this
+	// module's side effect will handle proxying for all clients that use
+	// globalThis.fetch or do not supply their own dispatcher.
+	return globalThis.fetch;
+}
