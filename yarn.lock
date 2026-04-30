@@ -360,7 +360,6 @@ __metadata:
     "@eslint/js": "npm:^10.0.1"
     "@modelcontextprotocol/sdk": "npm:^1.29.0"
     "@pawells/logger": "npm:^1.2.2"
-    "@qdrant/js-client-rest": "npm:^1.17.0"
     "@stylistic/eslint-plugin": "npm:^5.10.0"
     "@types/node": "npm:^25.6.0"
     "@typescript-eslint/eslint-plugin": "npm:^8.59.1"
@@ -397,25 +396,6 @@ __metadata:
   version: 1.0.0-next.29
   resolution: "@polka/url@npm:1.0.0-next.29"
   checksum: 10c0/0d58e081844095cb029d3c19a659bfefd09d5d51a2f791bc61eba7ea826f13d6ee204a8a448c2f5a855c17df07b37517373ff916dd05801063c0568ae9937684
-  languageName: node
-  linkType: hard
-
-"@qdrant/js-client-rest@npm:^1.17.0":
-  version: 1.17.0
-  resolution: "@qdrant/js-client-rest@npm:1.17.0"
-  dependencies:
-    "@qdrant/openapi-typescript-fetch": "npm:1.2.6"
-    undici: "npm:^6.23.0"
-  peerDependencies:
-    typescript: ">=4.7"
-  checksum: 10c0/2c9f8622f7eae6097b96401629ff7d0dc135f57dd00246cddfa95f80bdb02cbbf994cd2d8f27378985f1dfe9712f56f1edef4c084161f497ff0a0e508c783a42
-  languageName: node
-  linkType: hard
-
-"@qdrant/openapi-typescript-fetch@npm:1.2.6":
-  version: 1.2.6
-  resolution: "@qdrant/openapi-typescript-fetch@npm:1.2.6"
-  checksum: 10c0/0359bb6939f84572e2d689b70949daea37a7cfc16f54919db8acbc496e65aca2f2a5e99e9790ec1b29e9e83f513c96ceb76054f31f9917b3fd798bed174bf96b
   languageName: node
   linkType: hard
 
@@ -4320,13 +4300,6 @@ __metadata:
   version: 7.19.2
   resolution: "undici-types@npm:7.19.2"
   checksum: 10c0/7159f10546f9f6c47d36776bb1bbf8671e87c1e587a6fee84ae1f111ae8de4f914efa8ca0dfcd224f4f4a9dfc3f6028f627ccb5ddaccf82d7fd54671b89fac3e
-  languageName: node
-  linkType: hard
-
-"undici@npm:^6.23.0":
-  version: 6.24.1
-  resolution: "undici@npm:6.24.1"
-  checksum: 10c0/53fdbaa357139a2c12deed34f67d67fc6ad269630ba85a1507e7717f53ad2d3a02c95fbd17d3ab321e34c60b6f0a716cdc2f7e2eca1e07178702dc89cc3a73c4
   languageName: node
   linkType: hard
 

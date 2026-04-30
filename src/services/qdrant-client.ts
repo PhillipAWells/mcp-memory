@@ -5,14 +5,13 @@
  * Based on official Qdrant documentation and performance guidelines
  */
 
-import { QdrantClient } from '@qdrant/js-client-rest';
 import { v4 as uuidv4 } from 'uuid';
 
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { withRetry } from '../utils/retry.js';
 import { MemoryError, extractErrorMessage } from '../utils/errors.js';
-import { activeProxyAgent } from '../utils/proxy.js';
+import { getProxyAwareFetch } from '../utils/proxy.js';
 import type {
 	QdrantPayload,
 	SearchFilters,
@@ -55,8 +54,6 @@ const DEFAULT_LIST_LIMIT = 100;
 const PERCENT = 100;
 /** Minimum time interval (ms) between access tracking warning logs. */
 const ACCESS_TRACKING_WARNING_INTERVAL_MS = 10_000;
-/** Default HTTPS port. */
-const HTTPS_DEFAULT_PORT = 443;
 /** Default hybrid search alpha weighting (0.5 = equal weighting between vector and text). */
 const DEFAULT_HYBRID_ALPHA = 0.5;
 
@@ -228,8 +225,10 @@ interface CollectionStats {
  * ```
  */
 export class QdrantService {
-	private readonly client: QdrantClient;
+	private readonly url: string;
+	private readonly apiKey: string | null;
 	private readonly collectionName: string;
+	private readonly timeout: number;
 	// Mutable: one-time initialization guard, reset to undefined only during reconnection
 	private initPromise: Promise<void> | undefined;
 	// Mutable: incremented on each failed access tracking operation
@@ -239,28 +238,64 @@ export class QdrantService {
 
 	constructor() {
 		this.collectionName = config.qdrant.collection;
-
-		// @qdrant/js-client-rest defaults to port 6333 regardless of the URL scheme.
-		// For HTTPS URLs without an explicit port we must pass port: 443 so the
-		// client connects on the standard TLS port instead.
-		const parsedUrl = new URL(config.qdrant.url);
-		const explicitPort = parsedUrl.port ? parseInt(parsedUrl.port, 10) : undefined;
-		const httpsDefaultPort = parsedUrl.protocol === 'https:' ? HTTPS_DEFAULT_PORT : undefined;
-		const port = explicitPort ?? httpsDefaultPort;
-
-		// Initialize Qdrant client
-		// Note: QdrantClientParams type doesn't expose 'dispatcher' in public API,
-		// but the SDK accepts it internally via the Fetcher configuration.
-		// This ensures Qdrant respects the global proxy configuration.
-		this.client = new QdrantClient({
-			url: config.qdrant.url,
-			...(port !== undefined && { port }),
-			apiKey: config.qdrant.apiKey,
-			timeout: config.qdrant.timeout,
-			...(activeProxyAgent !== null && { dispatcher: activeProxyAgent as unknown as undefined }),
-		});
+		this.url = config.qdrant.url;
+		this.apiKey = config.qdrant.apiKey ?? null;
+		this.timeout = config.qdrant.timeout;
 
 		logger.info(`Qdrant client initialized: ${config.qdrant.url}`);
+	}
+
+	/**
+	 * Makes an HTTP request to Qdrant with automatic retry and error handling.
+	 *
+	 * @param method - HTTP method (GET, POST, PUT, DELETE, etc.)
+	 * @param endpoint - API endpoint path (e.g., '/collections/my-collection/points')
+	 * @param body - Optional request body (will be JSON-encoded)
+	 * @returns Typed response from Qdrant API
+	 * @throws Error if the request fails after retries
+	 */
+	// eslint-disable-next-line @typescript-eslint/promise-function-async
+	private makeRequest<T>(
+		method: string,
+		endpoint: string,
+		body?: Record<string, unknown>,
+	): Promise<T> {
+		const url = `${this.url}${endpoint}`;
+		const fetch = getProxyAwareFetch();
+
+		return withRetry(async () => {
+			const headers: Record<string, string> = {
+				'Content-Type': 'application/json',
+			};
+
+			if (this.apiKey) {
+				headers['api-key'] = this.apiKey;
+			}
+
+			const controller = new AbortController();
+			const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+
+			try {
+				const response = await fetch(url, {
+					method,
+					headers,
+					...(body && { body: JSON.stringify(body) }),
+					signal: controller.signal,
+				});
+
+				if (!response.ok) {
+					const errorText = await response.text();
+					const error = new Error(`Qdrant API error: ${response.status} ${response.statusText}`);
+					(error as unknown as Record<string, unknown>).status = response.status;
+					(error as unknown as Record<string, unknown>).body = errorText;
+					throw error;
+				}
+
+				return (await response.json()) as T;
+			} finally {
+				clearTimeout(timeoutId);
+			}
+		});
 	}
 
 	/**
@@ -283,7 +318,9 @@ export class QdrantService {
 		this.initPromise = (async () => {
 			try {
 				// Check if collection exists
-				const collections = await this.client.getCollections();
+				const collections = await this.makeRequest<{
+					collections: Array<{ name: string }>;
+				}>('GET', '/collections');
 				const exists = collections.collections.some(
 					(c) => c.name === this.collectionName,
 				);
@@ -315,7 +352,13 @@ export class QdrantService {
    * named vectors (e.g. created before dual-embedding support was added).
    */
 	private async validateCollectionSchema(): Promise<void> {
-		const info = await this.client.getCollection(this.collectionName);
+		const info = await this.makeRequest<{
+			config?: {
+				params?: {
+					vectors?: unknown;
+				};
+			};
+		}>('GET', `/collections/${this.collectionName}`);
 		const vectors = info.config?.params?.vectors;
 
 		const expectedSmall = config.embedding.smallDimensions;
@@ -379,24 +422,24 @@ export class QdrantService {
 	 * Initializes HNSW indexes, quantization, and optimizer settings for production use.
 	 */
 	private async createCollection(): Promise<void> {
-		await withRetry(() => this.client.createCollection(this.collectionName, {
+		await this.makeRequest<void>('PUT', `/collections/${this.collectionName}`, {
 			vectors: {
 				dense: {
 					size: config.embedding.smallDimensions,
-					distance: 'Cosine' as const,
+					distance: 'Cosine',
 					on_disk: false,
 					hnsw_config: { m: HNSW_M, ef_construct: HNSW_EF_CONSTRUCT, full_scan_threshold: HNSW_FULL_SCAN_THRESHOLD },
 					quantization_config: {
-						scalar: { type: 'int8' as const, quantile: QUANTIZATION_QUANTILE, always_ram: true },
+						scalar: { type: 'int8', quantile: QUANTIZATION_QUANTILE, always_ram: true },
 					},
 				},
 				dense_large: {
 					size: config.embedding.largeDimensions,
-					distance: 'Cosine' as const,
+					distance: 'Cosine',
 					on_disk: false,
 					hnsw_config: { m: HNSW_M, ef_construct: HNSW_EF_CONSTRUCT, full_scan_threshold: HNSW_FULL_SCAN_THRESHOLD },
 					quantization_config: {
-						scalar: { type: 'int8' as const, quantile: QUANTIZATION_QUANTILE, always_ram: true },
+						scalar: { type: 'int8', quantile: QUANTIZATION_QUANTILE, always_ram: true },
 					},
 				},
 			},
@@ -410,7 +453,7 @@ export class QdrantService {
 			replication_factor: 1,
 			write_consistency_factor: 1,
 			on_disk_payload: false,
-		}));
+		});
 
 		logger.info(`Collection created with dual embeddings and hybrid search: ${this.collectionName}`);
 	}
@@ -422,28 +465,28 @@ export class QdrantService {
 	private async createPayloadIndexes(): Promise<void> {
 		const indexes = [
 			// Core indexes (used in most queries)
-			{ field: 'workspace', schema: 'keyword' as const, critical: true },
-			{ field: 'memory_type', schema: 'keyword' as const, critical: true },
-			{ field: 'confidence', schema: 'float' as const, critical: true },
-			{ field: 'created_at', schema: 'datetime' as const, critical: false },
-			{ field: 'updated_at', schema: 'datetime' as const, critical: false },
-			{ field: 'expires_at', schema: 'datetime' as const, critical: true },
+			{ field: 'workspace', schema: 'keyword', critical: true },
+			{ field: 'memory_type', schema: 'keyword', critical: true },
+			{ field: 'confidence', schema: 'float', critical: true },
+			{ field: 'created_at', schema: 'datetime', critical: false },
+			{ field: 'updated_at', schema: 'datetime', critical: false },
+			{ field: 'expires_at', schema: 'datetime', critical: true },
 
 			// Optional indexes (for analytics)
-			{ field: 'access_count', schema: 'integer' as const, critical: false },
-			{ field: 'last_accessed_at', schema: 'datetime' as const, critical: false },
-			{ field: 'tags', schema: 'keyword' as const, critical: false },
-			{ field: 'chunk_group_id', schema: 'keyword' as const, critical: true },
+			{ field: 'access_count', schema: 'integer', critical: false },
+			{ field: 'last_accessed_at', schema: 'datetime', critical: false },
+			{ field: 'tags', schema: 'keyword', critical: false },
+			{ field: 'chunk_group_id', schema: 'keyword', critical: true },
 
 			// Text index for full-text search
-			{ field: 'content', schema: 'text' as const, critical: true },
+			{ field: 'content', schema: 'text', critical: true },
 		];
 
 		logger.info('Creating payload indexes...');
 
 		for (const index of indexes) {
 			try {
-				await withRetry(() => this.client.createPayloadIndex(this.collectionName, {
+				await this.makeRequest<void>('PUT', `/collections/${this.collectionName}/index`, {
 					field_name: index.field,
 					field_schema: index.schema,
 					...(index.schema === 'text' && {
@@ -455,7 +498,7 @@ export class QdrantService {
 							lowercase: true,
 						},
 					}),
-				}));
+				});
 				logger.debug(`Created index for field: ${index.field}`);
 			} catch (error) {
 				// Ignore if index already exists
@@ -527,10 +570,9 @@ export class QdrantService {
 		};
 
 		try {
-			await withRetry(() => this.client.upsert(this.collectionName, {
-				wait: true,
+			await this.makeRequest<void>('PUT', `/collections/${this.collectionName}/points?wait=true`, {
 				points: [point],
-			}));
+			});
 		} catch (error) {
 			throw new MemoryError('STORAGE_FAILED', `Failed to upsert points to Qdrant: ${extractErrorMessage(error)}`, { cause: error });
 		}
@@ -603,10 +645,9 @@ export class QdrantService {
 			});
 
 			try {
-				await withRetry(() => this.client.upsert(this.collectionName, {
-					wait: true,
+				await this.makeRequest<void>('PUT', `/collections/${this.collectionName}/points?wait=true`, {
 					points: qdrantPoints,
-				}));
+				});
 
 				// All points in batch succeeded
 				result.successfulIds.push(...qdrantPoints.map((p) => p.id));
@@ -671,14 +712,17 @@ export class QdrantService {
 			return this.hybridSearchWithRRF(params, filter);
 		}
 
-		const vectorQuery = {
-			name: params.vectorLarge ? 'dense_large' : 'dense',
-			vector: params.vectorLarge ?? params.vector,
-		};
+		const vectorName = params.vectorLarge ? 'dense_large' : 'dense';
+		const vectorValue = params.vectorLarge ?? params.vector;
 
 		// Standard vector-only search
-		const results = await withRetry(() => this.client.search(this.collectionName, {
-			vector: vectorQuery,
+		const results = await this.makeRequest<{
+			result: Array<{ id: string; score: number; payload: unknown }>;
+		}>('POST', `/collections/${this.collectionName}/points/search`, {
+			vector: {
+				name: vectorName,
+				vector: vectorValue,
+			},
 			filter,
 			limit: params.limit ?? DEFAULT_SEARCH_LIMIT,
 			offset: params.offset ?? 0,
@@ -686,18 +730,15 @@ export class QdrantService {
 			with_payload: params.withPayload !== false,
 			with_vector: params.withVector ?? false,
 			params: {
-				hnsw_ef: params.hnsw_ef ?? DEFAULT_HNSW_EF, // Search thoroughness
-				// indexed_only: only search segments that have been fully indexed by HNSW.
-				// Points upserted very recently (within the indexing_threshold window) may
-				// not appear in results until Qdrant's background indexer processes them.
+				hnsw_ef: params.hnsw_ef ?? DEFAULT_HNSW_EF,
 				indexed_only: true,
 			},
-		}));
+		});
 
 		// Update access tracking (fire-and-forget)
-		this.trackAccess(results.map((r) => String(r.id)));
+		this.trackAccess(results.result.map((r) => String(r.id)));
 
-		return results.map((r) => {
+		return results.result.map((r) => {
 			const payload = this.toQdrantPayload(r.payload) ?? {
 				content: '',
 				created_at: new Date().toISOString(),
@@ -740,8 +781,13 @@ export class QdrantService {
 		const fetchLimit = limit * RRF_FETCH_MULTIPLIER; // Fetch more results for better RRF
 
 		// Perform vector similarity search
-		const vectorResults = await withRetry(() => this.client.search(this.collectionName, {
-			vector: { name: params.vectorLarge ? 'dense_large' : 'dense', vector: params.vectorLarge ?? params.vector },
+		const vectorResults = await this.makeRequest<{
+			result: Array<{ id: string; score: number; payload: unknown }>;
+		}>('POST', `/collections/${this.collectionName}/points/search`, {
+			vector: {
+				name: params.vectorLarge ? 'dense_large' : 'dense',
+				vector: params.vectorLarge ?? params.vector,
+			},
 			filter,
 			limit: fetchLimit,
 			score_threshold: params.scoreThreshold,
@@ -751,7 +797,7 @@ export class QdrantService {
 				hnsw_ef: params.hnsw_ef ?? DEFAULT_HNSW_EF,
 				indexed_only: true,
 			},
-		}));
+		});
 
 		// Perform text-based search using the text index on content field
 		const textFilter = {
@@ -765,12 +811,14 @@ export class QdrantService {
 			],
 		};
 
-		const textResults = await withRetry(() => this.client.scroll(this.collectionName, {
+		const textResults = await this.makeRequest<{
+			points: Array<{ id: string; payload: unknown }>;
+		}>('POST', `/collections/${this.collectionName}/points/scroll`, {
 			filter: textFilter,
 			limit: fetchLimit,
 			with_payload: true,
 			with_vector: false,
-		}));
+		});
 
 		// Apply RRF: score = sum(alpha * 1 / (k + rank) for vector + (1 - alpha) * 1 / (k + rank) for text)
 		const alpha = params.hybridAlpha ?? DEFAULT_HYBRID_ALPHA; // Default: equal weighting between dense and text
@@ -779,7 +827,7 @@ export class QdrantService {
 		const payloadsById = new Map<string, Record<string, unknown> | null | undefined>();
 
 		// Add vector search results (weighted by alpha)
-		vectorResults.forEach((result, index) => {
+		vectorResults.result.forEach((result, index) => {
 			const id = String(result.id);
 			const rank = index + 1;
 			rrfScores.set(id, (rrfScores.get(id) ?? 0) + alpha * (1 / (k + rank)));
@@ -823,7 +871,7 @@ export class QdrantService {
 		this.trackAccess(sortedResults.map((r) => r.id));
 
 		logger.debug(
-			`Hybrid search with RRF: ${vectorResults.length} vector + ${textResults.points.length} text results → ${sortedResults.length} final`,
+			`Hybrid search with RRF: ${vectorResults.result.length} vector + ${textResults.points.length} text results → ${sortedResults.length} final`,
 		);
 
 		return sortedResults;
@@ -848,17 +896,19 @@ export class QdrantService {
 	public async get(id: string): Promise<SearchResult | null> {
 		await this.ensureInitialized();
 
-		const result = await withRetry(() => this.client.retrieve(this.collectionName, {
+		const result = await this.makeRequest<{
+			points: Array<{ id: string; payload: unknown }>;
+		}>('POST', `/collections/${this.collectionName}/points`, {
 			ids: [id],
 			with_payload: true,
 			with_vector: false,
-		}));
+		});
 
-		if (result.length === 0) {
+		if (result.points.length === 0) {
 			return null;
 		}
 
-		const [point] = result;
+		const [point] = result.points;
 
 		// Update access tracking (fire-and-forget)
 		this.trackAccess([id]);
@@ -891,10 +941,9 @@ export class QdrantService {
 	public async delete(id: string): Promise<void> {
 		await this.ensureInitialized();
 
-		await withRetry(() => this.client.delete(this.collectionName, {
-			wait: true,
+		await this.makeRequest<void>('DELETE', `/collections/${this.collectionName}/points?wait=true`, {
 			points: [id],
-		}));
+		});
 
 		logger.debug(`Deleted point: ${id}`);
 	}
@@ -917,10 +966,9 @@ export class QdrantService {
 
 		await this.ensureInitialized();
 
-		await withRetry(() => this.client.delete(this.collectionName, {
-			wait: true,
+		await this.makeRequest<void>('DELETE', `/collections/${this.collectionName}/points?wait=true`, {
 			points: ids,
-		}));
+		});
 
 		logger.info(`Batch delete completed: ${ids.length} points`);
 	}
@@ -953,13 +1001,15 @@ export class QdrantService {
 
 		const qdrantFilter = this.buildFilter(filter);
 
-		const results = await withRetry(() => this.client.scroll(this.collectionName, {
+		const results = await this.makeRequest<{
+			points: Array<{ id: string; payload: unknown }>;
+		}>('POST', `/collections/${this.collectionName}/points/scroll`, {
 			filter: qdrantFilter,
 			limit,
 			offset,
 			with_payload: true,
 			with_vector: false,
-		}));
+		});
 
 		return results.points.map((p) => {
 			const payload = this.toQdrantPayload(p.payload) ?? {
@@ -993,7 +1043,14 @@ export class QdrantService {
 	public async getStats(): Promise<CollectionStats> {
 		await this.ensureInitialized();
 
-		const info = await withRetry(() => this.client.getCollection(this.collectionName));
+		const info = await this.makeRequest<{
+			indexed_vectors_count?: number;
+			points_count?: number;
+			segments_count?: number;
+			status: string;
+			optimizer_status: unknown;
+			config: unknown;
+		}>('GET', `/collections/${this.collectionName}`);
 
 		return {
 			indexed_vectors_count: info.indexed_vectors_count ?? 0,
@@ -1025,10 +1082,12 @@ export class QdrantService {
 
 		const qdrantFilter = this.buildFilter(filter);
 
-		const result = await withRetry(() => this.client.count(this.collectionName, {
+		const result = await this.makeRequest<{
+			count: number;
+		}>('POST', `/collections/${this.collectionName}/points/count`, {
 			filter: qdrantFilter,
-			exact: false, // Use approximate count for speed
-		}));
+			exact: false,
+		});
 
 		return result.count;
 	}
@@ -1056,14 +1115,17 @@ export class QdrantService {
 	): Promise<void> {
 		await this.ensureInitialized();
 
-		await withRetry(() => this.client.setPayload(this.collectionName, {
-			wait: true,
-			points: [id],
-			payload: {
-				...payload,
-				updated_at: new Date().toISOString(),
-			},
-		}));
+		await this.makeRequest<void>('PATCH', `/collections/${this.collectionName}/points?wait=true`, {
+			points: [
+				{
+					id,
+					payload: {
+						...payload,
+						updated_at: new Date().toISOString(),
+					},
+				},
+			],
+		});
 
 		logger.debug(`Updated payload for point: ${id}`);
 	}
@@ -1168,15 +1230,15 @@ export class QdrantService {
 
 		// Read-modify-write: fetch current state, increment, write back
 		// Fetch all points to get their current access_count values
-		const points = await withRetry(() =>
-			this.client.retrieve(this.collectionName, {
-				ids,
-				with_payload: true,
-				with_vector: false,
-			}),
-		);
+		const points = await this.makeRequest<{
+			points: Array<{ id: string; payload: unknown }>;
+		}>('POST', `/collections/${this.collectionName}/points`, {
+			ids,
+			with_payload: true,
+			with_vector: false,
+		});
 
-		if (points.length === 0) {
+		if (points.points.length === 0) {
 			logger.debug(`No points found for access tracking update: ${ids.length} requested`);
 			return;
 		}
@@ -1184,22 +1246,23 @@ export class QdrantService {
 		// Update each point's access_count and last_accessed_at
 		// setPayload merges the provided payload with existing payload
 		await Promise.all(
-			points.map((point) => {
+			points.points.map((point) => {
 				// Type guard: extract access_count from payload
-				const currentCount = typeof point.payload?.access_count === 'number'
-					? point.payload.access_count
+				const currentCount = typeof (point.payload as Record<string, unknown>)?.access_count === 'number'
+					? (point.payload as Record<string, unknown>).access_count as number
 					: 0;
 
-				return withRetry(() =>
-					this.client.setPayload(this.collectionName, {
-						wait: false,
-						points: [point.id],
-						payload: {
-							access_count: currentCount + 1,
-							last_accessed_at: now,
+				return this.makeRequest<void>('PATCH', `/collections/${this.collectionName}/points?wait=false`, {
+					points: [
+						{
+							id: point.id,
+							payload: {
+								access_count: currentCount + 1,
+								last_accessed_at: now,
+							},
 						},
-					}),
-				);
+					],
+				});
 			}),
 		);
 	}
