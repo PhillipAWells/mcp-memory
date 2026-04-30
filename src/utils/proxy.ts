@@ -6,9 +6,14 @@
  * https_proxy, http_proxy).
  *
  * This module must be imported before any HTTP client is constructed, because it
- * patches the undici global dispatcher — affecting all HTTP clients:
- *   - OpenAI SDK (uses globalThis.fetch internally)
- *   - Qdrant JS client (passes its own undici Agent per-request; see fetch patch below)
+ * patches the undici global dispatcher — affecting all HTTP clients that do not
+ * provide their own dispatcher:
+ *   - OpenAI SDK (uses globalThis.fetch internally without custom dispatcher)
+ *   - Other HTTP clients using the default dispatcher
+ *
+ * Clients like the Qdrant JS client that provide their own dispatcher instance
+ * will use their supplied dispatcher instead of the global one; this is expected
+ * behavior and does not require special handling.
  *
  * No new npm production dependencies are introduced. undici is a bundled
  * dependency of Node.js 22+ and is already present in node_modules.
@@ -116,34 +121,14 @@ if (_initialProxyUrl !== null) {
 		noProxyDefaulted = true;
 	}
 
+	// Install the proxy-aware agent as the global dispatcher. Clients that do not
+	// provide their own dispatcher will use this globally-configured proxy agent.
+	// Clients like the Qdrant JS client that provide their own dispatcher will use
+	// that dispatcher instead, which is the correct behavior and does not require
+	// special handling.
 	const agent = new EnvHttpProxyAgent();
 	setGlobalDispatcher(agent);
 	activeProxyAgent = agent;
-
-	// The Qdrant JS client passes its own undici Agent instance as `dispatcher`
-	// on every fetch call, which silently overrides the global dispatcher above.
-	// Wrapping globalThis.fetch here intercepts those per-request dispatchers and
-	// replaces them with our proxy-aware agent, so Qdrant traffic also goes through
-	// the proxy.
-	const _originalFetch = globalThis.fetch;
-
-	// Override globalThis.fetch to intercept dispatcher arguments from Qdrant client.
-	// The Qdrant JS client passes an undici Agent instance as `dispatcher` on every
-	// fetch call, which overrides the global dispatcher. We intercept those requests
-	// and replace the dispatcher with our proxy-aware agent.
-	globalThis.fetch = ((
-		input: Parameters<typeof fetch>[0],
-		init?: Record<string, unknown> & { dispatcher?: unknown },
-	): ReturnType<typeof fetch> => {
-		// init may contain dispatcher from Qdrant client; replace it with our proxy-aware agent.
-		if (init !== undefined && typeof init === 'object' && 'dispatcher' in init) {
-			// RequestInit doesn't include dispatcher; this is an undici extension.
-			// Dispatcher extends RequestInit for undici; cast bridges standard/undici type boundary.
-			return _originalFetch(input, { ...init, dispatcher: agent } as unknown as Parameters<typeof _originalFetch>[1]);
-		}
-		// Custom fetch overload signature requires runtime bridge via unknown intermediate.
-		return _originalFetch(input, init as unknown as Parameters<typeof _originalFetch>[1]);
-	}) as unknown as typeof globalThis.fetch; // Custom overload signature is compatible but not structurally assignable
 }
 
 /**
