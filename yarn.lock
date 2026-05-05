@@ -4310,9 +4310,9 @@ __metadata:
   linkType: hard
 
 "undici-types@npm:^8.1.0":
-  version: 8.1.0
-  resolution: "undici-types@npm:8.1.0"
-  checksum: 10c0/07d56cffe5153eac8a9ee40db32407bda7b3d8193d7327fc2bde1bb4f3c828f9f63ba6777e8d433bd5c01ebd9407f2bc87441443477f0e1def4f0ddb537c6ccf
+  version: 8.2.0
+  resolution: "undici-types@npm:8.2.0"
+  checksum: 10c0/c336da79fad086b064c5cde5bd6a7616064de00f581eb4071470a4e1ea9d0391bca5d26b4b46402098b900f6007dde56f252f82b54698e15d23932de1404e59b
   languageName: node
   linkType: hard
 
